@@ -1,15 +1,11 @@
+# Common setup for experiment and analysis scripts:  include("<relative path>/tools/setup.jl")
 import Pkg
 
-# activate climflows-energetics
-Pkg.activate("$(@__DIR__)/..")
+# activate the TraceableEnergetics environment; the work-in-progress packages come from packages/ via [sources]
+Pkg.activate(joinpath(@__DIR__, ".."))
 
-# add modules to path
-let path=(@__DIR__)*"/../CFAnelastic"; path in LOAD_PATH || push!(LOAD_PATH, path) end;
-# let path=(@__DIR__)*"/../CFCompressible"; path in LOAD_PATH || push!(LOAD_PATH, path) end;
-# let path=(@__DIR__)*"/../Loops"; path in LOAD_PATH || push!(LOAD_PATH, path) end;
-
-# allow modules to automatically update when edited
-using Revise 
+# allow packages to automatically update when edited
+using Revise
 
 # these define function for a computing backend
 using LoopManagers

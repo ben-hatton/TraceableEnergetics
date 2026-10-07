@@ -1,4 +1,4 @@
-# Boundary conditions for CFAnelastic model
+# Boundary conditions for CFAnelastics model
 
 """
     state_bc!(model::AN2D, state, scratch) -> NamedTuple

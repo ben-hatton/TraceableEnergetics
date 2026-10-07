@@ -1,4 +1,4 @@
-using CFAnelastic
+using CFAnelastics
 using CFTimeSchemes: tendencies!
 
 #####
@@ -140,12 +140,12 @@ end
 
     @testset "no allocations" begin test_no_allocations(an_tend!, model, active) end
 
-    @testset "diagnostics" begin test_diagnostics(CFAnelastic.diagnostics(model), an_tend!, model, active) end
+    @testset "diagnostics" begin test_diagnostics(CFAnelastics.diagnostics(model), an_tend!, model, active) end
 
     @testset "energetics diagnostics match test energy" begin
         s = copy_state(active)
         _, scratch = evaluate(an_tend!, model, s)
-        es = CFAnelastic.energetics_tendencies!(void, model, s, scratch)
+        es = CFAnelastics.energetics_tendencies!(void, model, s, scratch)
         te = sum(es.energies.te[cells(model.domain)...]) * model.dx * model.dz
         @test te ≈ sum(an_cell_energies(model, active)) rtol = 1e-12
     end
@@ -153,6 +153,6 @@ end
     @testset "driver loop" begin
         ic = (; u = (x, z) -> 0.0, w = (x, z) -> 0.0, consvar = θ_active, q = q_active)
         params = (; Nslice = 2, slice_size = 0.02, dt_max = 0.01, cfl = 0.5)
-        @test (CFAnelastic.loop(model, ic, CFTimeSchemes.RungeKutta4(model), params); true)
+        @test (CFAnelastics.loop(model, ic, CFTimeSchemes.RungeKutta4(model), params); true)
     end
 end

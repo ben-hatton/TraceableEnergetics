@@ -1,10 +1,10 @@
-include("../tools/preamble.jl")
+include("../../tools/setup.jl")
 cd("$(@__DIR__)")
 
 # ClimFlows & extensions
 using CFTimeSchemes
 using ClimFluids
-using CFAnelastic
+using CFAnelastics
 using CFBoxes
 using ManagedLoops: @vec, @with
 using MutatingOrNot: Void, void
@@ -13,7 +13,7 @@ using CookBooks: CookBooks, open, close, CookBook
 # Data handling
 using JLD2
 using NCDatasets
-include("../tools/nc_tools.jl")
+include("../../tools/nc_tools.jl")
 
 # Plot tools
 using CairoMakie
@@ -34,7 +34,7 @@ model_parts = JLD2.load("$exp_dir/params.jld2")["model_parts"];
 # load ClimFlows model
 anelastic_reference = AnelasticReference(; domain, space, density_profile = z -> rho0, ptop = 1e5)
 boundary_conditions = BoundaryConditions2D( domain, (;  u = (; bottom = NeumannBC(0.), top = NeumannBC(0.)), w = (; bottom = DirichletBC(0.), top = DirichletBC(0.)), consvar = (; bottom = NeumannBC(0.), top = NeumannBC(0.)), q = (; bottom = NeumannBC(0.), top = NeumannBC(0.))))
-model = CFAnelastic.AN2D((; mgr, domain, space, fluid, advection_scheme, buoyancy_scheme, heatflux_scheme, viscosity_scheme, anelastic_reference, boundary_conditions))
+model = CFAnelastics.AN2D((; mgr, domain, space, fluid, advection_scheme, buoyancy_scheme, heatflux_scheme, viscosity_scheme, anelastic_reference, boundary_conditions))
 
 ## LOAD DATA
 
@@ -398,7 +398,7 @@ fig
 
 
 
-# CFAnelastic.available_energetics!(ds, keys, model, ref_state_type, (; params..., ae_variables))
+# CFAnelastics.available_energetics!(ds, keys, model, ref_state_type, (; params..., ae_variables))
 # ## PLOTS
 # (; Nslice, slice_size) = params
 # tgrid = [it for it in 1:Nslice, j in 1:nbins]
@@ -497,7 +497,7 @@ fig
 #     );
 
 # # run loop to compute and record energetics
-# CFAnelastic.energetics(ds, keys, model, (; params..., energetics_variables));
+# CFAnelastics.energetics(ds, keys, model, (; params..., energetics_variables));
 
 # # entropy integral
 # s_int = rintegral(ds, :s, model)
@@ -573,7 +573,7 @@ fig
 # Plots.plot(chemdivrqu_int, label="μ∇.(ρqu)")
 
 # ## AVAILABLE ENERGETICS
-# CFAnelastic.available_energetics(ds, keys, model, SortedLorenzState())
+# CFAnelastics.available_energetics(ds, keys, model, SortedLorenzState())
 
 
 # ## Test

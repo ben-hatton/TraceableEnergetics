@@ -1,4 +1,4 @@
-include("../tools/preamble.jl")
+include("../tools/setup.jl")
 cd("$(@__DIR__)")
 
 using Plots

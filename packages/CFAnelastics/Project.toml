@@ -1,0 +1,46 @@
+name = "CFAnelastics"
+uuid = "45b71fc6-fff6-4b4e-ba1f-6968b823c40d"
+authors = ["Thomas Dubos <thomas.dubos@polytechnique.edu>", "Benedict Hatton"]
+version = "0.1.0"
+
+[deps]
+CFBoxes = "435ea534-530f-4103-a4e2-07b06daf33cf"
+CFDiffusionSchemes = "c98386de-3084-4a91-9df5-5a8c5033d229"
+CFPlanets = "9c2ca15e-caec-41c0-a22c-2e93fe5a241f"
+CFTimeSchemes = "79282218-dfaf-41aa-91df-a06f65ece871"
+CookBooks = "7bce7c31-0f61-4fd7-bdaf-6b04abfa2cc7"
+FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+ManagedLoops = "36a4119d-6b73-4371-88fe-ba2d91f5495d"
+MutatingOrNot = "6a37069a-9a67-4b2d-a34a-f09ab4b23c7c"
+NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
+
+[sources]
+CFBoxes = {path = "../CFBoxes"}
+ClimFluids = {path = "../ClimFluids"}
+
+[compat]
+CFBoxes = "0.0.3"
+CFDiffusionSchemes = "0.0.2"
+CFPlanets = "0.1.4"
+CFTimeSchemes = "0.3.7"
+ClimFluids = "0.1.6"
+CookBooks = "0.2"
+FFTW = "1.8"
+ForwardDiff = "1"
+LinearAlgebra = "1"
+LoopManagers = "0.2"
+ManagedLoops = "0.1.13"
+MutatingOrNot = "0.1.4"
+NCDatasets = "0.14"
+Test = "1"
+julia = "1.11"
+
+[extras]
+ClimFluids = "68475963-a72f-47d4-b871-9c5545ecd1c0"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+LoopManagers = "d33d4f76-8fbe-47a6-acd9-ead534c583ff"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["ClimFluids", "ForwardDiff", "LoopManagers", "Test"]

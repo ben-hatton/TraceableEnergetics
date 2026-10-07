@@ -1,0 +1,12 @@
+[submodule "packages/CFCompressible"]
+	path = packages/CFCompressible
+	url = https://github.com/ben-hatton/CFCompressible.jl.git
+	branch = traceable-energetics
+[submodule "packages/ClimFluids"]
+	path = packages/ClimFluids
+	url = git@github.com:ben-hatton/ClimFluids.jl.git
+	branch = traceable-energetics
+[submodule "packages/CFBoxes"]
+	path = packages/CFBoxes
+	url = https://github.com/ben-hatton/CFBoxes.jl.git
+	branch = traceable-energetics

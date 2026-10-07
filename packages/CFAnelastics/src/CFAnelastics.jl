@@ -1,4 +1,4 @@
-module CFAnelastic
+module CFAnelastics
 # Anelastic (binary) fluid model
 
 # ClimFlows modules
@@ -57,4 +57,4 @@ include("energetics.jl")
 include("lorenz_reference_state.jl")
 include("available_energetics.jl")
 
-end # module CFAnelastic
+end # module CFAnelastics

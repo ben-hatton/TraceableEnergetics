@@ -1,4 +1,4 @@
-include("../tools/preamble.jl")
+include("../../tools/setup.jl")
 cd("$(@__DIR__)")
 
 
@@ -10,7 +10,7 @@ using CFBoxes
 using CFDiffusionSchemes
 
 # Local modules
-using CFAnelastic
+using CFAnelastics
 
 # Other modules
 using JLD2
@@ -21,7 +21,7 @@ using LinearAlgebra
 
 
 # Data/plot handling
-include("../tools/data_processing.jl")
+include("../../tools/data_processing.jl")
 
 """
 2D Kelvin-Helmholtz instablity
@@ -265,7 +265,7 @@ write_obj   = prepare_ds(params, model, Float64)    # prepare dataset
 plot_obj    = void                                  # prepare plot object
 
 # Run simulation
-CFAnelastic.loop(
+CFAnelastics.loop(
     model,
     initial_conditions,
     time_scheme,
