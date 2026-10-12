@@ -66,17 +66,19 @@ function prepare_ds(params, model, F)
     ds.attrib["Nslice"]     = Nslice
     ds.attrib["slice_size"] = slice_size
 
-    # define variables from save_variables
+    # define variables from save_variables, with the long name and units of each diagnostic
+    info = diagnostic_info(model)
     for sym in saved_variables
         name = string(sym)
-        if sym in (:u, :du, :ωw, :Jcons_x, :Jq_x, :ru, :su, :qu)
-            defVar(ds, name, F, ("X", "z", "t"))
-        elseif sym in (:w, :dw, :ωu, :Jcons_z, :Jq_z, :rw, :sw, :qw)
-            defVar(ds, name, F, ("x", "Z", "t"))
+        attrib = ["long_name" => info[sym].long_name, "units" => info[sym].units]
+        if sym in (:u, :du, :Jcons_x, :Jq_x)
+            defVar(ds, name, F, ("X", "z", "t"); attrib)
+        elseif sym in (:w, :dw, :Jcons_z, :Jq_z)
+            defVar(ds, name, F, ("x", "Z", "t"); attrib)
         elseif sym in (:vorticity, :∂u_z, :∂w_x)
-            defVar(ds, name, F, ("X", "Z", "t"))
+            defVar(ds, name, F, ("X", "Z", "t"); attrib)
         else
-            defVar(ds, name, F, ("x", "z", "t"))
+            defVar(ds, name, F, ("x", "z", "t"); attrib)
         end
     end
     return ds
@@ -100,3 +102,6 @@ function write_func(model, state, dstate, scratch, cookbook, ds::NCDataset, t, p
 end
 
 function write_func(model, state, dstate, scratch, cookbook, ds::Nothing, t, params) end
+
+# long names and units of the diagnostics of a model, from the package that defines it (CFAnelastics, CFCompressible)
+diagnostic_info(model) = parentmodule(typeof(model)).diagnostic_info(model)

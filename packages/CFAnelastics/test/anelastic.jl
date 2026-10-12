@@ -188,7 +188,8 @@ end
     end
 
     @testset "diagnostics" begin
-        test_diagnostics(CFAnelastics.diagnostics(model), an_tend!, model, active)
+        test_diagnostics((; book = CFAnelastics.diagnostics(model), internal = CFAnelastics.internal_diagnostics(model),
+                          info = CFAnelastics.diagnostic_info(model)), an_tend!, model, active, fluid_params)
         _, scratch = evaluate(an_tend!, model, active)
         es = CFAnelastics.energetics_tendencies!(void, model, copy_state(active), scratch)
         @test sum(es.energies.te[cells(model.domain)...]) * model.dx * model.dz ≈ sum(an_cell_energies(model, active)) rtol = 1e-12

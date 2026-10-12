@@ -65,7 +65,7 @@ end
 
 # quick visualise
 t = params.Nslice
-slice = interior(domain, ds[:b][:,:,t])
+slice = interior(domain, ds[:buoyancy][:,:,t])
 nx, ny = size(slice)
 
 fig = Figure(size=(300,600))
@@ -162,7 +162,7 @@ zeta[:] = range(0.5 * Lz / Nbins, step = Lz / Nbins, length = Nbins)
 Zeta[:] = range(0.0, step = Lz / Nbins, length = Nbins + 1)
 
 # load buoyancy
-b           = ds[:b]
+b           = ds[:buoyancy]
 
 # load zref array
 zref        = ds["zref"]
@@ -181,8 +181,8 @@ N2ref          = ds["N2ref"]
 
 # load state
 m           = ds["m"]
-s           = ds["s"]
-q           = ds["q"]
+s           = ds["conservative_variable"]
+q           = ds["composition"]
 u           = ds["u"]
 w           = ds["w"]
 
@@ -254,7 +254,7 @@ betaw[:, :, :] = beta[:, :, :] .* wc[:, :, :];
 bw[:, :, :] = b[:, :, :] .* wc[:, :, :];
 
 # compute KE dissipation, buoyancy production and flux (assume no salt flux)
-call_diagnostics!((epsk, sigmab, jbx, jbz, ke), (:ρε, :σ_cons, :Jcons_x, :Jcons_z, :ke), (m, u, w), model)
+call_diagnostics!((epsk, sigmab, jbx, jbz, ke), (:viscous_dissipation, :conservative_variable_production, :Jcons_x, :Jcons_z, :kinetic_energy), (m, u, w), model)
 epsk[:, :, :] .*= inv(rho0)
 sigmab[:, :, :] .*= space.g * fluid.α_T / rho0
 jbx[:, :, :] .*= space.g * fluid.α_T / rho0

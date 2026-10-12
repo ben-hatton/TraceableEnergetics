@@ -71,7 +71,7 @@ vars = JLD2.load("../../experiments/AN/shear_diagram/data/vars.jld2")
 
 t = 50
 
-b = ds["s"][1:M, 1:N, t]
+b = ds["conservative_variable"][1:M, 1:N, t]
 
 # grid dimensions
 Mx, Mz = size(b)

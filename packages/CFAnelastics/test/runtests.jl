@@ -21,8 +21,9 @@ const Lx, Lz, g = space.Lx, space.Lz, space.g
 const T0, q0, ρ0, U = 280.0, 0.035, 1000.0, 0.1
 
 # nonlinear EOS with compressibility, thermobaricity, cabbeling and haline contraction
-const fluid = NonlinearBinaryFluid(:potential_temperature, (; p0 = 1e5, T0, q0, Cp0 = 4000.0, v0 = 1e-3,
-    α_T = 2e-4, α_q = 0.8, α_p = 1e-6, M_s = 3.14038218e-2, R = 8.31446261815324, α_TT = 1e-5, γ = 1e-7))
+const fluid_params = (; p0 = 1e5, T0, q0, Cp0 = 4000.0, v0 = 1e-3,
+    α_T = 2e-4, α_q = 0.8, α_p = 1e-6, M_s = 3.14038218e-2, R = 8.31446261815324, α_TT = 1e-5, γ = 1e-7)
+const fluid = NonlinearBinaryFluid(:potential_temperature, fluid_params)
 
 const thermoflux = ThermoFluxConsistent(k_T = 1e-4, k_q = 1e-5)
 

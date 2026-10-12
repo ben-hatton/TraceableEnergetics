@@ -209,8 +209,8 @@ data_parameters = (;
     exp_model,                                      # experiment model,
     exp_dir,                                        # experiment directory
     data_file,                                      # file to save data
-    saved_variables     = (:s, :q, :b, :u, :w),         # variables to save
-    plotted_variable    = :b,                       # variable to plot
+    saved_variables     = (:conservative_variable, :composition, :buoyancy, :u, :w),         # variables to save
+    plotted_variable    = :buoyancy,                     # variable to plot
 )
 params = (; time_parameters..., data_parameters...)
 

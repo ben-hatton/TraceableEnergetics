@@ -11,6 +11,7 @@ using TraceableEnergetics, CFAnelastics, CFCompressible
 using CFBoxes, CFDiffusionSchemes, ClimFluids, CFTimeSchemes
 using CFPlanets: Tank2D
 using MutatingOrNot: void
+using CookBooks: CookBooks
 
 #####
 ##### Physical choices
@@ -81,7 +82,7 @@ fields = kelvin_helmholtz(an; θ₀ = T0, Δθ = 0.1, q₀ = q0, Δu, ρ₀ = ρ
 # initial states; FC2D also needs the pressure at the top, to build its balanced initial density
 states = (an = initialize(an, fields), fc = initialize(fc, fields; ptop = 1e5))
 
-# optional video of consvar (θ for this fluid), one file per model, one frame per time slice. A video runs longer,
+# optional video of the potential temperature θ (a diagnostic of both models), one file per model, one frame per time slice. A video runs longer,
 # for the billows to grow and roll up (FC2D resolves sound waves, so its run takes several minutes)
 video = true
 video && @eval using CairoMakie
@@ -99,33 +100,34 @@ function record_energy(model, state, dstate, scratch, cookbook, energies, t_iter
     return energies
 end
 
-# consvar on the interior cells: m = ρ_R consvar (AN2D), m = (ρ, ρ consvar, ρ q) (FC2D)
-function consvar_field(model::AN2D, (; m))
-    ic, jc = xrange_interior(model.domain), zrange_interior(model.domain)
-    return m[ic, jc, 1] ./ model.reference.ρ_R[jc]'
-end
-function consvar_field(model::FC2D, (; m))
-    ic, jc = xrange_interior(model.domain), zrange_interior(model.domain)
-    return m[ic, jc, 2] ./ m[ic, jc, 1]
+# a diagnostic on the interior cells, e.g. :potential_temperature (see `CFAnelastics.describe_diagnostics(an)` for the list)
+diagnostics(model::AN2D) = CFAnelastics.diagnostics(model)
+diagnostics(model::FC2D) = CFCompressible.diagnostics(model)
+function interior_diagnostic(name, model, state, dstate, scratch)
+    session = open(diagnostics(model); state, dstate, scratch, model)
+    field = interior(model.domain, CookBooks.get(session, name))
+    close(session)
+    return field
 end
 
-# video: a heatmap of consvar, with colours fixed by the initial range; one frame recorded per call of `record_frame`
+# video: a heatmap of θ, with colours fixed by the initial range; one frame recorded per call of `record_frame`
 function start_video(name, model, state)
     (; domain, dx, dz) = model
     x = [xpoint(domain, dx, i) for i in xrange_interior(domain)]
     z = [zpoint(domain, dz, j) for j in zrange_interior(domain)]
-    field, time = Observable(consvar_field(model, state)), Observable(0.0)
+    dstate, scratch = CFTimeSchemes.tendencies!(void, void, model, deepcopy(state), 0.0)
+    field, time = Observable(interior_diagnostic(:potential_temperature, model, state, dstate, scratch)), Observable(0.0)
     fig = Figure(size = (900, 500))
     ax = Axis(fig[1, 1]; title = lift(t -> "$name   t = $(round(t, digits = 2)) s", time), xlabel = "x [m]",
               ylabel = "z [m]", aspect = DataAspect())
     hm = heatmap!(ax, x, z, field; colormap = :thermal, colorrange = extrema(field[]))
-    Colorbar(fig[1, 2], hm; label = "consvar = θ [K]")
+    Colorbar(fig[1, 2], hm; label = "θ [K]")
     stream = VideoStream(fig; framerate = 20)
     recordframe!(stream)
     return (; stream, field, time)
 end
 function record_frame(model, state, dstate, scratch, cookbook, video, t_iter, params)
-    video.field[] = consvar_field(model, state)
+    video.field[] = interior_diagnostic(:potential_temperature, model, state, dstate, scratch)
     video.time[] = t_iter * params.slice_size
     recordframe!(video.stream)
     return video

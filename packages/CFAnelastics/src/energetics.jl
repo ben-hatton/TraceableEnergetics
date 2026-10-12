@@ -86,8 +86,8 @@ function bq_energies!((gpe_, ie_, gpe_bz_), (; m, u, w), model, pe, dynamics_scr
     gpe_bz = similar!(gpe_bz_, m, size(m)[1:2]...)
     @with mgr, let (irange, jrange) = (axes(pe, 1), axes(pe, 2))
         @vec for i in irange, j in jrange
-            θ = fluid(:p, :consvar, :q).potential_temperature(p_R[j], dynamics_scratch.thermo.consvar[i, j], dynamics_scratch.thermo.comp[i, j])
-            cp = fluid(:p, :consvar, :q).heat_capacity(p_R[j], dynamics_scratch.thermo.consvar[i, j], dynamics_scratch.thermo.comp[i, j])
+            θ = fluid(:p, :consvar, :q).potential_temperature(p_R[j], dynamics_scratch.thermo.consvar[i, j], dynamics_scratch.thermo.q[i, j])
+            cp = fluid(:p, :consvar, :q).heat_capacity(p_R[j], dynamics_scratch.thermo.consvar[i, j], dynamics_scratch.thermo.q[i, j])
 
             # ie = ρ₀(cₚθ - p₀v₀)
             ie[i, j] = ρ_R[j] * cp * (θ - fluid.T0) - fluid.p0 
@@ -98,7 +98,7 @@ function bq_energies!((gpe_, ie_, gpe_bz_), (; m, u, w), model, pe, dynamics_scr
             # ρ_R[j] * ( v(θ, q) * (p_R - p0) + Φij(model, i, j) ) + g * ρ0 * z 
 
             # gpe_bz = gz - bz
-            b = buoyancy(model, model.buoyancy, dynamics_scratch.thermo.consvar, dynamics_scratch.thermo.comp, i, j)
+            b = buoyancy(model, model.buoyancy, dynamics_scratch.thermo.consvar, dynamics_scratch.thermo.q, i, j)
             gpe_bz[i, j] = ρ_R[j] * (g - b) * Φij(model, i, j) / g
         end
     end

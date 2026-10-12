@@ -154,11 +154,11 @@ function centre_xZ!(wc_, w, model)
 end
 
 
-function ae_buoyancy!(b_, (; consvar, comp), model, buoyancy_scheme)
+function ae_buoyancy!(b_, (; consvar, q), model, buoyancy_scheme)
     b = similar!(b_, consvar)
     @with mgr, let (irange, jrange) = (axes(b, 1), axes(b, 2))
         @vec for i in irange, j in jrange
-            b[i, j] = buoyancy(model, buoyancy_scheme, consvar, comp, i, j)
+            b[i, j] = buoyancy(model, buoyancy_scheme, consvar, q, i, j)
         end
     end
     return b

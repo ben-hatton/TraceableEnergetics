@@ -31,4 +31,10 @@ const TESTS = @__DIR__
                            fc_model(mgr = VectorizedCPU()), fc_model(boundary = (Bounded, Bounded), walls = forced_box))
         end
     end
+    # AN2D and FC2D share their diagnostic names, apart from the model-specific ones
+    @testset "shared diagnostic names" begin
+        an = keys(AnelasticTests.CFAnelastics.diagnostic_info(AnelasticTests.an_model()))
+        fc = keys(CompressibleTests.CFCompressible.diagnostic_info(CompressibleTests.fc_model()))
+        @test Set(setdiff(an, (:buoyancy, :kinematic_pressure_anomaly))) == Set(setdiff(fc, (:dρ,)))
+    end
 end
