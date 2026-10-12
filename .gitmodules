@@ -10,3 +10,11 @@
 	path = packages/CFBoxes
 	url = https://github.com/ben-hatton/CFBoxes.jl.git
 	branch = traceable-energetics
+[submodule "packages/CFPlanets"]
+	path = packages/CFPlanets
+	url = git@github.com:ben-hatton/CFPlanets.jl.git
+	branch = traceable-energetics
+[submodule "packages/CFDiffusionSchemes"]
+	path = packages/CFDiffusionSchemes
+	url = git@github.com:ben-hatton/CFDiffusionSchemes.jl.git
+	branch = traceable-energetics

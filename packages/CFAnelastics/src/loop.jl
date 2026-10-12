@@ -1,21 +1,19 @@
 """
-    loop(model::AN2D, time_scheme, params; write_data = write_data, data_storage = nothing, plot_data = plot_data)
-Main time integration loop for the AN2D model.
+    state = loop(model::AN2D, state0, time_scheme, params; write_func, write_obj = nothing, plot_func, plot_obj = nothing)
+Main time integration loop for the AN2D model; returns the final state.
 - `model`: AN2D model instance
+- `state0`: initial state (see `initialize`)
 - `time_scheme`: time integration scheme
-- `params`: parameters dictionary
+- `params`: (; Nslice, slice_size, dt_max, cfl)
 - `write_func`: function to write data at each time slice
 - `write_obj`: object to pass to write_func (e.g., data storage)
 - `plot_func`: function to plot data at each time slice
 - `plot_obj`: object to pass to plot_func (e.g., plot storage)
 """
-function loop(model::AN2D{F}, initial_conditions, time_scheme, params; write_func = write_func, write_obj = nothing, plot_func = plot_func, plot_obj = nothing) where {F}
+function loop(model::AN2D{F}, state0, time_scheme, params; write_func = write_func, write_obj = nothing, plot_func = plot_func, plot_obj = nothing) where {F}
     (; Nslice, slice_size, dt_max, cfl) = params
 
-    # initialise state
-    state0 = initialize(model, initial_conditions)
-
-    # assign initial state
+    # copy the initial state
     state = deepcopy(state0)
 
     # create dstate and scratch space
@@ -51,6 +49,7 @@ function loop(model::AN2D{F}, initial_conditions, time_scheme, params; write_fun
         # advance progress meter
         progress(t_iter, slice_size, Nslice * slice_size)
     end
+    return state
 end
 
 # empty write and plot functions

@@ -50,10 +50,10 @@ diagnostics_AN() = CookBook(;
 
 function mult_v(arr, model)
     (; mgr, reference) = model
-    (; v_R) = reference
+    (; ρ_R) = reference
     @with mgr, let (irange, jrange) = (axes(arr, 1), axes(arr, 2))
         @vec for i in irange, j in jrange
-            arr[i, j] *= v_R[j]
+            arr[i, j] /= ρ_R[j]
         end
     end
     return arr
@@ -62,10 +62,11 @@ end
 function p_diag(scratch, model)
     (; mgr, reference) = model
     (; ρ_R, p_R) = reference
-    p = similar(scratch.momentum.φ)
+    φ = scratch.momentum.φ
+    p = similar(φ)
     @with mgr, let (irange, jrange) = (axes(p, 1), axes(p, 2))
         @vec for i in irange, j in jrange
-            p[i, j] = p[i, j] * ρ_R[j] + p_R[j]
+            p[i, j] = φ[i, j] * ρ_R[j] + p_R[j]
         end
     end
     return p

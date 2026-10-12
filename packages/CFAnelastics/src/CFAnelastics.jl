@@ -4,57 +4,58 @@ module CFAnelastics
 # ClimFlows modules
 using CFPlanets: Tank2D
 using CFBoxes
+using CFBoxes: foreach_dim, pick, slice, across
 using CFDiffusionSchemes
 using CFTimeSchemes: CFTimeSchemes
 using ManagedLoops: @vec, @with
 using MutatingOrNot: Void, void, similar!
 using CookBooks: CookBooks, open, close, CookBook
 
-# Other modules
-using LinearAlgebra: mul!
-using FFTW: plan_fft!, plan_ifft!, ifft, fft
 
 # Exports
 export AnelasticReference
+export PoissonSolver, project!
 export AN2D
-export BuoyancyScheme, BuoyDyn, BuoyDynNew, BuoyDynOld, BuoyThermo, bouyancy
-export AvailableReference, vSorted, vpotSorted, SimplePDF, BinarySorted, BinaryPDF
-export energetics, available_energetics, construct_state!
+export BuoyancyScheme, BuoyDyn, BuoyDynNew, BuoyDynOld, BuoyThermo
 
 include("reference.jl")
 include("buoyancy.jl")
+include("poisson.jl")
 
 ## MODEL
-struct AN2D{F, Vec, Manager, Fluid}
+struct AN2D{F, Vec, Manager, Domain<:Box2D, Boundary<:BoxBoundaryConditions, Fluid, Advection<:AdvectionScheme,
+            Buoyancy<:BuoyancyScheme, ThermoFlux<:ThermoFluxScheme{F}, Poisson<:PoissonSolver}
     mgr::Manager
-    domain::Box2D
+    domain::Domain
     space::Tank2D{F}
-    boundary::BoundaryConditions2D
+    boundary::Boundary
     fluid::Fluid
-    advection::AdvectionScheme
-    buoyancy::BuoyancyScheme
-    heatflux::HeatFluxScheme{F}
+    advection::Advection
+    buoyancy::Buoyancy
+    thermoflux::ThermoFlux
     viscosity::ViscosityScheme{F}
-	reference::AnelasticReference{F, Vec}
+    reference::AnelasticReference{F, Vec}
+    poisson::Poisson
     dx::F
     dz::F
     inv_dx::F
     inv_dz::F
 end
-function AN2D((; mgr, domain, space, fluid, advection_scheme, buoyancy_scheme, heatflux_scheme, viscosity_scheme, anelastic_reference, boundary_conditions))
+function AN2D((; mgr, domain, space, fluid, advection_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme, anelastic_reference, boundary_conditions))
     Mx, Mz = dims(domain)
     dx, dz = space.Lx / Mx, space.Lz / Mz
-    return AN2D(mgr, domain, space, boundary_conditions, fluid, advection_scheme, buoyancy_scheme, heatflux_scheme, viscosity_scheme, anelastic_reference, dx, dz, 1/dx, 1/dz)
+    check_tracers(boundary_conditions, 2)       # tracers (consvar, q)
+    boundary = discretize(boundary_conditions, domain, (dx, dz))
+    poisson = PoissonSolver(domain, (dx, dz), anelastic_reference.ρ_R)
+    return AN2D(mgr, domain, space, boundary, fluid, advection_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme,
+                anelastic_reference, poisson, dx, dz, 1/dx, 1/dz)
 end
 
 include("boundaries.jl")
 include("initialize.jl")
 include("diagnostics.jl")
 include("tendencies.jl")
-include("pressure.jl")
 include("loop.jl")
 include("energetics.jl")
-include("lorenz_reference_state.jl")
-include("available_energetics.jl")
 
 end # module CFAnelastics

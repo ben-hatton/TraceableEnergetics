@@ -1,6 +1,5 @@
 ## TRADITIONAL ENERGETICS
 
-using NCDatasets
 
 # energetics tendencies
 function energetics_tendencies!(energetics_scratch, model::AN2D, state, dynamics_scratch)
@@ -24,7 +23,7 @@ function energetics_tendencies!(energetics_scratch, model::AN2D, state, dynamics
     (; Jcons_x, Jcons_z) = energetics_scratch.irreversible
     Jcons_x, Jcons_z = Jcons!((Jcons_x, Jcons_z), state, model, dynamics_scratch)
 
-    # terms relating to heat/salt fluxes: π∇.Js, μ∇.Jq, Js.∇π, Jq.∇μ, [∇.(πJs), ∇.(μJq) not included]
+    # terms relating to consvar/composition fluxes: π∇.Js, μ∇.Jq, Js.∇π, Jq.∇μ, [∇.(πJs), ∇.(μJq) not included]
     (; conjdivJcons, chemdivJq, Jconsgradconj, Jqgradchem) = energetics_scratch.irreversible
     conjdivJcons, chemdivJq, Jconsgradconj, Jqgradchem = irr_flux!((conjdivJcons, chemdivJq, Jconsgradconj, Jqgradchem), state, model, dynamics_scratch)
 
@@ -79,7 +78,7 @@ end
 
 function bq_energies!((gpe_, ie_, gpe_bz_), (; m, u, w), model, pe, dynamics_scratch)
     (; mgr, reference, fluid, space) = model
-    (; p_R, ρ_R, v_R) = reference
+    (; p_R, ρ_R) = reference
     (; g) = space
 
     gpe = similar!(gpe_, m, size(m)[1:2]...)
@@ -124,12 +123,12 @@ end
 # potential energy tendency: PE = ρ_R .[ h(p_R, s, q) + Φ - p_R.v_R ]
 function potential_energy!(pe_, (; m), model)
     (; mgr, reference, fluid) = model
-    (; p_R, ρ_R, v_R) = reference
+    (; p_R, ρ_R) = reference
     pe = similar!(pe_, m, size(m)[1:2]...)
     @with mgr, let (irange, jrange) = (axes(pe, 1), axes(pe, 2))
         @vec for i in irange, j in jrange
-            s = m[i, j , 1] * v_R[j]
-            q = m[i, j , 2] * v_R[j]
+            s = m[i, j , 1] / ρ_R[j]
+            q = m[i, j , 2] / ρ_R[j]
             pe[i, j] = ρ_R[j] * (fluid(:p, :consvar, :q).specific_enthalpy(p_R[j], s, q) + Φij(model, i, j) ) - p_R[j] 
         end
     end
@@ -137,7 +136,7 @@ function potential_energy!(pe_, (; m), model)
     return pe
 end
 
-# terms relating to heat/salt fluxes: π∇.Js, μ∇.Jq, Js.∇π, Jq.∇μ, ∇.(πJs), ∇.(μJq)
+# terms relating to consvar/composition fluxes: π∇.Js, μ∇.Jq, Js.∇π, Jq.∇μ, ∇.(πJs), ∇.(μJq)
 function irr_flux!((conjdivJcons_, chemdivJq_, Jconsgradconj_, Jqgradchem_), (; m), model, dynamics_scratch)
     (; mgr, domain, inv_dx, inv_dz) = model
     conjdivJcons    = similar!(conjdivJcons_, m, size(m)[1:2]...)
@@ -183,16 +182,16 @@ end
 # buoyancy flux tendency: ρ_R . Σ_ϕ . u.∇Φ
 function buoy_flux_Σ_ϕ!(buoy_flux_Σ_ϕ_, (; m, w), model, dynamics_scratch)
     (; mgr, reference, domain, fluid, space, inv_dz) = model
-    (; ρ_R, p_R, ρ_R_J, v_R) = reference
+    (; ρ_R, p_R) = reference
     (; g ) = space
-    buoy_flux_Σ_ϕ = similar!(buoy_flux_Σ_ϕ_, m, size(m)[1:2]...)
-    @with mgr, let (irange, jrange) = (axes(buoy_flux_Σ_ϕ, 1), zrange(domain))
+    buoy_flux_Σ_ϕ = fill!(similar!(buoy_flux_Σ_ϕ_, m, size(m)[1:2]...), 0)    # interior cells only (∂ρ_R/∂z)
+    @with mgr, let (irange, jrange) = (axes(buoy_flux_Σ_ϕ, 1), zrange_interior(domain))
         @vec for i in irange, j in jrange
-            s = m[i, j , 1] * v_R[j]
-            q = m[i, j , 2] * v_R[j]
+            s = m[i, j , 1] / ρ_R[j]
+            q = m[i, j , 2] / ρ_R[j]
             δp = dynamics_scratch.momentum.φ[i, j] * ρ_R[j]
             v = fluid(:p, :consvar, :q).specific_volume(p_R[j], s, q)
-            ∂v_R∂Φ = - v_R[j]^2 * inv_dz * dif_z(ρ_R_J, j) / g
+            ∂v_R∂Φ = - inv(ρ_R[j])^2 * inv_dz * (avg_Z(ρ_R, j+1) - avg_Z(ρ_R, j)) / g
             buoy_flux_Σ_ϕ[i, j] = ρ_R[j] * g * avg_z(w, i, j) * (2 - ρ_R[j] * v + δp * ∂v_R∂Φ)
         end
     end
@@ -203,13 +202,13 @@ end
 # buoyancy flux tendency: ρ_R . B . u.∇Φ
 function buoy_flux_B!(buoy_flux_B_, (; m, w), model, dynamics_scratch)
     (; mgr, reference, domain, fluid, space) = model
-    (; ρ_R, p_R, v_R) = reference
+    (; ρ_R, p_R) = reference
     (; g ) = space
     buoy_flux_B = similar!(buoy_flux_B_, m, size(m)[1:2]...)
     @with mgr, let (irange, jrange) = (axes(buoy_flux_B, 1), zrange(domain))
         @vec for i in irange, j in jrange
-            s = m[i, j , 1] * v_R[j]
-            q = m[i, j , 2] * v_R[j]
+            s = m[i, j , 1] / ρ_R[j]
+            q = m[i, j , 2] / ρ_R[j]
             v = fluid(:p, :consvar, :q).specific_volume(p_R[j], s, q)
             buoy_flux_B[i, j] = ρ_R[j] * g * avg_z(w, i, j) * (ρ_R[j] * v - 1)
         end
@@ -221,8 +220,8 @@ end
 # thermodynamic budget terms: ∇.(ρu), π∇.(ρsu), μ∇.(ρqu)
 function thermodynamic_budget_terms!((divru_, conjdivrsu_, chemdivrqu_), (; m, u, w), model, dynamics_scratch)
     (; mgr, domain, reference, inv_dx, inv_dz) = model
-    (; ρ_R, ρ_R_J) = reference
-    divru    = similar!(divru_, m, size(m)[1:2]...)
+    (; ρ_R) = reference
+    divru    = fill!(similar!(divru_, m, size(m)[1:2]...), 0)        # interior cells only (ρ_R on w-faces)
     conjdivrsu  = similar!(conjdivrsu_, m, size(m)[1:2]...)
     chemdivrqu  = similar!(chemdivrqu_, m, size(m)[1:2]...)
 
@@ -237,9 +236,13 @@ function thermodynamic_budget_terms!((divru_, conjdivrsu_, chemdivrqu_), (; m, u
         @vec for i in irange, j in jrange
             conj = dynamics_scratch.thermo.conjvar[i, j]
             chem = dynamics_scratch.thermo.chempot[i, j]
-            divru[i, j] = ρ_R[j] * dif_x(u, i, j) * inv_dx + dif_z(ρ_R_J, w, i, j) * inv_dz
             conjdivrsu[i, j] = conj * ( dif_x(rsu, i, j) * inv_dx + dif_z(rsw, i, j) * inv_dz )
             chemdivrqu[i, j] = chem * ( dif_x(rqu, i, j) * inv_dx + dif_z(rqw, i, j) * inv_dz )
+        end
+    end
+    @with mgr, let (irange, jrange) = (xrange(domain), zrange_interior(domain))
+        @vec for i in irange, j in jrange
+            divru[i, j] = ρ_R[j] * dif_x(u, i, j) * inv_dx + (avg_Z(ρ_R, j+1) * w[i, j+1] - avg_Z(ρ_R, j) * w[i, j]) * inv_dz
         end
     end
     periodize!(model, (divru, conjdivrsu, chemdivrqu))
@@ -249,120 +252,8 @@ end
 ## LOOP
 
 # energetics loop
-function energetics(ds, keys, model::AN2D{F}, params) where {F}
-    (; Nslice, slice_size, energetics_variables) = params
-
-    # define variables from energetics_variables
-    # assume coordinates x, z, t already defined
-    for sym in energetics_variables
-        ~(string(sym) in NCDatasets.keys(ds)) && defVar(ds, string(sym), F, ("x", "z", "t"))
-    end
-
-    # initialise energetics state (; s, q, u, w ) from simulation dataset
-    energetics_state0 = initialise_energetics_state(ds, keys)
-    energetics_state = deepcopy(energetics_state0)
-
-    # initialise dynamics scratch space
-    dynamics_dstate, dynamics_scratch = CFTimeSchemes.tendencies!(void, void, model, energetics_state0, nothing)
-
-    # initialise energetics scratch space
-    energetics_scratch = energetics_tendencies!(void, model, energetics_state0, dynamics_scratch)
-
-    # run loop
-    for t_iter = 1:Nslice
-        # update energetics state from dataset
-        update_energetics_state!(energetics_state, ds, keys, t_iter)
-
-        # compute dynamics scratch space
-        dynamics_dstate, dynamics_scratch = CFTimeSchemes.tendencies!(dynamics_dstate, dynamics_scratch, model, energetics_state, t_iter * slice_size)
-
-        # compute energetics
-        energetics_tendencies!(energetics_scratch, model, energetics_state, dynamics_scratch)
-
-        # write data from energetics diagnostics
-        session = open(energetics_diagnostics(); energetics_scratch, model)
-        let data = CookBooks.get(session, energetics_variables)
-            for sym in energetics_variables
-                ds[sym][:, :, t_iter] = data[sym]
-            end
-        end
-        close(session);
-
-        # advance progress meter
-        progress(t_iter, slice_size, Nslice * slice_size)
-    end
-end
-
-## TOOLS
-
-# geopotential at cell centre
 function Φij(model::AN2D, i, j)
     return model.space.g * (CFBoxes.zpoint(model.domain, model.dz, j) - model.space.Lz)
 end
 
 # initialisation
-function initialise_energetics_state(ds, keys)
-    energetics_state = (;
-        m = ds[keys.m][:, :, :, 1],
-        u = ds[keys.u][:, :, 1],
-        w = ds[keys.w][:, :, 1]
-        )
-    return energetics_state
-end
-
-# update
-function update_energetics_state!(energetics_state, ds, keys, t_iter)
-    (; m, u, w) = energetics_state
-    m[:, :, :] .= ds[keys.m][:, :, :, t_iter]
-    u[:, :] .= ds[keys.u][:, :, t_iter]
-    w[:, :] .= ds[keys.w][:, :, t_iter]
-end
-
-# construct state from (s, q, u, w)
-function construct_state!(ds, keys, model::AN2D{F}) where {F}
-    ~("mi" in NCDatasets.keys(ds.dim)) && defDim(ds, "mi", 2)
-    ~("m" in NCDatasets.keys(ds)) && defVar(ds, "m", F, ("x", "z", "mi", "t"))
-    
-    (; mgr, domain, reference) = model
-    (; ρ_R) = reference
-
-    Nslice = ds.attrib["Nslice"]
-
-    dsm1 = @views ds["m"][:, :, 1, :]
-    dsm2 = @views ds["m"][:, :, 2, :]
-
-    let jrange = zrange(domain)
-        for j in jrange
-            dsm1[:, j, :] = ds[keys.s][:, j, :] .* ρ_R[j]
-            dsm2[:, j, :] = ds[keys.q][:, j, :] .* ρ_R[j]
-        end
-    end
-    keys = (; m = :m, keys...)
-    return ds, keys
-end
-
-## DIAGNOSTICS
-
-# diagnostics for energetics
-energetics_diagnostics() = CookBook(;
-    ke = energetics_scratch -> energetics_scratch.energies.ke,
-    pe = energetics_scratch -> energetics_scratch.energies.pe,
-    te = energetics_scratch -> energetics_scratch.energies.te,
-    gpe = energetics_scratch -> energetics_scratch.bq_energies.gpe,
-    ie = energetics_scratch -> energetics_scratch.bq_energies.ie,
-    gpe_bz = energetics_scratch -> energetics_scratch.bq_energies.gpe_bz,
-    viscous_diss = energetics_scratch -> energetics_scratch.irreversible.viscous_diss,
-    entropy_prod = energetics_scratch -> energetics_scratch.irreversible.entropy_prod,
-    pdivu = energetics_scratch -> energetics_scratch.dynamic.pdivu,
-    Jcons_x = energetics_scratch -> energetics_scratch.irreversible.Jcons_x,
-    Jcons_z = energetics_scratch -> energetics_scratch.irreversible.Jcons_z,
-    conjdivJcons = energetics_scratch -> energetics_scratch.irreversible.conjdivJcons,
-    chemdivJq = energetics_scratch -> energetics_scratch.irreversible.chemdivJq,
-    Jconsgradconj = energetics_scratch -> energetics_scratch.irreversible.Jconsgradconj,
-    Jqgradchem = energetics_scratch -> energetics_scratch.irreversible.Jqgradchem,
-    buoy_flux_Σ_ϕ = energetics_scratch -> energetics_scratch.dynamic.buoy_flux_Σ_ϕ,
-    buoy_flux_B = energetics_scratch -> energetics_scratch.dynamic.buoy_flux_B,
-    divru = energetics_scratch -> energetics_scratch.thermodynamic.divru,
-    conjdivrsu = energetics_scratch -> energetics_scratch.thermodynamic.conjdivrsu,
-    chemdivrqu = energetics_scratch -> energetics_scratch.thermodynamic.chemdivrqu
-)

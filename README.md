@@ -6,6 +6,8 @@ compressible equations, using models built in the [ClimFlows](https://github.com
 ## Layout
 
 ```
+src/               the TraceableEnergetics package: model-independent setups (initial conditions) and their
+                   lowering to each model's initialize
 packages/          work-in-progress packages, each with its own Project.toml and tests
   CFAnelastics/    anelastic 2D box model (AN2D)
   CFCompressible/  git submodule: fork of ClimFlows/CFCompressible.jl (FC2D)
@@ -14,7 +16,7 @@ packages/          work-in-progress packages, each with its own Project.toml and
 experiments/       simulations that use the packages (e.g. shear/: Kelvin-Helmholtz)
 analysis/          post-processing
 tools/             helpers shared by scripts (setup.jl, output, NetCDF)
-test/              runs the package model suites; cross-model tests
+test/              setups tests, the package model suites, canonical setups on both models; cross-model tests
 ```
 
 `Project.toml` points to `packages/` through `[sources]` (Julia ≥ 1.11), so the environment always uses

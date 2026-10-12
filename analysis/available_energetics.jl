@@ -1,3 +1,12 @@
+# Available-energetics post-processing for AN2D (moved out of CFAnelastics: post-processing, not model code).
+# Load after the model packages; available_energetics.jl needs lorenz_reference_state.jl and energetics_io.jl.
+using NCDatasets
+using CFBoxes
+using CFAnelastics: AN2D, energetics_tendencies!, Φij
+using CFTimeSchemes: CFTimeSchemes
+using ManagedLoops: @vec, @with
+using MutatingOrNot: Void, void, similar!
+
 """
     isosurface_average_boussinesq!(X_avg, X, map, dζ, nbins)
 Updates X_avg in place with a thickness-weighted average of X, given a `map` to the reference state,

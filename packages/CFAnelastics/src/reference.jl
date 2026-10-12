@@ -1,94 +1,48 @@
-"""
-    AnelasticReference{F, R}
-A struct to hold reference state profiles for anelastic simulations.
+## ANELASTIC REFERENCE STATE
 
-# Fields
-- `ρtop`: Reference density at the top of the domain.
-- `ptop`: Reference pressure at the top of the domain.
-- `ρ_R`: Reference density profile at cell centers.
-- `ρ_R_J`: Reference density profile averaged to grid edges.
-- `v_R`: Specific volume profile (inverse of density).
-- `p_R`: Hydrostatic pressure profile at cell centers.
+"""
+    reference = AnelasticReference(domain, space, ρ; ptop)
+
+Reference state of the anelastic model on the grid of `domain` spanning `space`, along the full z axis (halo
+included): the density `ρ_R` and the hydrostatic pressure `p_R` (∂p_R/∂z = -ρ_R g) at cell centres, with pressure
+`ptop` [Pa] at the top of the domain. The density `ρ` [kg m⁻³] is a number, a function ρ(z) of the height z above the
+bottom, or a vector of its values in the Mz cells, from bottom to top (extended by its end values into the halo).
+Face values and the specific volume are computed where needed: ρ_R on w-faces is the average of the two cells.
+
+To build the density from a fluid state instead, see `hydrostatic_reference`.
 """
 struct AnelasticReference{F, Vec}
     ptop::F
     ρ_R::Vec
-    ρ_R_J::Vec
-    v_R::Vec
     p_R::Vec
-    ρ_func::Function
 end
-
-"""
-    AnelasticReference(domain, space, density_profile; ρtop, ptop)
-Construct an `AnelasticReference` object given a density profile function.
-
-# Arguments
-- `domain`: The computational domain.
-- `space`: The spatial configuration, containing domain dimensions and gravity.
-- `density_profile`: The vertical density profile function with an argument `z` representing height, with 0 corresponding to the top of the domain.
-- `ρtop`: Reference density at the top of the domain.
-- `ptop`: Reference pressure at the top of the domain.
-
-# Returns
-- An `AnelasticReference` object containing the reference state profiles.
-"""
-function AnelasticReference(; domain::AbstractBoxHalo{Mx, My, Mz, Hx, Hy, Hz}, space, density_profile, ptop) where {Mx, My, Mz, Hx, Hy, Hz}
+function AnelasticReference(domain, space, ρ; ptop)
     (; Lz, g) = space
+    Mz, Hz = dims(domain)[end], halo_size(domain)[end]
     dz = Lz / Mz
-
-    # convert to function with z=0 at bottom
-    ρ_func(z) = density_profile(Lz - z)
-
-    # density profile with halo + one extra cell either side
-    ρ_R_big = [ρ_func(zpoint(domain, dz, j)) for j in 0:Mz+2Hz+1]
-
-    # density profile with halo
-    ρ_R     = ρ_R_big[2:end-1]
-
-    # specific volume profile
-    v_R     = inv.(ρ_R)
-
-    # density profile averaged to grid edge
-    ρ_R_J   = [avg_Z(ρ_R_big, J) for J in 2:Mz+2Hz+2]
-    
-    # pressure above halo
-    phalo = ptop - sum(ρ_R[Hz+Mz+1:Mz+2Hz]) * g * dz
-
-    # hydrostatic pressure profile
-    p_R     = hydrostatic_pressure(ρ_R, phalo, dz, g)
-
-    return AnelasticReference(ptop, ρ_R, ρ_R_J, v_R, p_R, ρ_func)
+    check_length(ρ, Mz)
+    ρ_R = [cell_value(ρ, j - Hz, zpoint(domain, dz, j)) for j in 1:Mz+2Hz]
+    # hydrostatic pressure, from the pressure above the halo
+    p_R = hydrostatic_pressure(ρ_R, ptop - sum(ρ_R[Hz+Mz+1:end]) * g * dz, dz, g)
+    return AnelasticReference(ptop, ρ_R, p_R)
 end
 
-"""
-    hydrostatic_pressure(ρ, ptop, dz, g)
-Compute the hydrostatic pressure profile given a density profile.
+# value of a profile in cell k (k = 1, …, Mz in the interior) at height z: a number, a function of z, or a vector of
+# the Mz cell values, extended by its end values
+cell_value(f::Number, k, z) = f
+cell_value(f::Function, k, z) = f(z)
+cell_value(f::AbstractVector, k, z) = f[clamp(k, 1, length(f))]
 
-# Arguments
-- `ρ`: Density profile at cell centers.
-- `ptop`: Pressure at the top of the domain.
-- `dz`: Grid spacing in the vertical direction.
-- `g`: Gravitational acceleration.
+check_length(ρ, Mz) = nothing
+check_length(ρ::AbstractVector, Mz) = length(ρ) == Mz || error("AnelasticReference: $(length(ρ)) density values for $Mz cells.")
 
-# Returns
-- `p`: Hydrostatic pressure profile at cell centers.
-"""
+# hydrostatic pressure at cell centres, from the pressure ptop above the last cell: p = p_upper + ρ g Δz/2
 function hydrostatic_pressure(ρ, ptop, dz, g)
-    N = length(ρ)
     p = similar(ρ)
-
-    # pressure on upper edge
-    pu = ptop
-    for j in N:-1:1
-        # pressure on lower edge
-        pl = pu + ρ[j] * g * dz
-
-        # average pressure at cell center
-        p[j] = 0.5 * (pl + pu)
-
-        # update pressure on upper edge
-        pu = pl
+    p_upper = ptop
+    for j in length(ρ):-1:1
+        p[j] = p_upper + ρ[j] * g * dz / 2
+        p_upper += ρ[j] * g * dz
     end
     return p
 end

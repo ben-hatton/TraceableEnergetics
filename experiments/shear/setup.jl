@@ -11,6 +11,7 @@ using CFDiffusionSchemes
 
 # Local modules
 using CFAnelastics
+using TraceableEnergetics
 
 # Other modules
 using JLD2
@@ -113,7 +114,7 @@ AdvectionScheme = AdvEnergyCons                 # advection scheme: AdvEnergyCon
 # Physical choices
 Model           = AN2D                          # model: AN2D
 Fluid           = NonlinearBinaryFluid          # fluid model: NonlinearBinaryFluid
-HeatFluxScheme  = HeatFluxSimple            # heat flux closure: HeatFluxConsistent, HeatFluxSimple
+ThermoFluxClosure = ThermoFluxDowngradient   # consvar and composition fluxes: ThermoFluxConsistent, ThermoFluxDowngradient
 
 # Numerical domain
 domain = Box2D(
@@ -135,7 +136,7 @@ viscosity_scheme = ViscosityScheme(
 )
 
 # Heat flux scheme
-heatflux_scheme  = HeatFluxScheme( 
+thermoflux_scheme = ThermoFluxClosure( 
     k_T = k_T,                                  # thermal diffusivity
     k_q = 0.,                                   # compositional diffusivity
 )
@@ -161,35 +162,12 @@ fluid = Fluid( consvar, (;
 ))
 
 # Anelastic reference state (top is z = 0)
-anelastic_reference = AnelasticReference(;
-    domain, 
-    space, 
-    density_profile = z -> rho0, 
-    ptop = 1e5
-)
+anelastic_reference = AnelasticReference(domain, space, rho0; ptop = 1e5)    # density: number, function of height z, or vector of cell values
 
-# Boundary conditions for (u, w, s, q)
-u_bc    = (; bottom = NeumannBC(0.),
-             top = NeumannBC(0.),
-)
-w_bc    = (; bottom = DirichletBC(0.),
-             top = DirichletBC(0.),
-)
-s_bc    = (; bottom = NeumannBC(0.),
-             top = NeumannBC(0.),
-)
-q_bc    = (; bottom = NeumannBC(0.),
-             top = NeumannBC(0.),
-)
+# Boundary conditions: closed walls at the bottom and top (free slip, no flux of consvar or q); periodic in x
+closed_wall = Wall(tangential = FreeSlip(), tracers = (Flux(0.), Flux(0.)))     # tracers: (consvar, q)
+boundary_conditions = BoxBoundaryConditions(domain; bottom = closed_wall, top = closed_wall)
 
-boundary_conditions = BoundaryConditions2D(
-    domain, 
-    (;  u = u_bc, 
-        w = w_bc,
-        consvar = s_bc, 
-        q = q_bc )
-)
-    
 # Build model
 model = Model(
     (; mgr, 
@@ -198,33 +176,18 @@ model = Model(
     fluid, 
     advection_scheme, 
     buoyancy_scheme, 
-    heatflux_scheme, 
+    thermoflux_scheme, 
     viscosity_scheme, 
     anelastic_reference,
     boundary_conditions )
 )
 
-# Initial conditions
-
-stream = alloc_XZ(Float64, domain)
-u_arr, w_arr = alloc_Xz(Float64, domain), alloc_xZ(Float64, domain)
-for I in axes(stream, 1), J in axes(stream, 2)
-    X, Z = Xpoint(domain, dx, I), Zpoint(domain, dz, J)
-    stream[I, J] = amp * U * envelope(Z) * cos(k_instab * X) / k_instab
-end
-for I in Xrange(domain), j in zrange(domain)
-    z = zpoint(domain, dz, j)
-    u_arr[I, j] = dif_z(stream, I, j) * inv(dz) + u_shear(z)
-end
-for i in xrange(domain), J in Zrange(domain)
-    w_arr[i, J] = - dif_x(stream, i, J) * inv(dx)
-end
-
-initial_conditions = (; 
-    u       = u_arr,
-    w       = w_arr,
-    consvar = θ_init,
-    q       = (x, z) -> q0
+# Initial conditions: shear layer and stratification, with a mode-1 perturbation of the (mass) streamfunction
+initial_conditions = (;
+    consvar = consvar_from_theta(fluid, θ_init, q0),                                # tracers consvar(x, z), q(x, z)
+    q       = (x, z) -> q0,
+    u       = u_shear,                                                              # mean flow u(z)
+    ψ       = (X, Z) -> rho0 * amp * U * envelope(Z) * cos(k_instab * X) / k_instab, # mass streamfunction
 )
 
 # Time integration
@@ -252,7 +215,7 @@ data_parameters = (;
 params = (; time_parameters..., data_parameters...)
 
 # Save parameters
-save_dict = Dict(   "model_parts" => (; mgr, domain, space, fluid, advection_scheme, buoyancy_scheme, heatflux_scheme, viscosity_scheme, rho0),
+save_dict = Dict(   "model_parts" => (; mgr, domain, space, fluid, advection_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme, rho0),
         "params" => params)
 save("$exp_dir/params.jld2", save_dict);
 
@@ -267,7 +230,7 @@ plot_obj    = void                                  # prepare plot object
 # Run simulation
 CFAnelastics.loop(
     model,
-    initial_conditions,
+    initialize(model, initial_conditions),
     time_scheme,
     params;
     # plot_func   = plot_func,

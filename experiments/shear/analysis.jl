@@ -29,12 +29,13 @@ exp_dir  = "./data/$exp_name"
 # load params from setup
 params = JLD2.load("$exp_dir/params.jld2")["params"];
 model_parts = JLD2.load("$exp_dir/params.jld2")["model_parts"];
-(; mgr, domain, space, fluid, advection_scheme, buoyancy_scheme, heatflux_scheme, viscosity_scheme, rho0) = model_parts;
+(; mgr, domain, space, fluid, advection_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme, rho0) = model_parts;
 
 # load ClimFlows model
-anelastic_reference = AnelasticReference(; domain, space, density_profile = z -> rho0, ptop = 1e5)
-boundary_conditions = BoundaryConditions2D( domain, (;  u = (; bottom = NeumannBC(0.), top = NeumannBC(0.)), w = (; bottom = DirichletBC(0.), top = DirichletBC(0.)), consvar = (; bottom = NeumannBC(0.), top = NeumannBC(0.)), q = (; bottom = NeumannBC(0.), top = NeumannBC(0.))))
-model = CFAnelastics.AN2D((; mgr, domain, space, fluid, advection_scheme, buoyancy_scheme, heatflux_scheme, viscosity_scheme, anelastic_reference, boundary_conditions))
+anelastic_reference = AnelasticReference(domain, space, rho0; ptop = 1e5)
+closed_wall = Wall(tangential = FreeSlip(), tracers = (Flux(0.), Flux(0.)))     # tracers: (consvar, q)
+boundary_conditions = BoxBoundaryConditions(domain; bottom = closed_wall, top = closed_wall)
+model = CFAnelastics.AN2D((; mgr, domain, space, fluid, advection_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme, anelastic_reference, boundary_conditions))
 
 ## LOAD DATA
 

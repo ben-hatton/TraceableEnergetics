@@ -1,3 +1,8 @@
+name = "TraceableEnergetics"
+uuid = "5ee6851b-9414-4e8a-a307-ad310d9a7c21"
+authors = ["Benedict Hatton"]
+version = "0.1.0"
+
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
@@ -27,4 +32,6 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 CFAnelastics = {path = "packages/CFAnelastics"}
 CFBoxes = {path = "packages/CFBoxes"}
 CFCompressible = {path = "packages/CFCompressible"}
+CFDiffusionSchemes = {path = "packages/CFDiffusionSchemes"}
+CFPlanets = {path = "packages/CFPlanets"}
 ClimFluids = {path = "packages/ClimFluids"}
