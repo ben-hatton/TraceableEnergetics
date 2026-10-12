@@ -1,17 +1,16 @@
 # Canonical example: a Kelvin-Helmholtz shear layer, run with the anelastic (AN2D) and the fully compressible (FC2D)
-# models from the same model-independent initial fields. Shows every piece needed to build and run a model, and checks that
-# the total energy is conserved (closed walls: viscous dissipation and diffusion only convert energy).
+# models from the same model-independent initial fields, and shown as a video of a chosen diagnostic, the two models
+# side by side. Shows every piece needed to build and run a model.
 #
 #   julia -t 4 experiments/kelvin_helmholtz/run.jl
 #
-# Set `video = true` (below, under Run) to record a video of each model in experiments/kelvin_helmholtz/output/.
+# The video is saved to experiments/kelvin_helmholtz/output/kelvin_helmholtz.mp4.
 include("../../tools/setup.jl")
 
 using TraceableEnergetics, CFAnelastics, CFCompressible
 using CFBoxes, CFDiffusionSchemes, ClimFluids, CFTimeSchemes
 using CFPlanets: Tank2D
-using MutatingOrNot: void
-using CookBooks: CookBooks
+using CairoMakie
 
 #####
 ##### Physical choices
@@ -79,69 +78,20 @@ fields = kelvin_helmholtz(an; θ₀ = T0, Δθ = 0.1, q₀ = q0, Δu, ρ₀ = ρ
 ##### Run
 #####
 
+# the diagnostic shown (any diagnostic of both models, see `diagnostic_info(an)`), and the time slices (one frame each)
+# and step limits; FC2D resolves sound waves, so its run takes several minutes
+diagnostic = :conservative_variable
+params = (; Nslice = 120, slice_size = 0.25, dt_max = 0.05, cfl = 0.5)
+
 # initial states; FC2D also needs the pressure at the top, to build its balanced initial density
 states = (an = initialize(an, fields), fc = initialize(fc, fields; ptop = 1e5))
 
-# optional video of the potential temperature θ (a diagnostic of both models), one file per model, one frame per time slice. A video runs longer,
-# for the billows to grow and roll up (FC2D resolves sound waves, so its run takes several minutes)
-video = true
-video && @eval using CairoMakie
+# run each model, recording a frame of the diagnostic at each time slice
+an_video = DiagnosticVideo(an, states.an, diagnostic)
+CFAnelastics.loop(an, states.an, CFTimeSchemes.RungeKutta4(an), params; plot_func = record_frame!, plot_obj = an_video)
+fc_video = DiagnosticVideo(fc, states.fc, diagnostic)
+CFCompressible.loop(fc, states.fc, CFTimeSchemes.RungeKutta4(fc), params; plot_func = record_frame!, plot_obj = fc_video)
 
-# time slices and step limits
-params = video ? (; Nslice = 120, slice_size = 0.25, dt_max = 0.05, cfl = 0.5) :
-                 (; Nslice = 5, slice_size = 0.4, dt_max = 0.05, cfl = 0.5)
-
-# record the total energy (kinetic + potential + internal) at each slice
-energies!(model::AN2D, state) = CFAnelastics.energies!((void, void, void), state, model)
-energies!(model::FC2D, state) = CFCompressible.energies!((void, void, void), state, model)
-function record_energy(model, state, dstate, scratch, cookbook, energies, t_iter, params)
-    _, _, te = energies!(model, state)
-    push!(energies, sum(te[xrange_interior(model.domain), zrange_interior(model.domain)]) * model.dx * model.dz)
-    return energies
-end
-
-# a diagnostic on the interior cells, e.g. :potential_temperature (see `CFAnelastics.describe_diagnostics(an)` for the list)
-diagnostics(model::AN2D) = CFAnelastics.diagnostics(model)
-diagnostics(model::FC2D) = CFCompressible.diagnostics(model)
-function interior_diagnostic(name, model, state, dstate, scratch)
-    session = open(diagnostics(model); state, dstate, scratch, model)
-    field = interior(model.domain, CookBooks.get(session, name))
-    close(session)
-    return field
-end
-
-# video: a heatmap of θ, with colours fixed by the initial range; one frame recorded per call of `record_frame`
-function start_video(name, model, state)
-    (; domain, dx, dz) = model
-    x = [xpoint(domain, dx, i) for i in xrange_interior(domain)]
-    z = [zpoint(domain, dz, j) for j in zrange_interior(domain)]
-    dstate, scratch = CFTimeSchemes.tendencies!(void, void, model, deepcopy(state), 0.0)
-    field, time = Observable(interior_diagnostic(:potential_temperature, model, state, dstate, scratch)), Observable(0.0)
-    fig = Figure(size = (900, 500))
-    ax = Axis(fig[1, 1]; title = lift(t -> "$name   t = $(round(t, digits = 2)) s", time), xlabel = "x [m]",
-              ylabel = "z [m]", aspect = DataAspect())
-    hm = heatmap!(ax, x, z, field; colormap = :thermal, colorrange = extrema(field[]))
-    Colorbar(fig[1, 2], hm; label = "θ [K]")
-    stream = VideoStream(fig; framerate = 20)
-    recordframe!(stream)
-    return (; stream, field, time)
-end
-function record_frame(model, state, dstate, scratch, cookbook, video, t_iter, params)
-    video.field[] = interior_diagnostic(:potential_temperature, model, state, dstate, scratch)
-    video.time[] = t_iter * params.slice_size
-    recordframe!(video.stream)
-    return video
-end
-
-for (name, model, state, loop) in (("AN2D", an, states.an, CFAnelastics.loop), ("FC2D", fc, states.fc, CFCompressible.loop))
-    energies = Float64[]
-    frames = video ? (; plot_func = record_frame, plot_obj = start_video(name, model, state)) : (;)
-    loop(model, state, CFTimeSchemes.RungeKutta4(model), params; write_func = record_energy, write_obj = energies, frames...)
-    println("\n$name: relative change of total energy over $(params.Nslice) slices = ",
-        (energies[end] - energies[1]) / abs(energies[1]))
-    if video
-        file = joinpath(mkpath(joinpath(@__DIR__, "output")), "kelvin_helmholtz_$name.mp4")
-        save(file, frames.plot_obj.stream)
-        println("$name: video saved to $file")
-    end
-end
+# the two models side by side
+file = save(joinpath(mkpath(joinpath(@__DIR__, "output")), "kelvin_helmholtz.mp4"), an_video, fc_video)
+println("\nvideo saved to $file")

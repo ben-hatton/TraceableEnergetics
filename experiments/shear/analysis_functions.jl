@@ -422,6 +422,7 @@ function call_diagnostics!(vars, symbols, (m, u, w), model)
         )
 
     dstate, scratch = CFTimeSchemes.tendencies!(void, void, model, state, nothing)
+    book = CFAnelastics.diagnostics(model)
 
 
     for t in 1:Nslice
@@ -433,7 +434,7 @@ function call_diagnostics!(vars, symbols, (m, u, w), model)
         dstate, scratch = CFTimeSchemes.tendencies!(dstate, scratch, model, state, nothing)
         
         # open diagnostics
-        session = open(CFAnelastics.diagnostics(model); state, dstate, scratch, model)
+        session = open(book; state, dstate, scratch, model)
 
         # write data from diagnostics
         let data = CookBooks.get(session, symbols)

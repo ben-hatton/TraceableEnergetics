@@ -18,6 +18,9 @@ function loop(model::AN2D{F}, state0, time_scheme, params; write_func = write_fu
 
     # create dstate and scratch space
     dstate, scratch = CFTimeSchemes.tendencies!(void, void, model::AN2D, state, nothing)
+
+    # diagnostics, built once: the book owns the output arrays of its computed diagnostics
+    book = diagnostics(model)
     
     # initialise time
     t = zero(F)
@@ -41,10 +44,10 @@ function loop(model::AN2D{F}, state0, time_scheme, params; write_func = write_fu
         dstate, scratch = CFTimeSchemes.tendencies!(dstate, scratch, model, state, t)
 
         # write data
-        write_obj = write_func(model, state, dstate, scratch, diagnostics(model), write_obj, t_iter, params)
+        write_obj = write_func(model, state, dstate, scratch, book, write_obj, t_iter, params)
 
         # plot data
-        plot_obj = plot_func(model, state, dstate, scratch, diagnostics(model), plot_obj, t_iter, params)
+        plot_obj = plot_func(model, state, dstate, scratch, book, plot_obj, t_iter, params)
 
         # advance progress meter
         progress(t_iter, slice_size, Nslice * slice_size)

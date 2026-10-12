@@ -190,6 +190,10 @@ end
     @testset "diagnostics" begin
         test_diagnostics((; book = CFAnelastics.diagnostics(model), internal = CFAnelastics.internal_diagnostics(model),
                           info = CFAnelastics.diagnostic_info(model)), an_tend!, model, active, fluid_params)
+        # the fused mass divergence equals the discrete anelastic divergence ∇·(ρ_R u)
+        session = open(CFAnelastics.diagnostics(model); state = active, model)
+        div, scale = an_divergence(model, active.u, active.w)
+        @test maximum(abs, CookBooks.get(session, :mass_divergence)[cells(model.domain)...] - div) / scale < 1e-13
         _, scratch = evaluate(an_tend!, model, active)
         es = CFAnelastics.energetics_tendencies!(void, model, copy_state(active), scratch)
         @test sum(es.energies.te[cells(model.domain)...]) * model.dx * model.dz ≈ sum(an_cell_energies(model, active)) rtol = 1e-12

@@ -28,6 +28,12 @@ SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
+[weakdeps]
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+
+[extensions]
+TraceableEnergeticsMakieExt = "Makie"
+
 [sources]
 CFAnelastics = {path = "packages/CFAnelastics"}
 CFBoxes = {path = "packages/CFBoxes"}

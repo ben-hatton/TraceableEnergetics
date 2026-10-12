@@ -223,9 +223,10 @@ save("$exp_dir/params.jld2", save_dict);
 
 # Prepare data objects
 write_func  = write_func                            # function to write data
-plot_func   = plot_func                             # function to plot data
 write_obj   = prepare_ds(params, model, Float64)    # prepare dataset
-plot_obj    = void                                  # prepare plot object
+# video of params.plotted_variable: `using CairoMakie`, uncomment plot_func and plot_obj below, with
+# plot_obj = DiagnosticVideo(model, initialize(model, initial_conditions), params.plotted_variable), then
+# save("$exp_dir/video.mp4", plot_obj)
 
 # Run simulation
 CFAnelastics.loop(
@@ -233,7 +234,7 @@ CFAnelastics.loop(
     initialize(model, initial_conditions),
     time_scheme,
     params;
-    # plot_func   = plot_func,
+    # plot_func   = record_frame!,
     # plot_obj    = plot_obj,
     write_func  = write_func,
     write_obj   = write_obj,
