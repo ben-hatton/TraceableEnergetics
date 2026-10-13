@@ -4,7 +4,7 @@
 CFTimeSchemes.tendencies!(dstate, scratch, model::AN2D, state, t) =
     AN2D_tendencies!(dstate, scratch, model, state, t)
 
-function AN2D_tendencies!(dstate, scratch, model::AN2D, state, t)
+function AN2D_tendencies!(dstate, scratch, model::AN2D{F}, state, t) where {F}
     # fill the halo of the state (never its interior) from the boundary conditions
     state = state_bc!(model, state)
 
@@ -55,7 +55,7 @@ function AN2D_tendencies!(dstate, scratch, model::AN2D, state, t)
     dU, dW = velocity_tendencies!((dU, dW), model, state, (B_x, B_z, ∂K_x, ∂K_z, ωw, ωu, visc_scratch[3], visc_scratch[4]))
 
     ## PRESSURE; φ = (p - p_R) / ρ_R such that ∇·(ρ_R (dU - ∇φ)) = 0, with no flow through walls
-    φ = project!(similar!(scratch.momentum.φ, consvar), model.poisson, model.mgr, (dU, dW))
+    φ = project!(alloc!(scratch.momentum.φ, F, model.domain, :xz), model.poisson, model.mgr, (dU, dW))
     
     # UPDATE DSTATE
     dm, du, dw  = (dstate.m, dstate.u, dstate.w)
@@ -83,8 +83,8 @@ end
 function skew_uw!((∂u_z_, ∂w_x_), model::AN2D{F}, (; u, w)) where F
     (; mgr, domain, inv_dx, inv_dz) = model
 
-    ∂u_z = similar!(∂u_z_, Array{F}, Xdim(domain), Zdim(domain))
-    ∂w_x = similar!(∂w_x_, Array{F}, Xdim(domain), Zdim(domain))
+    ∂u_z = alloc!(∂u_z_, F, domain, :XZ)
+    ∂w_x = alloc!(∂w_x_, F, domain, :XZ)
     
     @with mgr, let (irange, jrange) = (axes(∂u_z, 1), Zrange(domain))
         @vec for I in irange, J in jrange
@@ -103,11 +103,11 @@ function skew_uw!((∂u_z_, ∂w_x_), model::AN2D{F}, (; u, w)) where F
 end
 # gradient of edge quantities : (u, w) at edges ↦ (∂u/∂x, ∂w/∂z) at centres
 
-function grad_uw!((∂u_x_, ∂w_z_), model::AN2D, (; m, u, w))
+function grad_uw!((∂u_x_, ∂w_z_), model::AN2D{F}, (; m, u, w)) where {F}
     (; mgr, domain, inv_dx, inv_dz) = model
 
-    ∂u_x = similar!(∂u_x_, m, size(m)[1:2]...)
-    ∂w_z = similar!(∂w_z_, m, size(m)[1:2]...)
+    ∂u_x = alloc!(∂u_x_, F, domain, :xz)
+    ∂w_z = alloc!(∂w_z_, F, domain, :xz)
 
     @with mgr, let (irange, jrange) = (xrange(domain), axes(∂u_x, 2))
         @vec for i in irange, j in jrange
@@ -128,14 +128,14 @@ end
 # ADVECTION
 
 # vorticity term for advection
-function vort_adv!((ωw_, ωu_, (ωwᴵᴶ_, ωuᴵᴶ_)), model::AN2D, advection::AdvEnergyCons, (; u, w), (∂u_z, ∂w_x))
+function vort_adv!((ωw_, ωu_, (ωwᴵᴶ_, ωuᴵᴶ_)), model::AN2D{F}, advection::AdvEnergyCons, (; u, w), (∂u_z, ∂w_x)) where {F}
     (; mgr, domain) = model
     (; ρ_R) = model.reference
 
-    ωw      = similar!(ωw_, u)
-    ωu      = similar!(ωu_, w)
-    ωwᴵᴶ    = similar!(ωwᴵᴶ_, ∂u_z)
-    ωuᴵᴶ    = similar!(ωuᴵᴶ_, ∂u_z)
+    ωw      = alloc!(ωw_, F, domain, :Xz)
+    ωu      = alloc!(ωu_, F, domain, :xZ)
+    ωwᴵᴶ    = alloc!(ωwᴵᴶ_, F, domain, :XZ)
+    ωuᴵᴶ    = alloc!(ωuᴵᴶ_, F, domain, :XZ)
 
     @with mgr, let (irange, jrange) = (Xrange(domain), Zrange(domain))
         @vec for I in irange, J in jrange
@@ -164,16 +164,16 @@ function vort_adv!((ωw_, ωu_, (ωwᴵᴶ_, ωuᴵᴶ_)), model::AN2D, advectio
 
     return ωw, ωu, (ωwᴵᴶ, ωuᴵᴶ)
 end
-function vort_adv!((ωw_, ωu_, (ωvᴵᴶ_, ρwᴵ_, ρuᴶ_)), model::AN2D, advection::AdvEnstrophyCons, (; u, w), (∂u_z, ∂w_x))
+function vort_adv!((ωw_, ωu_, (ωvᴵᴶ_, ρwᴵ_, ρuᴶ_)), model::AN2D{F}, advection::AdvEnstrophyCons, (; u, w), (∂u_z, ∂w_x)) where {F}
     (; mgr, domain) = model
     (; ρ_R) = model.reference
 
-    ωw      = similar!(ωw_, u)
-    ωu      = similar!(ωu_, w)
+    ωw      = alloc!(ωw_, F, domain, :Xz)
+    ωu      = alloc!(ωu_, F, domain, :xZ)
 
-    ωvᴵᴶ    = similar!(ωvᴵᴶ_, ∂u_z)
-    ρwᴵ     = similar!(ρwᴵ_, ∂u_z)
-    ρuᴶ     = similar!(ρuᴶ_, ∂u_z)
+    ωvᴵᴶ    = alloc!(ωvᴵᴶ_, F, domain, :XZ)
+    ρwᴵ     = alloc!(ρwᴵ_, F, domain, :XZ)
+    ρuᴶ     = alloc!(ρuᴶ_, F, domain, :XZ)
 
     @with mgr, let (irange, jrange) = (Xrange(domain), Zrange(domain))
         @vec for I in irange, J in jrange
@@ -203,12 +203,12 @@ function vort_adv!((ωw_, ωu_, (ωvᴵᴶ_, ρwᴵ_, ρuᴶ_)), model::AN2D, ad
 end
 
 # kinetic energy term for advection
-function ke_adv!((K_, ∂K_x_, ∂K_z_), model::AN2D, (; m, u, w))
+function ke_adv!((K_, ∂K_x_, ∂K_z_), model::AN2D{F}, (; m, u, w)) where {F}
     (; mgr, domain, inv_dx, inv_dz) = model
 
-    K       = similar!(K_, m, size(m)[1:2]...)
-    ∂K_x    = similar!(∂K_x_, u)
-    ∂K_z    = similar!(∂K_z_, w)
+    K       = alloc!(K_, F, domain, :xz)
+    ∂K_x    = alloc!(∂K_x_, F, domain, :Xz)
+    ∂K_z    = alloc!(∂K_z_, F, domain, :xZ)
 
     @with mgr, let (irange, jrange) = (xrange(domain), zrange(domain))
         @vec for i in irange, j in jrange
@@ -232,11 +232,11 @@ function ke_adv!((K_, ∂K_x_, ∂K_z_), model::AN2D, (; m, u, w))
 end
 
 # flux for tracer advection
-function advective_flux!((mu_, mw_), model::AN2D, (; m, u, w))
+function advective_flux!((mu_, mw_), model::AN2D{F}, (; m, u, w)) where {F}
     (; mgr, domain) = model
 
-    mu = similar!(mu_, u, size(u)..., 2)
-    mw = similar!(mw_, w, size(w)..., 2)
+    mu = alloc!(mu_, F, domain, :Xz, 2)
+    mw = alloc!(mw_, F, domain, :xZ, 2)
     
     m1 = @view m[:, :, 1]
     m2 = @view m[:, :, 2]
@@ -265,15 +265,15 @@ end
 
 # Viscous force on faces, F = ∇·τ (per unit volume), and the dissipation ρε = ∇·(u·τ) - u·F at cell centres. F is
 # used again by the momentum tendencies (`velocity_tendencies!`), so that the viscous derivatives are formed once.
-function viscous_dissipation!((ρε_, (uτ_x_, uτ_z_, F_x_, F_z_)), model, (; m, u, w), (∂u_x, ∂w_z, ∂u_z, ∂w_x))
+function viscous_dissipation!((ρε_, (uτ_x_, uτ_z_, F_x_, F_z_)), model::AN2D{F}, (; m, u, w), (∂u_x, ∂w_z, ∂u_z, ∂w_x)) where {F}
     (; mgr, domain, inv_dx, inv_dz) = model
     (; dyn_visc, bulk_visc) = model.viscosity
 
-    ρε      = similar!(ρε_, m, size(m)[1:2]...)
-    uτ_x    = similar!(uτ_x_, u)
-    uτ_z    = similar!(uτ_z_, w)
-    F_x     = similar!(F_x_, u)
-    F_z     = similar!(F_z_, w)
+    ρε      = alloc!(ρε_, F, domain, :xz)
+    uτ_x    = alloc!(uτ_x_, F, domain, :Xz)
+    uτ_z    = alloc!(uτ_z_, F, domain, :xZ)
+    F_x     = alloc!(F_x_, F, domain, :Xz)
+    F_z     = alloc!(F_z_, F, domain, :xZ)
 
     @with mgr, let (irange, jrange) = (Xrange(domain), zrange(domain))
         @vec for I in irange, j in jrange
@@ -319,20 +319,20 @@ end
 # reference pressure p_R: from m = ρ_R (consvar, q), the temperature, the conjugate variable and modified chemical
 # potential, Cp, ∂consvar/∂q, Γ = ρ_R ∂μ/∂p / ∂μ/∂q (barodiffusion, per unit geopotential), the buoyancy b, and B,
 # the potential of the momentum forcing (depends on the buoyancy scheme).
-function thermodynamics!((consvar_, q_, T_, conjvar_, chempot_, Cp_, ∂consvar_∂q_, Γ_, b_, B_), model::AN2D, (; m))
+function thermodynamics!((consvar_, q_, T_, conjvar_, chempot_, Cp_, ∂consvar_∂q_, Γ_, b_, B_), model::AN2D{F}, (; m)) where {F}
     (; mgr, fluid, reference) = model
     (; ρ_R, p_R) = reference
 
-    consvar     = similar!(consvar_, m, size(m)[1:2]...)
-    q           = similar!(q_, consvar)
-    T           = similar!(T_, consvar)
-    conjvar     = similar!(conjvar_, consvar)
-    chempot     = similar!(chempot_, consvar)
-    Cp          = similar!(Cp_, consvar)
-    ∂consvar_∂q = similar!(∂consvar_∂q_, consvar)
-    Γ           = similar!(Γ_, consvar)
-    b           = similar!(b_, consvar)
-    B           = similar!(B_, consvar)
+    consvar     = alloc!(consvar_, F, model.domain, :xz)
+    q           = alloc!(q_, F, model.domain, :xz)
+    T           = alloc!(T_, F, model.domain, :xz)
+    conjvar     = alloc!(conjvar_, F, model.domain, :xz)
+    chempot     = alloc!(chempot_, F, model.domain, :xz)
+    Cp          = alloc!(Cp_, F, model.domain, :xz)
+    ∂consvar_∂q = alloc!(∂consvar_∂q_, F, model.domain, :xz)
+    Γ           = alloc!(Γ_, F, model.domain, :xz)
+    b           = alloc!(b_, F, model.domain, :xz)
+    B           = alloc!(B_, F, model.domain, :xz)
 
     @with mgr, let (irange, jrange) = (axes(m, 1), axes(m, 2))
         @vec for i in irange, j in jrange
@@ -376,13 +376,13 @@ end
 buoyancy(model::AN2D, scheme, s::AbstractArray, q::AbstractArray, i, j) = buoyancy(model, scheme, s[i, j], q[i, j], j)
 
 # momentum forcing on u- and w-faces, from the pointwise conjvar, chempot and B (thermodynamic form)
-function buoyancy!((B_x_, B_z_), model::AN2D, buoyancy_scheme::BuoyThermo, (; m, u, w), (conjvar, chempot, B, b))
+function buoyancy!((B_x_, B_z_), model::AN2D{F}, buoyancy_scheme::BuoyThermo, (; m, u, w), (conjvar, chempot, B, b)) where {F}
     (; mgr, domain, space, reference, inv_dx, inv_dz) = model
     (; g) = space
     (; ρ_R) = reference
 
-    B_x = similar!(B_x_, u)
-    B_z = similar!(B_z_, w)
+    B_x = alloc!(B_x_, F, domain, :Xz)
+    B_z = alloc!(B_z_, F, domain, :xZ)
     @with mgr, let (irange, jrange) = (Xrange(domain), axes(B_x, 2))
         @vec for I in irange, j in jrange
             v_x         = inv(ρ_R[j])
@@ -411,11 +411,11 @@ function buoyancy!((B_x_, B_z_), model::AN2D, buoyancy_scheme::BuoyThermo, (; m,
     return B_x, B_z
 end
 # dynamic forms: buoyancy b on w-faces, no horizontal forcing
-function buoyancy!((B_x_, B_z_), model::AN2D, buoyancy_scheme::BuoyDyn, (; u, w), (conjvar, chempot, B, b))
+function buoyancy!((B_x_, B_z_), model::AN2D{F}, buoyancy_scheme::BuoyDyn, (; u, w), (conjvar, chempot, B, b)) where {F}
     (; mgr, domain) = model
 
-    B_x = fill!(similar!(B_x_, u), 0)
-    B_z = similar!(B_z_, w)
+    B_x = fill!(alloc!(B_x_, F, domain, :Xz), 0)
+    B_z = alloc!(B_z_, F, domain, :xZ)
 
     @with mgr, let (irange, jrange) = (axes(B_z, 1), Zrange(domain))
         @vec for i in irange, J in jrange
@@ -436,20 +436,20 @@ end
 # (∂Φ = g on w-faces, 0 on u-faces). The same pointwise formulas give the fluxes through walls with a prescribed
 # `Value` (see `wall_flux`). The products J ∂conjvar and Jq ∂chempot on faces, for the production σ, are formed in
 # the same pass.
-function fluxes!((Jcons_x_, Jcons_z_, Jq_x_, Jq_z_, Jcons∂conj_∂x_, Jcons∂conj_∂z_, Jq∂chem_∂x_, Jq∂chem_∂z_), model::AN2D, thermoflux, (; u, w),
-                 (consvar, q, conjvar, chempot, T, Cp, ∂consvar_∂q, Γ))
+function fluxes!((Jcons_x_, Jcons_z_, Jq_x_, Jq_z_, Jcons∂conj_∂x_, Jcons∂conj_∂z_, Jq∂chem_∂x_, Jq∂chem_∂z_), model::AN2D{F}, thermoflux, (; u, w),
+                 (consvar, q, conjvar, chempot, T, Cp, ∂consvar_∂q, Γ)) where {F}
     (; mgr, domain, space, inv_dx, inv_dz) = model
     (; ρ_R) = model.reference
     (; g) = space
 
-    Jcons_x = similar!(Jcons_x_, u)
-    Jcons_z = similar!(Jcons_z_, w)
-    Jq_x    = similar!(Jq_x_, u)
-    Jq_z    = similar!(Jq_z_, w)
-    Jcons∂conj_∂x = similar!(Jcons∂conj_∂x_, u)
-    Jcons∂conj_∂z = similar!(Jcons∂conj_∂z_, w)
-    Jq∂chem_∂x    = similar!(Jq∂chem_∂x_, u)
-    Jq∂chem_∂z    = similar!(Jq∂chem_∂z_, w)
+    Jcons_x = alloc!(Jcons_x_, F, domain, :Xz)
+    Jcons_z = alloc!(Jcons_z_, F, domain, :xZ)
+    Jq_x    = alloc!(Jq_x_, F, domain, :Xz)
+    Jq_z    = alloc!(Jq_z_, F, domain, :xZ)
+    Jcons∂conj_∂x = alloc!(Jcons∂conj_∂x_, F, domain, :Xz)
+    Jcons∂conj_∂z = alloc!(Jcons∂conj_∂z_, F, domain, :xZ)
+    Jq∂chem_∂x    = alloc!(Jq∂chem_∂x_, F, domain, :Xz)
+    Jq∂chem_∂z    = alloc!(Jq∂chem_∂z_, F, domain, :xZ)
 
     @with mgr, let (irange, jrange) = (Xrange(domain), axes(Jcons_x, 2))
         @vec for I in irange, j in jrange
@@ -555,9 +555,9 @@ end
 # conjvar_cell F. Use `HeatFlux` to prescribe the energy input itself.
 # production of the conservative variable, σ = (ρε - avg(Jcons ∂conjvar) - avg(Jq ∂chempot)) / conjvar, from the face
 # products formed by `fluxes!` (zero on wall faces)
-function entropy_production!(σ_cons_, model, thermoflux::ThermoFluxConsistent, (conjvar, Jcons∂conj_∂x, Jcons∂conj_∂z, Jq∂chem_∂x, Jq∂chem_∂z, ρε))
+function entropy_production!(σ_cons_, model::AN2D{F}, thermoflux::ThermoFluxConsistent, (conjvar, Jcons∂conj_∂x, Jcons∂conj_∂z, Jq∂chem_∂x, Jq∂chem_∂z, ρε)) where {F}
     (; mgr, domain) = model
-    σ_cons = similar!(σ_cons_, conjvar)
+    σ_cons = alloc!(σ_cons_, F, domain, :xz)
     @with mgr, let (irange, jrange) = (xrange(domain), zrange(domain))
         @vec for i in irange, j in jrange
             σ_cons[i, j] = inv(conjvar[i, j]) * ( ρε[i, j] - avg_x(Jcons∂conj_∂x, i, j) - avg_z(Jcons∂conj_∂z, i, j) - avg_x(Jq∂chem_∂x, i, j) - avg_z(Jq∂chem_∂z, i, j) )
@@ -567,16 +567,16 @@ function entropy_production!(σ_cons_, model, thermoflux::ThermoFluxConsistent, 
     return σ_cons
 end
 # downgradient scheme: no source of the conservative variable (neither viscous nor diffusive heating)
-entropy_production!(σ_cons_, model, thermoflux::ThermoFluxDowngradient, (conjvar, _...)) = fill!(similar!(σ_cons_, conjvar), 0)
+entropy_production!(σ_cons_, model::AN2D{F}, thermoflux::ThermoFluxDowngradient, (conjvar, _...)) where {F} = fill!(alloc!(σ_cons_, F, model.domain, :xz), 0)
 
 ## MOMENTUM
 
-function velocity_tendencies!((dU_, dW_), model::AN2D, (; u, w), (B_x, B_z, ∂K_x, ∂K_z, ωw, ωu, F_x, F_z))
+function velocity_tendencies!((dU_, dW_), model::AN2D{F}, (; u, w), (B_x, B_z, ∂K_x, ∂K_z, ωw, ωu, F_x, F_z)) where {F}
     (; mgr, domain) = model
     (; ρ_R) = model.reference
 
-    dU = similar!(dU_, u)
-    dW = similar!(dW_, w)
+    dU = alloc!(dU_, F, domain, :Xz)
+    dW = alloc!(dW_, F, domain, :xZ)
 
     @with mgr, let (irange, jrange) = (Xrange(domain), zrange(domain))
         @vec for I in irange, j in jrange
@@ -596,10 +596,10 @@ end
 
 ## UPDATE DSTATE
 
-function dm!(dm_, model::AN2D, (; m), (mu, mw, Jcons_x, Jcons_z, Jq_x, Jq_z, σ_cons))
+function dm!(dm_, model::AN2D{F}, (; m), (mu, mw, Jcons_x, Jcons_z, Jq_x, Jq_z, σ_cons)) where {F}
     (; mgr, domain, inv_dx, inv_dz) = model
     
-    dm = similar!(dm_, m)
+    dm = alloc!(dm_, F, domain, :xz, size(m, 3))
     
     # create views of three dimensional arrays
     dm1 = @view dm[:, :, 1]
@@ -619,12 +619,12 @@ function dm!(dm_, model::AN2D, (; m), (mu, mw, Jcons_x, Jcons_z, Jq_x, Jq_z, σ_
 end
 
 # projected velocity tendencies, (du, dw) = (dU, dW) - ∇φ, with φ from the Poisson solver (∇·(ρ_R ∂ₜu) = 0)
-function project_velocity!((du_, dw_), model::AN2D, (; u, w), (dU, dW, φ))
+function project_velocity!((du_, dw_), model::AN2D{F}, (; u, w), (dU, dW, φ)) where {F}
     (; mgr, domain, inv_dx, inv_dz) = model
 
     # initialise arrays
-    du = similar!(du_, u)
-    dw = similar!(dw_, w)
+    du = alloc!(du_, F, domain, :Xz)
+    dw = alloc!(dw_, F, domain, :xZ)
 
     @with mgr, let (irange, jrange) = (Xrange(domain), zrange(domain))
         @vec for I in irange, j in jrange

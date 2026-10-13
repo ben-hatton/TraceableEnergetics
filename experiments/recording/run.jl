@@ -23,7 +23,7 @@ T0, q0, ρ0 = 280.0, 0.035, 1000.0
 fluid = NonlinearBinaryFluid(:potential_temperature, (; p0 = 1e5, T0, q0, Cp0 = 4000.0, v0 = 1 / ρ0, α_T = 2e-4,
     α_q = 0.8, α_p = 1e-6, M_s = 3.14038218e-2, R = 8.31446261815324, α_TT = 1e-5, γ = 1e-7))
 
-mgr    = tSIMD()
+mgr    = SIMD()      # vectorised loops; tSIMD() (multi-threaded) pays off only on larger grids
 domain = Box2D(Mx = 64, Mz = 32, Hx = 1, Hz = 1, boundary = (Periodic, Bounded))
 closed = Wall(tangential = FreeSlip(), tracers = (Flux(0.0), Flux(0.0)))
 
@@ -63,7 +63,7 @@ outputs = Outputs(
 ##### Run
 #####
 
-params = (; Nslice = 40, slice_size = 0.5, dt_max = 0.1, cfl = 0.5)
+params = (; Nslice = 40, slice_size = 0.5, dt_max = 0.1, cfl = 0.9)
 CFAnelastics.loop(an, state, CFTimeSchemes.RungeKutta4(an), params; outputs)
 
 #####

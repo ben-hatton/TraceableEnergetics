@@ -8,7 +8,7 @@ using CFBoxes: foreach_dim, pick, slice, across
 using CFDiffusionSchemes
 using CFTimeSchemes: CFTimeSchemes
 using ManagedLoops: @vec, @with
-using MutatingOrNot: Void, void, similar!
+using MutatingOrNot: void
 using CookBooks: CookBooks, open, close, CookBook
 
 

@@ -45,7 +45,7 @@ thermoflux_scheme  = ThermoFluxConsistent(k_T = 1e-4, k_q = 1e-5)           # th
 ##### Numerical choices
 #####
 
-mgr    = tSIMD()                                                         # multi-threaded, vectorised loops
+mgr    = SIMD()                     # vectorised loops; tSIMD() (multi-threaded) pays off only on larger grids
 domain = Box2D(Mx = 64, Mz = 32, Hx = 1, Hz = 1, boundary = (Periodic, Bounded))
 advection_scheme = AdvEnergyCons()
 
@@ -79,9 +79,9 @@ fields = kelvin_helmholtz(an; θ₀ = T0, Δθ = 0.1, q₀ = q0, Δu, ρ₀ = ρ
 #####
 
 # the diagnostic shown (any diagnostic of both models, see `diagnostic_info(an)`), and the time slices (one frame each)
-# and step limits; FC2D resolves sound waves, so its run takes several minutes
+# and step limits (cfl: fraction of the stability limit of the time scheme); FC2D resolves sound waves, so its run takes several minutes
 diagnostic = :conservative_variable
-params = (; Nslice = 120, slice_size = 0.25, dt_max = 0.05, cfl = 0.5)
+params = (; Nslice = 120, slice_size = 0.25, dt_max = 0.05, cfl = 0.9)
 
 # initial states; FC2D also needs the pressure at the top, to build its balanced initial density
 states = (an = initialize(an, fields), fc = initialize(fc, fields; ptop = 1e5))

@@ -50,19 +50,19 @@ function energetics_tendencies!(energetics_scratch, model::AN2D, state, dynamics
     return energetics_scratch
 end
 
-function energies!((ke, pe, te_), (; m, u, w), model)
+function energies!((ke, pe, te_), (; m, u, w), model::AN2D{F}) where {F}
     ke = kinetic_energy!(ke, (; m, u, w), model)
     pe = potential_energy!(pe, (; m), model)
-    te = similar!(te_, m, size(m)[1:2]...)
+    te = alloc!(te_, F, model.domain, :xz)
     te = @. te = ke + pe
     periodize!(model, te)
     return ke, pe, te
 end
 
-function Jcons!((Jcons_x_, Jcons_z_), (; m), model, dynamics_scratch)
+function Jcons!((Jcons_x_, Jcons_z_), (; m), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, domain) = model
-    Jcons_x = similar!(Jcons_x_, m, size(m)[1:2]...)
-    Jcons_z = similar!(Jcons_z_, m, size(m)[1:2]...)
+    Jcons_x = alloc!(Jcons_x_, F, domain, :xz)
+    Jcons_z = alloc!(Jcons_z_, F, domain, :xz)
     @with mgr, let (irange, jrange) = (xrange(domain), axes(Jcons_x, 2))
         @vec for i in irange, j in jrange
             Jcons_x[i, j] = avg_x(dynamics_scratch.irreversible.Jcons_x, i, j)
@@ -76,14 +76,14 @@ function Jcons!((Jcons_x_, Jcons_z_), (; m), model, dynamics_scratch)
     return Jcons_z, Jcons_x
 end
 
-function bq_energies!((gpe_, ie_, gpe_bz_), (; m, u, w), model, pe, dynamics_scratch)
+function bq_energies!((gpe_, ie_, gpe_bz_), (; m, u, w), model::AN2D{F}, pe, dynamics_scratch) where {F}
     (; mgr, reference, fluid, space) = model
     (; p_R, ρ_R) = reference
     (; g) = space
 
-    gpe = similar!(gpe_, m, size(m)[1:2]...)
-    ie = similar!(ie_, m, size(m)[1:2]...)
-    gpe_bz = similar!(gpe_bz_, m, size(m)[1:2]...)
+    gpe = alloc!(gpe_, F, model.domain, :xz)
+    ie = alloc!(ie_, F, model.domain, :xz)
+    gpe_bz = alloc!(gpe_bz_, F, model.domain, :xz)
     @with mgr, let (irange, jrange) = (axes(pe, 1), axes(pe, 2))
         @vec for i in irange, j in jrange
             θ = fluid(:p, :consvar, :q).potential_temperature(p_R[j], dynamics_scratch.thermo.consvar[i, j], dynamics_scratch.thermo.q[i, j])
@@ -107,10 +107,10 @@ function bq_energies!((gpe_, ie_, gpe_bz_), (; m, u, w), model, pe, dynamics_scr
 end
 
 # kinetic energy tendency: KE =  ρ_R .(⟨u²⟩ᵢ + ⟨w²⟩ⱼ)/2
-function kinetic_energy!(ke_, (; m, u, w), model)
+function kinetic_energy!(ke_, (; m, u, w), model::AN2D{F}) where {F}
     (; mgr, domain, reference) = model
     (; ρ_R) = reference
-    ke = similar!(ke_, m, size(m)[1:2]...)
+    ke = alloc!(ke_, F, domain, :xz)
     @with mgr, let (irange, jrange) = (xrange(domain), zrange(domain))
         @vec for i in irange, j in jrange
             ke[i, j] = 0.5 * ρ_R[j] * (avg_x(abs2, u, i, j) + avg_z(abs2, w, i, j))
@@ -121,10 +121,10 @@ function kinetic_energy!(ke_, (; m, u, w), model)
 end
 
 # potential energy tendency: PE = ρ_R .[ h(p_R, s, q) + Φ - p_R.v_R ]
-function potential_energy!(pe_, (; m), model)
+function potential_energy!(pe_, (; m), model::AN2D{F}) where {F}
     (; mgr, reference, fluid) = model
     (; p_R, ρ_R) = reference
-    pe = similar!(pe_, m, size(m)[1:2]...)
+    pe = alloc!(pe_, F, model.domain, :xz)
     @with mgr, let (irange, jrange) = (axes(pe, 1), axes(pe, 2))
         @vec for i in irange, j in jrange
             s = m[i, j , 1] / ρ_R[j]
@@ -137,12 +137,12 @@ function potential_energy!(pe_, (; m), model)
 end
 
 # terms relating to consvar/composition fluxes: π∇.Js, μ∇.Jq, Js.∇π, Jq.∇μ, ∇.(πJs), ∇.(μJq)
-function irr_flux!((conjdivJcons_, chemdivJq_, Jconsgradconj_, Jqgradchem_), (; m), model, dynamics_scratch)
+function irr_flux!((conjdivJcons_, chemdivJq_, Jconsgradconj_, Jqgradchem_), (; m), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, domain, inv_dx, inv_dz) = model
-    conjdivJcons    = similar!(conjdivJcons_, m, size(m)[1:2]...)
-    chemdivJq       = similar!(chemdivJq_, m, size(m)[1:2]...)
-    Jconsgradconj   = similar!(Jconsgradconj_, m, size(m)[1:2]...)
-    Jqgradchem      = similar!(Jqgradchem_, m, size(m)[1:2]...)
+    conjdivJcons    = alloc!(conjdivJcons_, F, domain, :xz)
+    chemdivJq       = alloc!(chemdivJq_, F, domain, :xz)
+    Jconsgradconj   = alloc!(Jconsgradconj_, F, domain, :xz)
+    Jqgradchem      = alloc!(Jqgradchem_, F, domain, :xz)
 
     (; Jcons_x, Jcons_z, Jq_x, Jq_z) = dynamics_scratch.irreversible
     (; Jcons∂conj_∂x, Jcons∂conj_∂z, Jq∂chem_∂x, Jq∂chem_∂z) = dynamics_scratch.irreversible
@@ -165,10 +165,10 @@ function irr_flux!((conjdivJcons_, chemdivJq_, Jconsgradconj_, Jqgradchem_), (; 
 end
 
 # pressure work tendency: p∇.u
-function pdivu!(pdivu_, (; m), model, dynamics_scratch)
+function pdivu!(pdivu_, (; m), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, reference, domain) = model
     (; ρ_R, p_R) = reference
-    pdivu = similar!(pdivu_, m, size(m)[1:2]...)
+    pdivu = alloc!(pdivu_, F, domain, :xz)
     @with mgr, let (irange, jrange) = (axes(pdivu, 1), axes(pdivu, 2))
         @vec for i in irange, j in jrange
             p = p_R[j] + ρ_R[j] * dynamics_scratch.momentum.φ[i, j]
@@ -180,11 +180,11 @@ function pdivu!(pdivu_, (; m), model, dynamics_scratch)
 end
 
 # buoyancy flux tendency: ρ_R . Σ_ϕ . u.∇Φ
-function buoy_flux_Σ_ϕ!(buoy_flux_Σ_ϕ_, (; m, w), model, dynamics_scratch)
+function buoy_flux_Σ_ϕ!(buoy_flux_Σ_ϕ_, (; m, w), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, reference, domain, fluid, space, inv_dz) = model
     (; ρ_R, p_R) = reference
     (; g ) = space
-    buoy_flux_Σ_ϕ = fill!(similar!(buoy_flux_Σ_ϕ_, m, size(m)[1:2]...), 0)    # interior cells only (∂ρ_R/∂z)
+    buoy_flux_Σ_ϕ = fill!(alloc!(buoy_flux_Σ_ϕ_, F, domain, :xz), 0)    # interior cells only (∂ρ_R/∂z)
     @with mgr, let (irange, jrange) = (axes(buoy_flux_Σ_ϕ, 1), zrange_interior(domain))
         @vec for i in irange, j in jrange
             s = m[i, j , 1] / ρ_R[j]
@@ -200,11 +200,11 @@ function buoy_flux_Σ_ϕ!(buoy_flux_Σ_ϕ_, (; m, w), model, dynamics_scratch)
 end
 
 # buoyancy flux tendency: ρ_R . B . u.∇Φ
-function buoy_flux_B!(buoy_flux_B_, (; m, w), model, dynamics_scratch)
+function buoy_flux_B!(buoy_flux_B_, (; m, w), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, reference, domain, fluid, space) = model
     (; ρ_R, p_R) = reference
     (; g ) = space
-    buoy_flux_B = similar!(buoy_flux_B_, m, size(m)[1:2]...)
+    buoy_flux_B = alloc!(buoy_flux_B_, F, domain, :xz)
     @with mgr, let (irange, jrange) = (axes(buoy_flux_B, 1), zrange(domain))
         @vec for i in irange, j in jrange
             s = m[i, j , 1] / ρ_R[j]
@@ -218,12 +218,12 @@ function buoy_flux_B!(buoy_flux_B_, (; m, w), model, dynamics_scratch)
 end
 
 # thermodynamic budget terms: ∇.(ρu), π∇.(ρsu), μ∇.(ρqu)
-function thermodynamic_budget_terms!((divru_, conjdivrsu_, chemdivrqu_), (; m, u, w), model, dynamics_scratch)
+function thermodynamic_budget_terms!((divru_, conjdivrsu_, chemdivrqu_), (; m, u, w), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, domain, reference, inv_dx, inv_dz) = model
     (; ρ_R) = reference
-    divru    = fill!(similar!(divru_, m, size(m)[1:2]...), 0)        # interior cells only (ρ_R on w-faces)
-    conjdivrsu  = similar!(conjdivrsu_, m, size(m)[1:2]...)
-    chemdivrqu  = similar!(chemdivrqu_, m, size(m)[1:2]...)
+    divru    = fill!(alloc!(divru_, F, domain, :xz), 0)        # interior cells only (ρ_R on w-faces)
+    conjdivrsu  = alloc!(conjdivrsu_, F, domain, :xz)
+    chemdivrqu  = alloc!(chemdivrqu_, F, domain, :xz)
 
     (; mu, mw) = dynamics_scratch.advection
 

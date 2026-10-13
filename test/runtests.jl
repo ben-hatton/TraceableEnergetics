@@ -39,7 +39,8 @@ const TESTS = @__DIR__
         fc = keys(CompressibleTests.CFCompressible.diagnostic_info(CompressibleTests.fc_model()))
         @test Set(setdiff(an, (:buoyancy, :kinematic_pressure_anomaly))) == Set(setdiff(fc, (:dρ,)))
     end
-    # for either model, every diagnostic without its halo matches the coordinates of its grid location
+    # for either model, every diagnostic without its halo matches the coordinates of its grid location, and every
+    # diagnostic is defined on its full array, halo included (no uninitialised memory)
     @testset "interior diagnostics, $M" for (M, T) in (("AN2D", AnelasticTests), ("FC2D", CompressibleTests))
         model = (M == "AN2D" ? T.an_model : T.fc_model)(boundary = (Bounded, Bounded), walls = T.forced_box)
         state = M == "AN2D" ? T.an_state(model) : T.fc_state(model)
@@ -48,6 +49,7 @@ const TESTS = @__DIR__
         for name in keys(diagnostic_info(model))
             x, z = diagnostic_coordinates(model, name)
             @test size(interior_diagnostic(session, name)) == (length(x), length(z))
+            @test all(isfinite, CookBooks.get(session, name))
         end
         close(session)
     end
