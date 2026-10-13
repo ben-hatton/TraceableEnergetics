@@ -1,63 +1,69 @@
 """
-    state = loop(model::AN2D, state0, time_scheme, params; write_func, write_obj = nothing, plot_func, plot_obj = nothing)
+    state = loop(model::AN2D, state0, time_scheme, params; outputs = nothing)
 Main time integration loop for the AN2D model; returns the final state.
 - `model`: AN2D model instance
 - `state0`: initial state (see `initialize`)
 - `time_scheme`: time integration scheme
 - `params`: (; Nslice, slice_size, dt_max, cfl)
-- `write_func`: function to write data at each time slice
-- `write_obj`: object to pass to write_func (e.g., data storage)
-- `plot_func`: function to plot data at each time slice
-- `plot_obj`: object to pass to plot_func (e.g., plot storage)
+- `outputs`: callable `outputs(model, state, dstate, scratch, book, t)`, called at t = 0 and at the end of each
+  time slice, with the diagnostics `book` and the time `t` [s] (e.g. to record diagnostics), then closed with
+  `close(outputs)` when the run ends, even on error; `nothing` records nothing
 """
-function loop(model::AN2D{F}, state0, time_scheme, params; write_func = write_func, write_obj = nothing, plot_func = plot_func, plot_obj = nothing) where {F}
+function loop(model::AN2D{F}, state0, time_scheme, params; outputs = nothing) where {F}
     (; Nslice, slice_size, dt_max, cfl) = params
 
     # copy the initial state
     state = deepcopy(state0)
 
-    # create dstate and scratch space
-    dstate, scratch = CFTimeSchemes.tendencies!(void, void, model::AN2D, state, nothing)
-
-    # diagnostics, built once: the book owns the output arrays of its computed diagnostics
-    book = diagnostics(model)
-    
     # initialise time
     t = zero(F)
 
-    # initialise solver
-    solver_scratch = CFTimeSchemes.scratch_space(time_scheme, state0, t)
-    solver = MutIVPSolver(dt_max, time_scheme, solver_scratch)
+    # create dstate and scratch space
+    dstate, scratch = CFTimeSchemes.tendencies!(void, void, model::AN2D, state, t)
 
-    # run loop
-    for t_iter = 1:Nslice
-        # determine dt from CFL condition
-        dt, Nperslice   = cfl_condition(model, state, cfl, slice_size, dt_max)
+    # diagnostics, built once: the book owns the output arrays of its computed diagnostics
+    book = diagnostics(model)
+
+    # the outputs are closed when the run ends, even on error
+    try
+        # record the initial state
+        record_outputs(outputs, model, state, dstate, scratch, book, t)
+
+        # initialise solver
+        solver_scratch = CFTimeSchemes.scratch_space(time_scheme, state0, t)
+        solver = MutIVPSolver(dt_max, time_scheme, solver_scratch)
+
+        # run loop
+        for t_iter = 1:Nslice
+            # determine dt from CFL condition
+            dt, Nperslice   = cfl_condition(model, state, cfl, slice_size, dt_max)
         
-        # update solver with new dt
-        solver.dt = dt
+            # update solver with new dt
+            solver.dt = dt
 
-        # advance state
-        state, t = advance!(state, solver, state, t, Nperslice)
+            # advance state
+            state, t = advance!(state, solver, state, t, Nperslice)
 
-        # compute dstate and scratch space at new time
-        dstate, scratch = CFTimeSchemes.tendencies!(dstate, scratch, model, state, t)
+            # compute dstate and scratch space at new time
+            dstate, scratch = CFTimeSchemes.tendencies!(dstate, scratch, model, state, t)
 
-        # write data
-        write_obj = write_func(model, state, dstate, scratch, book, write_obj, t_iter, params)
+            # record the state at the end of the slice
+            record_outputs(outputs, model, state, dstate, scratch, book, t)
 
-        # plot data
-        plot_obj = plot_func(model, state, dstate, scratch, book, plot_obj, t_iter, params)
-
-        # advance progress meter
-        progress(t_iter, slice_size, Nslice * slice_size)
+            # advance progress meter
+            progress(t_iter, slice_size, Nslice * slice_size)
+        end
+    finally
+        close_outputs(outputs)
     end
     return state
 end
 
-# empty write and plot functions
-function write_func(model, state, dstate, scratch, cookbook, write_obj, t_iter, params) end
-function plot_func(model, state, dstate, scratch, cookbook, plot_obj, t_iter, params) end
+# call and close the outputs, if any
+record_outputs(outputs, args...) = outputs(args...)
+record_outputs(::Nothing, args...) = nothing
+close_outputs(outputs) = close(outputs)
+close_outputs(::Nothing) = nothing
 
 """
     cfl_condition(model::AN2D, state, cfl, slice_size, dt_max)

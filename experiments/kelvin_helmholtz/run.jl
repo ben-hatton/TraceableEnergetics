@@ -86,12 +86,13 @@ params = (; Nslice = 120, slice_size = 0.25, dt_max = 0.05, cfl = 0.5)
 # initial states; FC2D also needs the pressure at the top, to build its balanced initial density
 states = (an = initialize(an, fields), fc = initialize(fc, fields; ptop = 1e5))
 
-# run each model, recording a frame of the diagnostic at each time slice
-an_video = DiagnosticVideo(an, states.an, diagnostic)
-CFAnelastics.loop(an, states.an, CFTimeSchemes.RungeKutta4(an), params; plot_func = record_frame!, plot_obj = an_video)
-fc_video = DiagnosticVideo(fc, states.fc, diagnostic)
-CFCompressible.loop(fc, states.fc, CFTimeSchemes.RungeKutta4(fc), params; plot_func = record_frame!, plot_obj = fc_video)
+# run each model, recording a frame of the diagnostic at t = 0 and at each time slice (see experiments/recording for
+# the other outputs: NetCDF and JLD2 data files)
+an_outputs = Outputs(DiagnosticVideo(an, diagnostic))
+CFAnelastics.loop(an, states.an, CFTimeSchemes.RungeKutta4(an), params; outputs = an_outputs)
+fc_outputs = Outputs(DiagnosticVideo(fc, diagnostic))
+CFCompressible.loop(fc, states.fc, CFTimeSchemes.RungeKutta4(fc), params; outputs = fc_outputs)
 
-# the two models side by side
-file = save(joinpath(mkpath(joinpath(@__DIR__, "output")), "kelvin_helmholtz.mp4"), an_video, fc_video)
+# the two models side by side (a single video saves itself, with `DiagnosticVideo(...; file)`; two runs are joined here)
+file = save(joinpath(mkpath(joinpath(@__DIR__, "output")), "kelvin_helmholtz.mp4"), an_outputs[1], fc_outputs[1])
 println("\nvideo saved to $file")

@@ -51,4 +51,24 @@ const TESTS = @__DIR__
         end
         close(session)
     end
+    # for either model, data files read back the full diagnostics, with halo, at each time, in either format, and
+    # videos hold their interior
+    @testset "outputs, $M" for (M, T) in (("AN2D", AnelasticTests), ("FC2D", CompressibleTests))
+        model = (M == "AN2D" ? T.an_model : T.fc_model)(boundary = (Bounded, Bounded), walls = T.forced_box)
+        state = M == "AN2D" ? T.an_state(model) : T.fc_state(model)
+        dstate, scratch = T.evaluate(M == "AN2D" ? T.an_tend! : T.fc_tend!, model, state)
+        names, book, dir = (:u, :w, :conservative_variable, :vorticity), diagnostics(model), mktempdir()
+        outputs = Outputs(DataFile(joinpath(dir, "out.nc"), model, names), DataFile(joinpath(dir, "out.jld2"), model, names),
+                          DiagnosticVideo(model, :vorticity))
+        foreach(t -> outputs(model, state, dstate, scratch, book, t), (0.0, 0.5))
+        close(outputs)
+        session = open(book; state, dstate, scratch, model)
+        for path in readdir(dir; join = true), name in names
+            field, t = read_diagnostic(path, name)
+            @test t == [0.0, 0.5]
+            @test field[:, :, 1] == field[:, :, 2] == CookBooks.get(session, name)
+        end
+        @test outputs[3].frames == [interior_diagnostic(session, :vorticity), interior_diagnostic(session, :vorticity)]
+        close(session)
+    end
 end
