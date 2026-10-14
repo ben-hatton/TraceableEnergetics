@@ -27,7 +27,7 @@ mgr    = SIMD()      # vectorised loops; tSIMD() (multi-threaded) pays off only 
 domain = Box2D(Mx = 64, Mz = 32, Hx = 1, Hz = 1, boundary = (Periodic, Bounded))
 closed = Wall(tangential = FreeSlip(), tracers = (Flux(0.0), Flux(0.0)))
 
-an = AN2D((; mgr, domain, space, fluid, advection_scheme = AdvEnergyCons(), buoyancy_scheme = BuoyThermo(),
+an = AN2D((; mgr, domain, space, fluid, vortex_scheme = VortexEnergyCons(), buoyancy_scheme = BuoyThermo(),
     thermoflux_scheme = ThermoFluxConsistent(k_T = 1e-4, k_q = 1e-5),
     viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3, bulk_visc = 0.0),
     anelastic_reference = AnelasticReference(domain, space, ρ0; ptop = 1e5),

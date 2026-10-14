@@ -8,12 +8,12 @@ using CFTimeSchemes: tendencies!
 # reference density increasing with depth Lz - z
 an_density(z) = ρ0 * (1 + 0.1 * (Lz - z) / Lz)
 
-function an_model(; Mx = 32, Mz = 16, mgr = mgr, buoyancy_scheme = BuoyThermo(), advection_scheme = AdvEnergyCons(),
+function an_model(; Mx = 32, Mz = 16, mgr = mgr, buoyancy_scheme = BuoyThermo(), vortex_scheme = VortexEnergyCons(),
                    thermoflux_scheme = thermoflux, boundary = (Periodic, Bounded), walls = (; bottom = closed_wall(), top = closed_wall()))
     domain = test_box(Mx, Mz; boundary)
     anelastic_reference = AnelasticReference(domain, space, an_density; ptop = 1e5)
     boundary_conditions = BoxBoundaryConditions(domain; walls...)
-    return AN2D((; mgr, domain, space, fluid, advection_scheme, buoyancy_scheme, thermoflux_scheme,
+    return AN2D((; mgr, domain, space, fluid, vortex_scheme, buoyancy_scheme, thermoflux_scheme,
         viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3, bulk_visc = 0.0), anelastic_reference, boundary_conditions))
 end
 
@@ -130,9 +130,9 @@ end
 
     @testset "schemes" begin
         # the other advection and heat flux schemes, together (independent code paths): same properties, except
-        # energy conservation, which they don't have by design (AdvEnstrophyCons conserves enstrophy; ThermoFluxDowngradient
+        # energy conservation, which they don't have by design (VortexEnstrophyCons conserves enstrophy; ThermoFluxDowngradient
         # has no heating, σ = 0)
-        variant = an_model(mgr = VectorizedCPU(), advection_scheme = AdvEnstrophyCons(), thermoflux_scheme = ThermoFluxDowngradient(k_T = 1e-4, k_q = 1e-5))
+        variant = an_model(mgr = VectorizedCPU(), vortex_scheme = VortexEnstrophyCons(), thermoflux_scheme = ThermoFluxDowngradient(k_T = 1e-4, k_q = 1e-5))
         test_memory_safety(an_tend!, variant, active; reuse = false)
         test_symmetries(an_tend!, variant, active)
         test_walls(an_tend!, variant, active)

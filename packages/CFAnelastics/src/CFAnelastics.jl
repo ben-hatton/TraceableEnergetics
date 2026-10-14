@@ -4,7 +4,7 @@ module CFAnelastics
 # ClimFlows modules
 using CFPlanets: Tank2D
 using CFBoxes
-using CFBoxes: foreach_dim, pick, slice, across
+using CFBoxes: slice, across
 using CFDiffusionSchemes
 using CFTimeSchemes: CFTimeSchemes
 using ManagedLoops: @vec, @with
@@ -14,7 +14,7 @@ using CookBooks: CookBooks, open, close, CookBook
 
 # Exports
 export AnelasticReference
-export PoissonSolver, project!
+export PoissonSolver, pressure!
 export AN2D
 export BuoyancyScheme, BuoyDyn, BuoyDynNew, BuoyDynOld, BuoyThermo
 
@@ -23,14 +23,24 @@ include("buoyancy.jl")
 include("poisson.jl")
 
 ## MODEL
-struct AN2D{F, Vec, Manager, Domain<:Box2D, Boundary<:BoxBoundaryConditions, Fluid, Advection<:AdvectionScheme,
+
+"""
+    model = AN2D((; mgr, domain, space, fluid, vortex_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme,
+                    anelastic_reference, boundary_conditions[, spatial_scheme]))
+
+Anelastic binary fluid in a 2D box (x, z): prognostic m = ρ_R (consvar, q) at cell centres and the velocity (u, w)
+on faces, with ∇·(ρ_R u) = 0. `spatial_scheme` (default `Centred2()`) sets the averages and differences of the
+C-grid, `vortex_scheme` the vortex force, `buoyancy_scheme` the momentum forcing (see `BuoyancyScheme`).
+"""
+struct AN2D{F, Vec, Manager, Domain<:Box2D, Boundary<:BoxBoundaryConditions, Fluid, Spatial<:SpatialScheme, Vortex<:VortexScheme,
             Buoyancy<:BuoyancyScheme, ThermoFlux<:ThermoFluxScheme{F}, Poisson<:PoissonSolver}
     mgr::Manager
     domain::Domain
     space::Tank2D{F}
     boundary::Boundary
     fluid::Fluid
-    advection::Advection
+    spatial_scheme::Spatial
+    vortex_scheme::Vortex
     buoyancy::Buoyancy
     thermoflux::ThermoFlux
     viscosity::ViscosityScheme{F}
@@ -41,13 +51,15 @@ struct AN2D{F, Vec, Manager, Domain<:Box2D, Boundary<:BoxBoundaryConditions, Flu
     inv_dx::F
     inv_dz::F
 end
-function AN2D((; mgr, domain, space, fluid, advection_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme, anelastic_reference, boundary_conditions))
+function AN2D(params)
+    (; mgr, domain, space, fluid, vortex_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme, anelastic_reference, boundary_conditions) = params
+    spatial_scheme = get(params, :spatial_scheme, Centred2())
     Mx, Mz = dims(domain)
     dx, dz = space.Lx / Mx, space.Lz / Mz
     check_tracers(boundary_conditions, 2)       # tracers (consvar, q)
     boundary = discretize(boundary_conditions, domain, (dx, dz))
     poisson = PoissonSolver(domain, (dx, dz), anelastic_reference.ρ_R)
-    return AN2D(mgr, domain, space, boundary, fluid, advection_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme,
+    return AN2D(mgr, domain, space, boundary, fluid, spatial_scheme, vortex_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme,
                 anelastic_reference, poisson, dx, dz, 1/dx, 1/dz)
 end
 

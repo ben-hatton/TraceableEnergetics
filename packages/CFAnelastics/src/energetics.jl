@@ -15,17 +15,18 @@ function energetics_tendencies!(energetics_scratch, model::AN2D, state, dynamics
     (; viscous_diss) = energetics_scratch.irreversible
     viscous_diss = @. viscous_diss = dynamics_scratch.irreversible.ρε
 
-    # irreversible entropy production: πσ = ρε - Js.∇π - Jq.∇μ
+    # irreversible entropy production: πσ = ρε - consflux·∇π - qflux·∇μ
     (; entropy_prod) = energetics_scratch.irreversible
     entropy_prod = @. entropy_prod = dynamics_scratch.thermo.conjvar * dynamics_scratch.irreversible.σ_cons
     
     # consvar fluxes averaged onto cell centres
-    (; Jcons_x, Jcons_z) = energetics_scratch.irreversible
-    Jcons_x, Jcons_z = Jcons!((Jcons_x, Jcons_z), state, model, dynamics_scratch)
+    (; consflux_x, consflux_z) = energetics_scratch.irreversible
+    consflux_x, consflux_z = consflux!((consflux_x, consflux_z), state, model, dynamics_scratch)
 
-    # terms relating to consvar/composition fluxes: π∇.Js, μ∇.Jq, Js.∇π, Jq.∇μ, [∇.(πJs), ∇.(μJq) not included]
-    (; conjdivJcons, chemdivJq, Jconsgradconj, Jqgradchem) = energetics_scratch.irreversible
-    conjdivJcons, chemdivJq, Jconsgradconj, Jqgradchem = irr_flux!((conjdivJcons, chemdivJq, Jconsgradconj, Jqgradchem), state, model, dynamics_scratch)
+    # terms relating to consvar/composition fluxes: π∇·consflux, μ∇·qflux, consflux·∇π, qflux·∇μ
+    (; conjdivconsflux, chemdivqflux, consfluxgradconj, qfluxgradchem, consfluxgradconj_x, consfluxgradconj_z, qfluxgradchem_x, qfluxgradchem_z) = energetics_scratch.irreversible
+    conjdivconsflux, chemdivqflux, consfluxgradconj, qfluxgradchem, consfluxgradconj_x, consfluxgradconj_z, qfluxgradchem_x, qfluxgradchem_z =
+        irr_flux!((conjdivconsflux, chemdivqflux, consfluxgradconj, qfluxgradchem, consfluxgradconj_x, consfluxgradconj_z, qfluxgradchem_x, qfluxgradchem_z), state, model, dynamics_scratch)
 
     # pressure work: p∇.u
     (; pdivu) = energetics_scratch.dynamic
@@ -43,7 +44,8 @@ function energetics_tendencies!(energetics_scratch, model::AN2D, state, dynamics
     energetics_scratch = (;
         energies = (; ke, pe, te),
         bq_energies = (; gpe, ie, gpe_bz),
-        irreversible = (; Jcons_x, Jcons_z, viscous_diss, entropy_prod, conjdivJcons, chemdivJq, Jconsgradconj, Jqgradchem),
+        irreversible = (; consflux_x, consflux_z, viscous_diss, entropy_prod, conjdivconsflux, chemdivqflux, consfluxgradconj, qfluxgradchem,
+                        consfluxgradconj_x, consfluxgradconj_z, qfluxgradchem_x, qfluxgradchem_z),
         dynamic = (; pdivu, buoy_flux_Σ_ϕ, buoy_flux_B),
         thermodynamic = (; divru, conjdivrsu, chemdivrqu)
     )
@@ -59,21 +61,23 @@ function energies!((ke, pe, te_), (; m, u, w), model::AN2D{F}) where {F}
     return ke, pe, te
 end
 
-function Jcons!((Jcons_x_, Jcons_z_), (; m), model::AN2D{F}, dynamics_scratch) where {F}
+# consvar fluxes averaged to the cells
+function consflux!((consflux_x_, consflux_z_), (; m), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, domain) = model
-    Jcons_x = alloc!(Jcons_x_, F, domain, :xz)
-    Jcons_z = alloc!(Jcons_z_, F, domain, :xz)
-    @with mgr, let (irange, jrange) = (xrange(domain), axes(Jcons_x, 2))
+    (; avg_x, avg_z) = operators(model.spatial_scheme)
+    consflux_x = alloc!(consflux_x_, F, domain, :xz)
+    consflux_z = alloc!(consflux_z_, F, domain, :xz)
+    @with mgr, let (irange, jrange) = (xrange(domain), axes(consflux_x, 2))
         @vec for i in irange, j in jrange
-            Jcons_x[i, j] = avg_x(dynamics_scratch.irreversible.Jcons_x, i, j)
+            consflux_x[i, j] = avg_x(dynamics_scratch.irreversible.consflux_x, i, j)
         end
     end
-    @with mgr, let (irange, jrange) = (axes(Jcons_z, 1), zrange(domain))
+    @with mgr, let (irange, jrange) = (axes(consflux_z, 1), zrange(domain))
         @vec for i in irange, j in jrange
-            Jcons_z[i, j] = avg_z(dynamics_scratch.irreversible.Jcons_z, i, j)
+            consflux_z[i, j] = avg_z(dynamics_scratch.irreversible.consflux_z, i, j)
         end
     end
-    return Jcons_z, Jcons_x
+    return consflux_z, consflux_x
 end
 
 function bq_energies!((gpe_, ie_, gpe_bz_), (; m, u, w), model::AN2D{F}, pe, dynamics_scratch) where {F}
@@ -98,7 +102,7 @@ function bq_energies!((gpe_, ie_, gpe_bz_), (; m, u, w), model::AN2D{F}, pe, dyn
             # ρ_R[j] * ( v(θ, q) * (p_R - p0) + Φij(model, i, j) ) + g * ρ0 * z 
 
             # gpe_bz = gz - bz
-            b = buoyancy(model, model.buoyancy, dynamics_scratch.thermo.consvar, dynamics_scratch.thermo.q, i, j)
+            b = buoyancy(model.buoyancy, g, ρ_R[j], fluid(:p, :consvar, :q).specific_volume(p_R[j], dynamics_scratch.thermo.consvar[i, j], dynamics_scratch.thermo.q[i, j]))
             gpe_bz[i, j] = ρ_R[j] * (g - b) * Φij(model, i, j) / g
         end
     end
@@ -136,32 +140,48 @@ function potential_energy!(pe_, (; m), model::AN2D{F}) where {F}
     return pe
 end
 
-# terms relating to consvar/composition fluxes: π∇.Js, μ∇.Jq, Js.∇π, Jq.∇μ, ∇.(πJs), ∇.(μJq)
-function irr_flux!((conjdivJcons_, chemdivJq_, Jconsgradconj_, Jqgradchem_), (; m), model::AN2D{F}, dynamics_scratch) where {F}
+# terms relating to consvar/composition fluxes at cells: π ∇·consflux, μ ∇·qflux, and consflux·∇π, qflux·∇μ averaged
+# from their face values (zero on wall faces: zero-gradient halo of conjvar, chempot)
+function irr_flux!((conjdivconsflux_, chemdivqflux_, consfluxgradconj_, qfluxgradchem_, consfluxgradconj_x_, consfluxgradconj_z_, qfluxgradchem_x_, qfluxgradchem_z_),
+                   (; m), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, domain, inv_dx, inv_dz) = model
-    conjdivJcons    = alloc!(conjdivJcons_, F, domain, :xz)
-    chemdivJq       = alloc!(chemdivJq_, F, domain, :xz)
-    Jconsgradconj   = alloc!(Jconsgradconj_, F, domain, :xz)
-    Jqgradchem      = alloc!(Jqgradchem_, F, domain, :xz)
+    (; avg_x, avg_z, dif_x, dif_z, dif_X, dif_Z) = operators(model.spatial_scheme)
+    conjdivconsflux     = alloc!(conjdivconsflux_, F, domain, :xz)
+    chemdivqflux        = alloc!(chemdivqflux_, F, domain, :xz)
+    consfluxgradconj    = alloc!(consfluxgradconj_, F, domain, :xz)
+    qfluxgradchem       = alloc!(qfluxgradchem_, F, domain, :xz)
+    consfluxgradconj_x  = alloc!(consfluxgradconj_x_, F, domain, :Xz)
+    consfluxgradconj_z  = alloc!(consfluxgradconj_z_, F, domain, :xZ)
+    qfluxgradchem_x     = alloc!(qfluxgradchem_x_, F, domain, :Xz)
+    qfluxgradchem_z     = alloc!(qfluxgradchem_z_, F, domain, :xZ)
 
-    (; Jcons_x, Jcons_z, Jq_x, Jq_z) = dynamics_scratch.irreversible
-    (; Jcons∂conj_∂x, Jcons∂conj_∂z, Jq∂chem_∂x, Jq∂chem_∂z) = dynamics_scratch.irreversible
+    (; consflux_x, consflux_z, qflux_x, qflux_z) = dynamics_scratch.irreversible
     (; conjvar, chempot) = dynamics_scratch.thermo
 
-    @with mgr, let (irange, jrange) = (xrange(domain), zrange(domain))
-        @vec for i in irange, j in jrange
-            # π∇.Js
-            conjdivJcons[i, j]   = conjvar[i, j] * ( dif_x(Jcons_x, i, j) * inv_dx + dif_z(Jcons_z, i, j) * inv_dz )
-            # μ∇.Jq
-            chemdivJq[i, j]      = chempot[i, j] * ( dif_x(Jq_x, i, j) * inv_dx + dif_z(Jq_z, i, j) * inv_dz )
-            # Js.∇π = Js_x*∂π/∂x + Js_z*∂π/∂z
-            Jconsgradconj[i, j]  = avg_x(Jcons∂conj_∂x, i, j) + avg_z(Jcons∂conj_∂z, i, j)
-            # Jq.∇μ
-            Jqgradchem[i, j]     = avg_x(Jq∂chem_∂x, i, j) + avg_z(Jq∂chem_∂z, i, j)
+    # faces: consflux ∂π and qflux ∂μ
+    @with mgr, let (irange, jrange) = (Xrange(domain), zrange(domain))
+        @vec for I in irange, j in jrange
+            consfluxgradconj_x[I, j] = inv_dx * consflux_x[I, j] * dif_X(conjvar, I, j)
+            qfluxgradchem_x[I, j]    = inv_dx * qflux_x[I, j] * dif_X(chempot, I, j)
         end
     end
-    periodize!(model, (conjdivJcons, chemdivJq, Jconsgradconj, Jqgradchem))
-    return conjdivJcons, chemdivJq, Jconsgradconj, Jqgradchem
+    @with mgr, let (irange, jrange) = (xrange(domain), Zrange(domain))
+        @vec for i in irange, J in jrange
+            consfluxgradconj_z[i, J] = inv_dz * consflux_z[i, J] * dif_Z(conjvar, i, J)
+            qfluxgradchem_z[i, J]    = inv_dz * qflux_z[i, J] * dif_Z(chempot, i, J)
+        end
+    end
+    # cells
+    @with mgr, let (irange, jrange) = (xrange_interior(domain), zrange_interior(domain))
+        @vec for i in irange, j in jrange
+            conjdivconsflux[i, j]  = conjvar[i, j] * ( dif_x(consflux_x, i, j) * inv_dx + dif_z(consflux_z, i, j) * inv_dz )
+            chemdivqflux[i, j]     = chempot[i, j] * ( dif_x(qflux_x, i, j) * inv_dx + dif_z(qflux_z, i, j) * inv_dz )
+            consfluxgradconj[i, j] = avg_x(consfluxgradconj_x, i, j) + avg_z(consfluxgradconj_z, i, j)
+            qfluxgradchem[i, j]    = avg_x(qfluxgradchem_x, i, j) + avg_z(qfluxgradchem_z, i, j)
+        end
+    end
+    periodize!(model, (conjdivconsflux, chemdivqflux, consfluxgradconj, qfluxgradchem))
+    return conjdivconsflux, chemdivqflux, consfluxgradconj, qfluxgradchem, consfluxgradconj_x, consfluxgradconj_z, qfluxgradchem_x, qfluxgradchem_z
 end
 
 # pressure work tendency: p∇.u
@@ -171,7 +191,7 @@ function pdivu!(pdivu_, (; m), model::AN2D{F}, dynamics_scratch) where {F}
     pdivu = alloc!(pdivu_, F, domain, :xz)
     @with mgr, let (irange, jrange) = (axes(pdivu, 1), axes(pdivu, 2))
         @vec for i in irange, j in jrange
-            p = p_R[j] + ρ_R[j] * dynamics_scratch.momentum.φ[i, j]
+            p = p_R[j] + ρ_R[j] * dynamics_scratch.φ[i, j]
             pdivu[i, j] = p * (dynamics_scratch.derivatives.∂u_x[i, j] + dynamics_scratch.derivatives.∂w_z[i, j])
         end
     end
@@ -189,7 +209,7 @@ function buoy_flux_Σ_ϕ!(buoy_flux_Σ_ϕ_, (; m, w), model::AN2D{F}, dynamics_s
         @vec for i in irange, j in jrange
             s = m[i, j , 1] / ρ_R[j]
             q = m[i, j , 2] / ρ_R[j]
-            δp = dynamics_scratch.momentum.φ[i, j] * ρ_R[j]
+            δp = dynamics_scratch.φ[i, j] * ρ_R[j]
             v = fluid(:p, :consvar, :q).specific_volume(p_R[j], s, q)
             ∂v_R∂Φ = - inv(ρ_R[j])^2 * inv_dz * (avg_Z(ρ_R, j+1) - avg_Z(ρ_R, j)) / g
             buoy_flux_Σ_ϕ[i, j] = ρ_R[j] * g * avg_z(w, i, j) * (2 - ρ_R[j] * v + δp * ∂v_R∂Φ)

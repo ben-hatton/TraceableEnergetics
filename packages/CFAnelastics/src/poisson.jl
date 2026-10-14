@@ -24,7 +24,7 @@ using FFTW: FFTW
 Poisson solver for the anelastic pressure on a `Box2D` or `Box3D`, with grid `spacing` (dx, dz) or (dx, dy, dz).
 The vertical direction must be bounded; horizontal directions may be periodic or bounded, following the box
 topology. `ρ_R` is the reference density at cell centres along the full z axis, halo included.
-Apply with `project!`.
+Apply with `pressure!`.
 """
 struct PoissonSolver{N, F, Domain, Columns, Forward, Backward}
     domain::Domain
@@ -91,13 +91,13 @@ horizontal_eigenvalue(::Periodic, m, M, Δ) = -(2 * sin(π * min(m, M - m) / M) 
 horizontal_eigenvalue(::Bounded, m, M, Δ) = -(2 * sin(π * m / (2M)) / Δ)^2
 
 """
-    project!(φ, solver::PoissonSolver, mgr, dU)
+    pressure!(φ, solver::PoissonSolver, mgr, dU)
 
 Solve for the modified pressure `φ` (cell centres, halo included) such that `dU - ∇φ` satisfies the discrete
 anelastic constraint, `dU = (dU, dW)` or `(dU, dV, dW)` being the momentum tendencies on faces. Also fills the
 halo of `φ`: periodic, or on walls such that ∂φ/∂n = dU·n on the wall face. Returns `φ`.
 """
-function project!(φ, solver::PoissonSolver{N}, mgr, dU::NTuple{N}) where N
+function pressure!(φ, solver::PoissonSolver{N}, mgr, dU::NTuple{N}) where N
     divergence!(solver, dU)
     solve!(solver, mgr)
     (; work, domain, scale) = solver
@@ -149,13 +149,18 @@ function solve!(solver::PoissonSolver, mgr)
     transform_levels!(forward, work, mgr)
     columns[1, 1] = 0       # pinned mean mode
     nmodes, Mz = size(columns)
+    # Thomas sweeps up and down in z, all modes at once (inner loop over the contiguous mode index)
     @with mgr, let modes = 1:nmodes
-        for mode in modes
+        @inbounds @simd for mode in modes
             columns[mode, 1] *= inv_pivot[mode, 1]
-            for j in 2:Mz
+        end
+        for j in 2:Mz
+            @inbounds @simd for mode in modes
                 columns[mode, j] = (columns[mode, j] - below[j] * columns[mode, j-1]) * inv_pivot[mode, j]
             end
-            for j in Mz-1:-1:1
+        end
+        for j in Mz-1:-1:1
+            @inbounds @simd for mode in modes
                 columns[mode, j] -= upper[mode, j] * columns[mode, j+1]
             end
         end

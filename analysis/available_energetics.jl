@@ -2,7 +2,7 @@
 # Load after the model packages; available_energetics.jl needs lorenz_reference_state.jl and energetics_io.jl.
 using NCDatasets
 using CFBoxes
-using CFAnelastics: AN2D, energetics_tendencies!, Φij
+using CFAnelastics: AN2D, energetics_tendencies!, Φij, buoyancy
 using CFTimeSchemes: CFTimeSchemes
 using ManagedLoops: @vec, @with
 using MutatingOrNot: Void, void, similar!
@@ -55,8 +55,8 @@ function ae_tendencies!(ae_scratch, model::AN2D, ref_state_type::BoussinesqPDFRe
     (; ρ_R) = reference
     rho0 = ρ_R[1]
 
-    # read buoyancy
-    b = dynamics_scratch.thermo.b
+    # compute buoyancy
+    b = ae_buoyancy!(ae_scratch.fields.b, dynamics_scratch.thermo, model, model.buoyancy)
 
     # compute reference state
     (; bsorted, edges, freqs, map, zeta, zeta_c, perm, iperm) = ae_scratch.reference_state
@@ -156,9 +156,10 @@ end
 
 function ae_buoyancy!(b_, (; consvar, q), model, buoyancy_scheme)
     b = similar!(b_, consvar)
-    @with mgr, let (irange, jrange) = (axes(b, 1), axes(b, 2))
+    @with model.mgr, let (irange, jrange) = (axes(b, 1), axes(b, 2))
         @vec for i in irange, j in jrange
-            b[i, j] = buoyancy(model, buoyancy_scheme, consvar, q, i, j)
+            v = model.fluid(:p, :consvar, :q).specific_volume(model.reference.p_R[j], consvar[i, j], q[i, j])
+            b[i, j] = buoyancy(buoyancy_scheme, model.space.g, model.reference.ρ_R[j], v)
         end
     end
     return b

@@ -1,6 +1,6 @@
 # Poisson solver for the anelastic pressure, in 2D and 3D, for every mix of periodic and bounded horizontal directions
 
-using CFAnelastics: PoissonSolver, project!
+using CFAnelastics: PoissonSolver, pressure!
 
 # box, spacing, reference density ρ_R(z) = 1 + z/2 at cell centres, and face arrays for the tendencies
 function poisson_setup(topology, M; L = map(_ -> 1.0, M))
@@ -65,7 +65,7 @@ const poisson_cases = (((Periodic, Bounded), (16, 8), true), ((Bounded, Bounded)
             for d in eachindex(topology)       # tendencies are periodic in periodic directions, as in the models
                 topology[d] === Periodic && foreach(a -> CFBoxes.periodize!((; domain = setup.domain), a), dU)
             end
-            project!(setup.φ, setup.solver, mgr, dU)
+            pressure!(setup.φ, setup.solver, mgr, dU)
             c = corrected(setup, dU)
             @test relative_divergence(setup, c) < 1e-12
             for d in eachindex(topology)
@@ -83,7 +83,7 @@ const poisson_cases = (((Periodic, Bounded), (16, 8), true), ((Bounded, Bounded)
             function error(m)
                 s = poisson_setup(topology, m)
                 g = ntuple(d -> [∂φ_exact(d, coords(s, d, Tuple(I))...) for I in CartesianIndices(s.faces[d])], length(m))
-                project!(s.φ, s.solver, mgr, g)
+                pressure!(s.φ, s.solver, mgr, g)
                 cells = CartesianIndices(map((k, h) -> h+1:h+k, m, halo_size(s.domain)))
                 diff = [s.φ[I] - φ_exact(coords(s, 0, Tuple(I))...) for I in cells]
                 return maximum(abs, diff .- sum(diff) / length(diff))
@@ -94,7 +94,7 @@ const poisson_cases = (((Periodic, Bounded), (16, 8), true), ((Bounded, Bounded)
             end
 
             # no allocations (single-threaded manager)
-            @test allocations(project!, setup.φ, setup.solver, VectorizedCPU(), dU) == 0
+            @test allocations(pressure!, setup.φ, setup.solver, VectorizedCPU(), dU) == 0
         end
     end
 end
