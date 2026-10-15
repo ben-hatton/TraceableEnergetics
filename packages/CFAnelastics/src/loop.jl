@@ -83,7 +83,8 @@ end
 
 Return an upper bound `ω` [s⁻¹] on the fastest discrete frequency of the state over the interior, the sum of:
 - advection, centred on the C-grid: max|u|/dx + max|w|/dz;
-- diffusion: 4 max(ν, k_T, k_q) (1/dx² + 1/dz²), with ν = (μ + μ_b) / min(ρ_R);
+- diffusion: 4 max(ν, k_T, k_q) (1/dx² + 1/dz²), with ν = (4μ/3) / min(ρ_R), the compressive modes being damped
+  by (4μ/3) ∇(∇·u);
 - internal gravity waves (ω = N |kₓ|/|k| ≤ N): max(N), see `max_buoyancy_frequency`.
 """
 function max_frequency(model::AN2D{F}, (; m, u, w)) where {F}
@@ -91,7 +92,7 @@ function max_frequency(model::AN2D{F}, (; m, u, w)) where {F}
     irange, jrange = interior_cells(domain, 1), interior_cells(domain, 2)
     inv_d2         = inv(dx^2) + inv(dz^2)
     advection      = maximum(abs, view(u, irange, jrange)) / dx + maximum(abs, view(w, irange, jrange)) / dz
-    ν              = (viscosity.dyn_visc + viscosity.bulk_visc) / minimum(view(reference.ρ_R, jrange))
+    ν              = (4 / 3) * viscosity.dyn_visc / minimum(view(reference.ρ_R, jrange))
     diffusion      = 4 * max(ν, thermoflux.k_T, thermoflux.k_q) * inv_d2
     return advection + diffusion + max_buoyancy_frequency(model, m) + floatmin(F)
 end

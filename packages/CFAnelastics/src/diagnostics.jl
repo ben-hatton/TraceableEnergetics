@@ -68,14 +68,14 @@ end
 """
     book = internal_diagnostics(model::AN2D)
 
-`CookBook` of intermediates of the AN2D tendencies, for debugging: the vorticity terms ωw, ωu of the advection, the
-advective fluxes of the tracers mu, mw (third index: tracer).
+`CookBook` of intermediates of the AN2D tendencies, for debugging: the vortex force ω×u = (vortex_x, vortex_z) of the
+advection, the advective fluxes of the tracers mu, mw (third index: tracer).
 """
 internal_diagnostics(::AN2D) = CookBook(;
-    ωw   = scratch -> scratch.advection.ωw,
-    ωu   = scratch -> scratch.advection.ωu,
-    mu   = scratch -> scratch.advection.mu,
-    mw   = scratch -> scratch.advection.mw,
+    vortex_x = scratch -> scratch.advection.vortex_x,
+    vortex_z = scratch -> scratch.advection.vortex_z,
+    mu       = scratch -> scratch.advection.mu,
+    mw       = scratch -> scratch.advection.mw,
 )
 
 """

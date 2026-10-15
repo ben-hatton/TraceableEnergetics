@@ -14,7 +14,7 @@ function an_model(; Mx = 32, Mz = 16, mgr = mgr, buoyancy_scheme = BuoyThermo(),
     anelastic_reference = AnelasticReference(domain, space, an_density; ptop = 1e5)
     boundary_conditions = BoxBoundaryConditions(domain; walls...)
     return AN2D((; mgr, domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme, buoyancy_scheme, thermoflux_scheme,
-        viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3, bulk_visc = 0.0), anelastic_reference, boundary_conditions))
+        viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3), anelastic_reference, boundary_conditions))
 end
 
 an_tend!(model, dstate, scratch, state) = tendencies!(dstate, scratch, model, state, 0.0)

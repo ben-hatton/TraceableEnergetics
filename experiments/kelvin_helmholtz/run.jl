@@ -38,7 +38,7 @@ fluid = NonlinearBinaryFluid(:potential_temperature, (;
 ))
 
 # irreversible processes
-viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3, bulk_visc = 0.0)    # dynamic and bulk viscosity [Pa s]
+viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3)    # dynamic viscosity [Pa s]
 thermoflux_scheme  = ThermoFluxConsistent(k_T = 1e-4, k_q = 1e-5)           # thermal and composition diffusivities [m² s⁻¹]
 
 #####

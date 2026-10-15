@@ -46,7 +46,6 @@ first, then record the submodule pointers in the parent repository.
   scratch; `tendencies!(dstate, scratch, model, state, t)` returning `(dstate, scratch)`.
 - Each kernel's comment states the continuous equation and its discrete form and staggering.
 - Every exported type and function gets a docstring with units and sign conventions.
-- Do not test fluid thermodynamics here; ClimFluids tests itself.
 
 ## WORKING WITH THE USER
 Check in with the user:

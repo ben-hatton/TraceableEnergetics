@@ -29,7 +29,7 @@ closed = Wall(tangential = FreeSlip(), tracers = (Flux(0.0), Flux(0.0)))
 
 an = AN2D((; mgr, domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme = VortexEnergyCons(), buoyancy_scheme = BuoyThermo(),
     thermoflux_scheme = ThermoFluxConsistent(k_T = 1e-4, k_q = 1e-5),
-    viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3, bulk_visc = 0.0),
+    viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3),
     anelastic_reference = AnelasticReference(domain, space, ρ0; ptop = 1e5),
     boundary_conditions = BoxBoundaryConditions(domain; bottom = closed, top = closed)))
 
