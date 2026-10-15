@@ -28,8 +28,8 @@ model = (mgr = plain(), domain = box, spatial_scheme = Centred2(), inv_dx = 1 / 
 (; ℑ, δ) = operators(model.spatial_scheme)
 X, Z, x, z = interior_faces(box, 1), interior_faces(box, 2), interior_cells(box, 1), interior_cells(box, 2)
 
-random(location) = (a = rand(size(alloc(Float64, box, location))...) .- 0.5; periodize!(model, (a,)); a)
-positive(location) = (a = 1 .+ rand(size(alloc(Float64, box, location))...); periodize!(model, (a,)); a)
+random(location) = (a = rand(size(alloc(Float64, nothing, box, location))...) .- 0.5; periodize!(model, (a,)); a)
+positive(location) = (a = 1 .+ rand(size(alloc(Float64, nothing, box, location))...); periodize!(model, (a,)); a)
 
 # vorticity, potential vorticity and the tendency of the vorticity at the vertices
 vorticity(u, w) = [inv(dz) * δ(u, (2,), (Face(),), I, J) - inv(dx) * δ(w, (1,), (Face(),), I, J) for I in X, J in Z]
@@ -48,7 +48,7 @@ function C2(scheme, ρ)
     # non-divergent mass flux from a vertex streamfunction ψ: U = δz ψ / Δz, W = -δx ψ / Δx
     ψ = random((Face(), Face()))
     ρᴵ, ρᴶ = CFBoxes.face_densities!((void, void), model, ρ)
-    u, w = alloc(Float64, box, (Face(), Cell())), alloc(Float64, box, (Cell(), Face()))
+    u, w = alloc(Float64, nothing, box, (Face(), Cell())), alloc(Float64, nothing, box, (Cell(), Face()))
     for I in X, j in z
         u[I, j] = inv(dz) * δ(ψ, (2,), (Cell(),), I, j) / ρᴵ[I, j]
     end
@@ -64,7 +64,7 @@ end
 function C3(scheme, (u, w), ρ)
     vortex_x, vortex_z, (ρᴵ, ρᴶ) = vortex_force!((void, void, void), model, scheme, (u, w), ρ)
     # ∂ₜρ = -(δx U / Δx + δz W / Δz) at the cells
-    dρ = alloc(Float64, box, (Cell(), Cell()))
+    dρ = alloc(Float64, nothing, box, (Cell(), Cell()))
     for i in x, j in z
         dρ[i, j] = -inv(dx) * δ((ρᴵ, u), (1,), (Cell(),), i, j) - inv(dz) * δ((ρᴶ, w), (2,), (Cell(),), i, j)
     end
@@ -76,7 +76,7 @@ end
 # -vortex - ∇K on the u- and w-faces, with K = ½ (ℑx u² + ℑz w²) at the cells
 function advection((u, w), ρ, scheme)
     vortex_x, vortex_z, _ = vortex_force!((void, void, void), model, scheme, (u, w), ρ)
-    K = alloc(Float64, box, (Cell(), Cell()))
+    K = alloc(Float64, nothing, box, (Cell(), Cell()))
     for i in x, j in z
         K[i, j] = 0.5 * (ℑ((u, u), (1,), (Cell(),), i, j) + ℑ((w, w), (2,), (Cell(),), i, j))
     end
@@ -89,7 +89,7 @@ end
 function C4(scheme, ρ; ū = 1.0, ε = 1e-3)
     # x-independent perturbation (u′(z), w′(z)) about (ū, 0); the advection is quadratic, so the centred difference is
     # its exact linearisation
-    u′, w′ = alloc(Float64, box, (Face(), Cell())), alloc(Float64, box, (Cell(), Face()))
+    u′, w′ = alloc(Float64, nothing, box, (Face(), Cell())), alloc(Float64, nothing, box, (Cell(), Face()))
     u′ .= rand(1, size(u′, 2)) .- 0.5
     w′ .= rand(1, size(w′, 2)) .- 0.5
     periodize!(model, (u′, w′))

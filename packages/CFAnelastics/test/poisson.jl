@@ -52,14 +52,15 @@ end
 allocations(f, args...) = (f(args...); @allocated f(args...))
 
 # (topology, grid, check second-order convergence)
-const poisson_cases = (((Periodic, Bounded), (16, 8), true), ((Bounded, Bounded), (12, 10), false),
+const poisson_cases = (((Periodic, Bounded), (16, 8), true), ((Periodic, Bounded), (15, 8), false), ((Bounded, Bounded), (12, 10), false),
                        ((Periodic, Periodic, Bounded), (8, 6, 5), false), ((Periodic, Bounded, Bounded), (8, 6, 5), false),
-                       ((Bounded, Bounded, Bounded), (6, 7, 5), true))
+                       ((Bounded, Periodic, Bounded), (6, 7, 5), false), ((Bounded, Bounded, Bounded), (6, 7, 5), true))
 
 @testset "Poisson solver" begin
     for (topology, M, convergence) in poisson_cases
         @testset "$(length(M))D $(nameof.(topology))" begin
-            # random tendencies: the corrected tendencies satisfy the constraint, with no flow through walls
+            # random tendencies: the corrected tendencies satisfy the constraint, with no flow through walls (pressure!
+            # zeros the wall faces of dU)
             setup = poisson_setup(topology, M)
             dU = map(a -> rand!(a) .- 0.5, setup.faces)
             for d in eachindex(topology)       # tendencies are periodic in periodic directions, as in the models

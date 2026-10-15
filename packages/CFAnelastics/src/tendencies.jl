@@ -5,7 +5,7 @@
 # `operators(model.spatial_scheme)`.
 
 function CFTimeSchemes.tendencies!(dstate, scratch, model::AN2D{F}, state, t) where {F}
-    (; mgr, domain, vortex_scheme, thermoflux, buoyancy_scheme, poisson, reference) = model
+    (; vortex_scheme, thermoflux, buoyancy_scheme, reference) = model
     (; ρ_R) = reference
     # fill the halo of the state (never its interior) from the boundary conditions
     state = state_bc!(model, state)
@@ -51,7 +51,7 @@ function CFTimeSchemes.tendencies!(dstate, scratch, model::AN2D{F}, state, t) wh
     du, dw = velocity_tendencies!((dstate.u, dstate.w), model, buoyancy_scheme, state, thermo, (K, vortex_x, vortex_z, F_x, F_z))
 
     ## PRESSURE; φ = (p - p_R) / ρ_R such that ∇·(ρ_R (du - ∇φ)) = 0, with no flow through walls
-    φ       = pressure!(alloc!(scratch.φ, F, domain, (Cell(), Cell())), poisson, mgr, (du, dw))
+    φ       = pressure!(scratch.φ, model, (du, dw))
     du, dw  = subtract_pressure_gradient!((du, dw), model, φ)
 
     ## TRACERS
@@ -80,15 +80,15 @@ function thermodynamics!((consvar_, q_, T_, conjvar_, chempot_, Cp_, ∂consvar_
     (; ρ_R, p_R) = reference
     (; g) = space
 
-    consvar     = alloc!(consvar_, F, domain, (Cell(), Cell()))
-    q           = alloc!(q_, F, domain, (Cell(), Cell()))
-    T           = alloc!(T_, F, domain, (Cell(), Cell()))
-    conjvar     = alloc!(conjvar_, F, domain, (Cell(), Cell()))
-    chempot     = alloc!(chempot_, F, domain, (Cell(), Cell()))
-    Cp          = alloc!(Cp_, F, domain, (Cell(), Cell()))
-    ∂consvar_∂q = alloc!(∂consvar_∂q_, F, domain, (Cell(), Cell()))
-    Γ           = alloc!(Γ_, F, domain, (Cell(), Cell()))
-    B           = alloc!(B_, F, domain, (Cell(), Cell()))
+    consvar     = alloc!(consvar_, F, mgr, domain, (Cell(), Cell()))
+    q           = alloc!(q_, F, mgr, domain, (Cell(), Cell()))
+    T           = alloc!(T_, F, mgr, domain, (Cell(), Cell()))
+    conjvar     = alloc!(conjvar_, F, mgr, domain, (Cell(), Cell()))
+    chempot     = alloc!(chempot_, F, mgr, domain, (Cell(), Cell()))
+    Cp          = alloc!(Cp_, F, mgr, domain, (Cell(), Cell()))
+    ∂consvar_∂q = alloc!(∂consvar_∂q_, F, mgr, domain, (Cell(), Cell()))
+    Γ           = alloc!(Γ_, F, mgr, domain, (Cell(), Cell()))
+    B           = alloc!(B_, F, mgr, domain, (Cell(), Cell()))
 
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
@@ -128,11 +128,11 @@ function kinematics!((∂u_x_, ∂w_z_, ∂u_z_, ∂w_x_, K_), model::AN2D{F}, (
     (; mgr, domain, inv_dx, inv_dz, spatial_scheme) = model
     (; ℑ, δ) = operators(spatial_scheme)
 
-    ∂u_x    = alloc!(∂u_x_, F, domain, (Cell(), Cell()))
-    ∂w_z    = alloc!(∂w_z_, F, domain, (Cell(), Cell()))
-    ∂u_z    = alloc!(∂u_z_, F, domain, (Face(), Face()))
-    ∂w_x    = alloc!(∂w_x_, F, domain, (Face(), Face()))
-    K       = alloc!(K_, F, domain, (Cell(), Cell()))
+    ∂u_x    = alloc!(∂u_x_, F, mgr, domain, (Cell(), Cell()))
+    ∂w_z    = alloc!(∂w_z_, F, mgr, domain, (Cell(), Cell()))
+    ∂u_z    = alloc!(∂u_z_, F, mgr, domain, (Face(), Face()))
+    ∂w_x    = alloc!(∂w_x_, F, mgr, domain, (Face(), Face()))
+    K       = alloc!(K_, F, mgr, domain, (Cell(), Cell()))
 
     @with mgr, let (irange, jrange) = (cells(domain, 1), cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
@@ -165,8 +165,8 @@ function advective_flux!((mu_, mw_), model::AN2D{F}, (; m, u, w)) where {F}
     (; mgr, domain, spatial_scheme) = model
     (; ℑ) = operators(spatial_scheme)
 
-    mu = alloc!(mu_, F, domain, (Face(), Cell()), 2)
-    mw = alloc!(mw_, F, domain, (Cell(), Face()), 2)
+    mu = alloc!(mu_, F, mgr, domain, (Face(), Cell()), 2)
+    mw = alloc!(mw_, F, mgr, domain, (Cell(), Face()), 2)
 
     m1, m2      = eachslice(m; dims = 3)
     mu1, mu2    = eachslice(mu; dims = 3)
@@ -205,12 +205,12 @@ function viscous_stress!((uτ_x_, uτ_z_, F_x_, F_z_, wτ_xz_, uτ_xz_), model::
     (; dyn_visc) = viscosity
     (; ℑ, δ) = operators(spatial_scheme)
 
-    uτ_x    = alloc!(uτ_x_, F, domain, (Face(), Cell()))
-    uτ_z    = alloc!(uτ_z_, F, domain, (Cell(), Face()))
-    F_x     = alloc!(F_x_, F, domain, (Face(), Cell()))
-    F_z     = alloc!(F_z_, F, domain, (Cell(), Face()))
-    wτ_xz   = alloc!(wτ_xz_, F, domain, (Face(), Face()))
-    uτ_xz   = alloc!(uτ_xz_, F, domain, (Face(), Face()))
+    uτ_x    = alloc!(uτ_x_, F, mgr, domain, (Face(), Cell()))
+    uτ_z    = alloc!(uτ_z_, F, mgr, domain, (Cell(), Face()))
+    F_x     = alloc!(F_x_, F, mgr, domain, (Face(), Cell()))
+    F_z     = alloc!(F_z_, F, mgr, domain, (Cell(), Face()))
+    wτ_xz   = alloc!(wτ_xz_, F, mgr, domain, (Face(), Face()))
+    uτ_xz   = alloc!(uτ_xz_, F, mgr, domain, (Face(), Face()))
 
     # vertices: the work of the shear stress, ℑX(w) τ_xz and ℑZ(u) τ_xz
     @with mgr, let (irange, jrange) = (faces(domain, 1), faces(domain, 2))
@@ -262,12 +262,12 @@ function fluxes!((consflux_x_, consflux_z_, qflux_x_, qflux_z_, diffusive_heatin
     (; consvar, q, conjvar, chempot, T, Cp, ∂consvar_∂q, Γ) = thermo
     (; ℑ, δ) = operators(spatial_scheme)
 
-    consflux_x          = alloc!(consflux_x_, F, domain, (Face(), Cell()))
-    consflux_z          = alloc!(consflux_z_, F, domain, (Cell(), Face()))
-    qflux_x             = alloc!(qflux_x_, F, domain, (Face(), Cell()))
-    qflux_z             = alloc!(qflux_z_, F, domain, (Cell(), Face()))
-    diffusive_heating_x = alloc!(diffusive_heating_x_, F, domain, (Face(), Cell()))
-    diffusive_heating_z = alloc!(diffusive_heating_z_, F, domain, (Cell(), Face()))
+    consflux_x          = alloc!(consflux_x_, F, mgr, domain, (Face(), Cell()))
+    consflux_z          = alloc!(consflux_z_, F, mgr, domain, (Cell(), Face()))
+    qflux_x             = alloc!(qflux_x_, F, mgr, domain, (Face(), Cell()))
+    qflux_z             = alloc!(qflux_z_, F, mgr, domain, (Cell(), Face()))
+    diffusive_heating_x = alloc!(diffusive_heating_x_, F, mgr, domain, (Face(), Cell()))
+    diffusive_heating_z = alloc!(diffusive_heating_z_, F, mgr, domain, (Cell(), Face()))
 
     @with mgr, let (irange, jrange) = (faces(domain, 1), axes(consflux_x, 2))
         @inbounds @vec for I in irange, j in jrange
@@ -380,8 +380,8 @@ function dissipative_heating!((ρε_, σ_cons_), model::AN2D{F}, ::ThermoFluxCon
     (; mgr, domain, inv_dx, inv_dz, spatial_scheme) = model
     (; ℑ, δ) = operators(spatial_scheme)
 
-    ρε      = alloc!(ρε_, F, domain, (Cell(), Cell()))
-    σ_cons  = alloc!(σ_cons_, F, domain, (Cell(), Cell()))
+    ρε      = alloc!(ρε_, F, mgr, domain, (Cell(), Cell()))
+    σ_cons  = alloc!(σ_cons_, F, mgr, domain, (Cell(), Cell()))
 
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
@@ -400,8 +400,8 @@ function dissipative_heating!((ρε_, σ_cons_), model::AN2D{F}, ::ThermoFluxDow
     (; mgr, domain, inv_dx, inv_dz, spatial_scheme) = model
     (; ℑ, δ) = operators(spatial_scheme)
 
-    ρε      = alloc!(ρε_, F, domain, (Cell(), Cell()))
-    σ_cons  = fill!(alloc!(σ_cons_, F, domain, (Cell(), Cell())), 0)
+    ρε      = alloc!(ρε_, F, mgr, domain, (Cell(), Cell()))
+    σ_cons  = fill!(alloc!(σ_cons_, F, mgr, domain, (Cell(), Cell())), 0)
 
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
@@ -424,8 +424,8 @@ function velocity_tendencies!((du_, dw_), model::AN2D{F}, ::BuoyThermo, (; m), (
     (; g) = space
     (; ℑ, δ) = operators(spatial_scheme)
 
-    du = alloc!(du_, F, domain, (Face(), Cell()))
-    dw = alloc!(dw_, F, domain, (Cell(), Face()))
+    du = alloc!(du_, F, mgr, domain, (Face(), Cell()))
+    dw = alloc!(dw_, F, mgr, domain, (Cell(), Face()))
 
     m1, m2 = eachslice(m; dims = 3)
 
@@ -454,8 +454,8 @@ function velocity_tendencies!((du_, dw_), model::AN2D{F}, ::BuoyDyn, _, (; B), (
     (; ρ_R) = reference
     (; ℑ, δ) = operators(spatial_scheme)
 
-    du = alloc!(du_, F, domain, (Face(), Cell()))
-    dw = alloc!(dw_, F, domain, (Cell(), Face()))
+    du = alloc!(du_, F, mgr, domain, (Face(), Cell()))
+    dw = alloc!(dw_, F, mgr, domain, (Cell(), Face()))
 
     @with mgr, let (irange, jrange) = (faces(domain, 1), cells(domain, 2))
         @inbounds @vec for I in irange, j in jrange
@@ -471,6 +471,16 @@ function velocity_tendencies!((du_, dw_), model::AN2D{F}, ::BuoyDyn, _, (; B), (
     periodize!(model, (du, dw))
 
     return du, dw
+end
+
+# modified pressure φ = (p - p_R)/ρ_R at the cells such that ∇·(ρ_R (du - ∇φ)) = 0 with no flow through walls, by the
+# Poisson solver of the model (see `PoissonSolver`); also sets du, dw to zero on the wall faces
+function pressure!(φ_, model::AN2D{F}, (du, dw)) where {F}
+    (; mgr, domain, poisson) = model
+
+    φ = alloc!(φ_, F, mgr, domain, (Cell(), Cell()))
+
+    return pressure!(φ, poisson, mgr, (du, dw))
 end
 
 # (du, dw) -= ∇φ, in place, with φ from `pressure!`
@@ -498,7 +508,7 @@ function dm!(dm_, model::AN2D{F}, (; m), (mu, mw, consflux_x, consflux_z, qflux_
     (; mgr, domain, inv_dx, inv_dz, spatial_scheme) = model
     (; δ) = operators(spatial_scheme)
 
-    dm = alloc!(dm_, F, domain, (Cell(), Cell()), size(m, 3))
+    dm = alloc!(dm_, F, mgr, domain, (Cell(), Cell()), size(m, 3))
 
     dm1, dm2    = eachslice(dm; dims = 3)
     mu1, mu2    = eachslice(mu; dims = 3)

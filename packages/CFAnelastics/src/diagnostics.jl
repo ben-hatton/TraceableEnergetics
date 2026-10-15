@@ -17,7 +17,7 @@ state, tendency and scratch. Copy a result to keep it beyond the next session.
 """
 diagnostics(model::AN2D{F}) where F = let (; mgr, domain) = model, info = diagnostic_info(model), cache = Dict{Symbol, Any}()
     # output array of the computed diagnostic `name`, on its grid location (see `diagnostic_info`), allocated on first use
-    out(name) = get!(() -> alloc(F, domain, info[name].location), cache, name)::Matrix{F}
+    out(name) = get!(() -> alloc(F, mgr, domain, info[name].location), cache, name)::Matrix{F}
     CookBook(;
         # state
         conservative_variable            = scratch -> scratch.thermo.consvar,
@@ -137,7 +137,7 @@ end
 # out = f(a, b[, c]) pointwise on arrays of the same grid, halo included
 function pointwise!(out, mgr, f::Fun, a, b) where Fun
     @with mgr, let (irange, jrange) = (axes(out, 1), axes(out, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             out[i, j] = f(a[i, j], b[i, j])
         end
     end
@@ -145,18 +145,18 @@ function pointwise!(out, mgr, f::Fun, a, b) where Fun
 end
 function pointwise!(out, mgr, f::Fun, a, b, c) where Fun
     @with mgr, let (irange, jrange) = (axes(out, 1), axes(out, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             out[i, j] = f(a[i, j], b[i, j], c[i, j])
         end
     end
     return out
 end
 
-# reference density ρ_R(z) on the cells (a plain loop: @vec cannot store a value independent of i)
+# reference density ρ_R(z) on the cells (a plain loop, i innermost: @vec cannot store a value independent of i)
 function density!(ρ, (; mgr, reference))
     (; ρ_R) = reference
     @with mgr, let (irange, jrange) = (axes(ρ, 1), axes(ρ, 2))
-        for i in irange, j in jrange
+        @inbounds for j in jrange, i in irange
             ρ[i, j] = ρ_R[j]
         end
     end
@@ -180,7 +180,7 @@ end
 function total_pressure!(p, (; mgr, reference), φ)
     (; p_R, ρ_R) = reference
     @with mgr, let (irange, jrange) = (axes(p, 1), axes(p, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             p[i, j] = p_R[j] + ρ_R[j] * φ[i, j]
         end
     end
@@ -191,7 +191,7 @@ end
 function mass_flux_x!(flux, (; mgr, reference), (; u))
     (; ρ_R) = reference
     @with mgr, let (irange, jrange) = (axes(flux, 1), axes(flux, 2))
-        @vec for I in irange, j in jrange
+        @inbounds @vec for I in irange, j in jrange
             flux[I, j] = ρ_R[j] * u[I, j]
         end
     end
@@ -203,7 +203,7 @@ function mass_flux_z!(flux, model, (; w))
     (; ρ_R) = reference
     (; ℑ) = operators(model.spatial_scheme)
     @with mgr, let (irange, jrange) = (axes(flux, 1), faces(domain, 2))
-        @vec for i in irange, J in jrange
+        @inbounds @vec for i in irange, J in jrange
             flux[i, J] = ℑ(ρ_R, (2,), (Face(),), J) * w[i, J]
         end
     end
@@ -216,7 +216,7 @@ function divergence_field!(div, model, Vx, Vz)
     (; mgr, domain, inv_dx, inv_dz) = model
     (; δ) = operators(model.spatial_scheme)
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             div[i, j] = inv_dx * δ(Vx, (1,), (Cell(),), i, j) + inv_dz * δ(Vz, (2,), (Cell(),), i, j)
         end
     end

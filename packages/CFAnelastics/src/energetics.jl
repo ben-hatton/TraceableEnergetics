@@ -55,7 +55,7 @@ end
 function energies!((ke, pe, te_), (; m, u, w), model::AN2D{F}) where {F}
     ke = kinetic_energy!(ke, (; m, u, w), model)
     pe = potential_energy!(pe, (; m), model)
-    te = alloc!(te_, F, model.domain, (Cell(), Cell()))
+    te = alloc!(te_, F, model.mgr, model.domain, (Cell(), Cell()))
     te = @. te = ke + pe
     periodize!(model, te)
     return ke, pe, te
@@ -65,15 +65,15 @@ end
 function consflux!((consflux_x_, consflux_z_), (; m), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, domain) = model
     (; ℑ) = operators(model.spatial_scheme)
-    consflux_x = alloc!(consflux_x_, F, domain, (Cell(), Cell()))
-    consflux_z = alloc!(consflux_z_, F, domain, (Cell(), Cell()))
+    consflux_x = alloc!(consflux_x_, F, mgr, domain, (Cell(), Cell()))
+    consflux_z = alloc!(consflux_z_, F, mgr, domain, (Cell(), Cell()))
     @with mgr, let (irange, jrange) = (cells(domain, 1), axes(consflux_x, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             consflux_x[i, j] = ℑ(dynamics_scratch.irreversible.consflux_x, (1,), (Cell(),), i, j)
         end
     end
     @with mgr, let (irange, jrange) = (axes(consflux_z, 1), cells(domain, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             consflux_z[i, j] = ℑ(dynamics_scratch.irreversible.consflux_z, (2,), (Cell(),), i, j)
         end
     end
@@ -85,11 +85,11 @@ function bq_energies!((gpe_, ie_, gpe_bz_), (; m, u, w), model::AN2D{F}, pe, dyn
     (; p_R, ρ_R) = reference
     (; g) = space
 
-    gpe = alloc!(gpe_, F, model.domain, (Cell(), Cell()))
-    ie = alloc!(ie_, F, model.domain, (Cell(), Cell()))
-    gpe_bz = alloc!(gpe_bz_, F, model.domain, (Cell(), Cell()))
+    gpe = alloc!(gpe_, F, model.mgr, model.domain, (Cell(), Cell()))
+    ie = alloc!(ie_, F, model.mgr, model.domain, (Cell(), Cell()))
+    gpe_bz = alloc!(gpe_bz_, F, model.mgr, model.domain, (Cell(), Cell()))
     @with mgr, let (irange, jrange) = (axes(pe, 1), axes(pe, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             θ = fluid(:p, :consvar, :q).potential_temperature(p_R[j], dynamics_scratch.thermo.consvar[i, j], dynamics_scratch.thermo.q[i, j])
             cp = fluid(:p, :consvar, :q).heat_capacity(p_R[j], dynamics_scratch.thermo.consvar[i, j], dynamics_scratch.thermo.q[i, j])
 
@@ -114,9 +114,9 @@ end
 function kinetic_energy!(ke_, (; m, u, w), model::AN2D{F}) where {F}
     (; mgr, domain, reference) = model
     (; ρ_R) = reference
-    ke = alloc!(ke_, F, domain, (Cell(), Cell()))
+    ke = alloc!(ke_, F, mgr, domain, (Cell(), Cell()))
     @with mgr, let (irange, jrange) = (cells(domain, 1), cells(domain, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             ke[i, j] = 0.5 * ρ_R[j] * (ℑ((u, u), (1,), (Cell(),), i, j) + ℑ((w, w), (2,), (Cell(),), i, j))
         end
     end
@@ -128,9 +128,9 @@ end
 function potential_energy!(pe_, (; m), model::AN2D{F}) where {F}
     (; mgr, reference, fluid) = model
     (; p_R, ρ_R) = reference
-    pe = alloc!(pe_, F, model.domain, (Cell(), Cell()))
+    pe = alloc!(pe_, F, model.mgr, model.domain, (Cell(), Cell()))
     @with mgr, let (irange, jrange) = (axes(pe, 1), axes(pe, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             s = m[i, j , 1] / ρ_R[j]
             q = m[i, j , 2] / ρ_R[j]
             pe[i, j] = ρ_R[j] * (fluid(:p, :consvar, :q).specific_enthalpy(p_R[j], s, q) + Φij(model, i, j) ) - p_R[j] 
@@ -146,34 +146,34 @@ function irr_flux!((conjdivconsflux_, chemdivqflux_, consfluxgradconj_, qfluxgra
                    (; m), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, domain, inv_dx, inv_dz) = model
     (; ℑ, δ) = operators(model.spatial_scheme)
-    conjdivconsflux     = alloc!(conjdivconsflux_, F, domain, (Cell(), Cell()))
-    chemdivqflux        = alloc!(chemdivqflux_, F, domain, (Cell(), Cell()))
-    consfluxgradconj    = alloc!(consfluxgradconj_, F, domain, (Cell(), Cell()))
-    qfluxgradchem       = alloc!(qfluxgradchem_, F, domain, (Cell(), Cell()))
-    consfluxgradconj_x  = alloc!(consfluxgradconj_x_, F, domain, (Face(), Cell()))
-    consfluxgradconj_z  = alloc!(consfluxgradconj_z_, F, domain, (Cell(), Face()))
-    qfluxgradchem_x     = alloc!(qfluxgradchem_x_, F, domain, (Face(), Cell()))
-    qfluxgradchem_z     = alloc!(qfluxgradchem_z_, F, domain, (Cell(), Face()))
+    conjdivconsflux     = alloc!(conjdivconsflux_, F, mgr, domain, (Cell(), Cell()))
+    chemdivqflux        = alloc!(chemdivqflux_, F, mgr, domain, (Cell(), Cell()))
+    consfluxgradconj    = alloc!(consfluxgradconj_, F, mgr, domain, (Cell(), Cell()))
+    qfluxgradchem       = alloc!(qfluxgradchem_, F, mgr, domain, (Cell(), Cell()))
+    consfluxgradconj_x  = alloc!(consfluxgradconj_x_, F, mgr, domain, (Face(), Cell()))
+    consfluxgradconj_z  = alloc!(consfluxgradconj_z_, F, mgr, domain, (Cell(), Face()))
+    qfluxgradchem_x     = alloc!(qfluxgradchem_x_, F, mgr, domain, (Face(), Cell()))
+    qfluxgradchem_z     = alloc!(qfluxgradchem_z_, F, mgr, domain, (Cell(), Face()))
 
     (; consflux_x, consflux_z, qflux_x, qflux_z) = dynamics_scratch.irreversible
     (; conjvar, chempot) = dynamics_scratch.thermo
 
     # faces: consflux ∂π and qflux ∂μ
     @with mgr, let (irange, jrange) = (faces(domain, 1), cells(domain, 2))
-        @vec for I in irange, j in jrange
+        @inbounds @vec for I in irange, j in jrange
             consfluxgradconj_x[I, j] = inv_dx * consflux_x[I, j] * δ(conjvar, (1,), (Face(),), I, j)
             qfluxgradchem_x[I, j]    = inv_dx * qflux_x[I, j] * δ(chempot, (1,), (Face(),), I, j)
         end
     end
     @with mgr, let (irange, jrange) = (cells(domain, 1), faces(domain, 2))
-        @vec for i in irange, J in jrange
+        @inbounds @vec for i in irange, J in jrange
             consfluxgradconj_z[i, J] = inv_dz * consflux_z[i, J] * δ(conjvar, (2,), (Face(),), i, J)
             qfluxgradchem_z[i, J]    = inv_dz * qflux_z[i, J] * δ(chempot, (2,), (Face(),), i, J)
         end
     end
     # cells
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             conjdivconsflux[i, j]  = conjvar[i, j] * ( δ(consflux_x, (1,), (Cell(),), i, j) * inv_dx + δ(consflux_z, (2,), (Cell(),), i, j) * inv_dz )
             chemdivqflux[i, j]     = chempot[i, j] * ( δ(qflux_x, (1,), (Cell(),), i, j) * inv_dx + δ(qflux_z, (2,), (Cell(),), i, j) * inv_dz )
             consfluxgradconj[i, j] = ℑ(consfluxgradconj_x, (1,), (Cell(),), i, j) + ℑ(consfluxgradconj_z, (2,), (Cell(),), i, j)
@@ -188,9 +188,9 @@ end
 function pdivu!(pdivu_, (; m), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, reference, domain) = model
     (; ρ_R, p_R) = reference
-    pdivu = alloc!(pdivu_, F, domain, (Cell(), Cell()))
+    pdivu = alloc!(pdivu_, F, mgr, domain, (Cell(), Cell()))
     @with mgr, let (irange, jrange) = (axes(pdivu, 1), axes(pdivu, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             p = p_R[j] + ρ_R[j] * dynamics_scratch.φ[i, j]
             pdivu[i, j] = p * (dynamics_scratch.derivatives.∂u_x[i, j] + dynamics_scratch.derivatives.∂w_z[i, j])
         end
@@ -204,9 +204,9 @@ function buoy_flux_Σ_ϕ!(buoy_flux_Σ_ϕ_, (; m, w), model::AN2D{F}, dynamics_s
     (; mgr, reference, domain, fluid, space, inv_dz) = model
     (; ρ_R, p_R) = reference
     (; g ) = space
-    buoy_flux_Σ_ϕ = fill!(alloc!(buoy_flux_Σ_ϕ_, F, domain, (Cell(), Cell())), 0)    # interior cells only (∂ρ_R/∂z)
+    buoy_flux_Σ_ϕ = fill!(alloc!(buoy_flux_Σ_ϕ_, F, mgr, domain, (Cell(), Cell())), 0)    # interior cells only (∂ρ_R/∂z)
     @with mgr, let (irange, jrange) = (axes(buoy_flux_Σ_ϕ, 1), interior_cells(domain, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             s = m[i, j , 1] / ρ_R[j]
             q = m[i, j , 2] / ρ_R[j]
             δp = dynamics_scratch.φ[i, j] * ρ_R[j]
@@ -224,9 +224,9 @@ function buoy_flux_B!(buoy_flux_B_, (; m, w), model::AN2D{F}, dynamics_scratch) 
     (; mgr, reference, domain, fluid, space) = model
     (; ρ_R, p_R) = reference
     (; g ) = space
-    buoy_flux_B = alloc!(buoy_flux_B_, F, domain, (Cell(), Cell()))
+    buoy_flux_B = alloc!(buoy_flux_B_, F, mgr, domain, (Cell(), Cell()))
     @with mgr, let (irange, jrange) = (axes(buoy_flux_B, 1), cells(domain, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             s = m[i, j , 1] / ρ_R[j]
             q = m[i, j , 2] / ρ_R[j]
             v = fluid(:p, :consvar, :q).specific_volume(p_R[j], s, q)
@@ -241,9 +241,9 @@ end
 function thermodynamic_budget_terms!((divru_, conjdivrsu_, chemdivrqu_), (; m, u, w), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, domain, reference, inv_dx, inv_dz) = model
     (; ρ_R) = reference
-    divru    = fill!(alloc!(divru_, F, domain, (Cell(), Cell())), 0)        # interior cells only (ρ_R on w-faces)
-    conjdivrsu  = alloc!(conjdivrsu_, F, domain, (Cell(), Cell()))
-    chemdivrqu  = alloc!(chemdivrqu_, F, domain, (Cell(), Cell()))
+    divru    = fill!(alloc!(divru_, F, mgr, domain, (Cell(), Cell())), 0)        # interior cells only (ρ_R on w-faces)
+    conjdivrsu  = alloc!(conjdivrsu_, F, mgr, domain, (Cell(), Cell()))
+    chemdivrqu  = alloc!(chemdivrqu_, F, mgr, domain, (Cell(), Cell()))
 
     (; mu, mw) = dynamics_scratch.advection
 
@@ -253,7 +253,7 @@ function thermodynamic_budget_terms!((divru_, conjdivrsu_, chemdivrqu_), (; m, u
     rqw = @view mw[:, :, 2]
 
     @with mgr, let (irange, jrange) = (cells(domain, 1), cells(domain, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             conj = dynamics_scratch.thermo.conjvar[i, j]
             chem = dynamics_scratch.thermo.chempot[i, j]
             conjdivrsu[i, j] = conj * ( δ(rsu, (1,), (Cell(),), i, j) * inv_dx + δ(rsw, (2,), (Cell(),), i, j) * inv_dz )
@@ -261,7 +261,7 @@ function thermodynamic_budget_terms!((divru_, conjdivrsu_, chemdivrqu_), (; m, u
         end
     end
     @with mgr, let (irange, jrange) = (cells(domain, 1), interior_cells(domain, 2))
-        @vec for i in irange, j in jrange
+        @inbounds @vec for i in irange, j in jrange
             divru[i, j] = ρ_R[j] * δ(u, (1,), (Cell(),), i, j) * inv_dx + (ℑ(ρ_R, (2,), (Face(),), j+1) * w[i, j+1] - ℑ(ρ_R, (2,), (Face(),), j) * w[i, j]) * inv_dz
         end
     end
