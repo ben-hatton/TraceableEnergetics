@@ -25,11 +25,11 @@ include("poisson.jl")
 ## MODEL
 
 """
-    model = AN2D((; mgr, domain, space, fluid, vortex_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme,
-                    anelastic_reference, boundary_conditions[, spatial_scheme]))
+    model = AN2D((; mgr, domain, space, fluid, spatial_scheme, vortex_scheme, buoyancy_scheme, thermoflux_scheme,
+                    viscosity_scheme, anelastic_reference, boundary_conditions))
 
 Anelastic binary fluid in a 2D box (x, z): prognostic m = ρ_R (consvar, q) at cell centres and the velocity (u, w)
-on faces, with ∇·(ρ_R u) = 0. `spatial_scheme` (default `Centred2()`) sets the averages and differences of the
+on faces, with ∇·(ρ_R u) = 0. `spatial_scheme` (e.g. `Centred2()`) sets the interpolations and differences of the
 C-grid, `vortex_scheme` the vortex force, `buoyancy_scheme` the momentum forcing (see `BuoyancyScheme`).
 """
 struct AN2D{F, Vec, Manager, Domain<:Box2D, Boundary<:BoxBoundaryConditions, Fluid, Spatial<:SpatialScheme, Vortex<:VortexScheme,
@@ -41,7 +41,7 @@ struct AN2D{F, Vec, Manager, Domain<:Box2D, Boundary<:BoxBoundaryConditions, Flu
     fluid::Fluid
     spatial_scheme::Spatial
     vortex_scheme::Vortex
-    buoyancy::Buoyancy
+    buoyancy_scheme::Buoyancy
     thermoflux::ThermoFlux
     viscosity::ViscosityScheme{F}
     reference::AnelasticReference{F, Vec}
@@ -52,8 +52,9 @@ struct AN2D{F, Vec, Manager, Domain<:Box2D, Boundary<:BoxBoundaryConditions, Flu
     inv_dz::F
 end
 function AN2D(params)
-    (; mgr, domain, space, fluid, vortex_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme, anelastic_reference, boundary_conditions) = params
-    spatial_scheme = get(params, :spatial_scheme, Centred2())
+    (; mgr, domain, space, fluid, spatial_scheme, vortex_scheme, buoyancy_scheme, thermoflux_scheme, viscosity_scheme, anelastic_reference,
+       boundary_conditions) = params
+    check_halo(domain, spatial_scheme)
     Mx, Mz = dims(domain)
     dx, dz = space.Lx / Mx, space.Lz / Mz
     check_tracers(boundary_conditions, 2)       # tracers (consvar, q)

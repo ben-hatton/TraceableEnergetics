@@ -58,8 +58,8 @@ function PoissonSolver(domain, spacing::NTuple{N, F}, ρ_R) where {N, F}
 
     # vertical couplings ρ_R / Δz² through the interior w-faces (ρ_R averaged to the face); walls carry no flux
     Mz, Hz, Δz = M[N], H[N], spacing[N]
-    below = [j == 1 ? zero(F) : avg_Z(ρ_R, Hz+j) / Δz^2 for j in 1:Mz]
-    above = [j == Mz ? zero(F) : avg_Z(ρ_R, Hz+j+1) / Δz^2 for j in 1:Mz]
+    below = [j == 1 ? zero(F) : ℑ(ρ_R, (2,), (Face(),), Hz+j) / Δz^2 for j in 1:Mz]
+    above = [j == Mz ? zero(F) : ℑ(ρ_R, (2,), (Face(),), Hz+j+1) / Δz^2 for j in 1:Mz]
 
     # Thomas factorization of  belowⱼ φⱼ₋₁ + (λ ρ_R(zⱼ) - belowⱼ - aboveⱼ) φⱼ + aboveⱼ φⱼ₊₁ = Rⱼ
     upper, inv_pivot = zeros(F, length(λ), Mz), zeros(F, length(λ), Mz)
@@ -126,7 +126,7 @@ end
 
 # densities on the two faces of a cell at level k across dimension d: ρ_R averaged to the w-faces, ρ_R on horizontal
 # faces
-face_densities(::Val{N}, ::Val{N}, ρ_R, k) where N = (avg_Z(ρ_R, k), avg_Z(ρ_R, k+1))
+face_densities(::Val{N}, ::Val{N}, ρ_R, k) where N = (ℑ(ρ_R, (2,), (Face(),), k), ℑ(ρ_R, (2,), (Face(),), k+1))
 face_densities(_, _, ρ_R, k) = (ρ_R[k], ρ_R[k])
 
 # walls carry no flux: remove the wall-face terms from the cells next to the walls
@@ -183,7 +183,7 @@ end
 function pressure_halo!(φ, (; domain, spacing)::PoissonSolver, dU)
     CFBoxes.foreach_dim(domain) do D
         topology = CFBoxes.pick(boundary_topology(domain), D)
-        CFBoxes.fill_halo!(topology, φ, D, domain, Centred(), neumann_rules(topology, D, domain, dU), CFBoxes.pick(spacing, D))
+        CFBoxes.fill_halo!(topology, φ, D, domain, Cell(), neumann_rules(topology, D, domain, dU), CFBoxes.pick(spacing, D))
     end
     return φ
 end

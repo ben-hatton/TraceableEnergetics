@@ -88,7 +88,7 @@ Return an upper bound `ω` [s⁻¹] on the fastest discrete frequency of the sta
 """
 function max_frequency(model::AN2D{F}, (; m, u, w)) where {F}
     (; domain, dx, dz, viscosity, thermoflux, reference) = model
-    irange, jrange = xrange_interior(domain), zrange_interior(domain)
+    irange, jrange = interior_cells(domain, 1), interior_cells(domain, 2)
     inv_d2         = inv(dx^2) + inv(dz^2)
     advection      = maximum(abs, view(u, irange, jrange)) / dx + maximum(abs, view(w, irange, jrange)) / dz
     ν              = (viscosity.dyn_visc + viscosity.bulk_visc) / minimum(view(reference.ρ_R, jrange))
@@ -102,7 +102,7 @@ end
 function max_buoyancy_frequency((; fluid, domain, space, dz, reference)::AN2D{F}, m) where {F}
     (; ρ_R, p_R) = reference
     volume_functions = fluid(:p, :consvar, :q).volume_functions
-    irange, jrange = xrange_interior(domain), zrange_interior(domain)
+    irange, jrange = interior_cells(domain, 1), interior_cells(domain, 2)
     N2max = zero(F)
     for J in first(jrange)+1:last(jrange), i in irange
         v_1, v_2       = inv(ρ_R[J-1]), inv(ρ_R[J])

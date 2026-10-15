@@ -27,7 +27,7 @@ mgr    = SIMD()      # vectorised loops; tSIMD() (multi-threaded) pays off only 
 domain = Box2D(Mx = 64, Mz = 32, Hx = 1, Hz = 1, boundary = (Periodic, Bounded))
 closed = Wall(tangential = FreeSlip(), tracers = (Flux(0.0), Flux(0.0)))
 
-an = AN2D((; mgr, domain, space, fluid, vortex_scheme = VortexEnergyCons(), buoyancy_scheme = BuoyThermo(),
+an = AN2D((; mgr, domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme = VortexEnergyCons(), buoyancy_scheme = BuoyThermo(),
     thermoflux_scheme = ThermoFluxConsistent(k_T = 1e-4, k_q = 1e-5),
     viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3, bulk_visc = 0.0),
     anelastic_reference = AnelasticReference(domain, space, ρ0; ptop = 1e5),
@@ -41,7 +41,7 @@ state = initialize(an, rising_bubble(an; θ₀ = T0, Δθ = 2.0, q₀ = q0))
 #####
 
 # the diagnostics saved to the data files: any subset of `keys(diagnostic_info(an))`, each on its own grid location
-# (e.g. w on the w-faces, :xZ, and the vorticity on the vertices, :XZ)
+# (e.g. w on the w-faces, (Cell(), Face()), and the vorticity on the vertices, (Face(), Face()))
 names = (:u, :w, :conservative_variable, :vorticity)
 dir = mkpath(joinpath(@__DIR__, "output"))
 

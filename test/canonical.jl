@@ -1,5 +1,5 @@
 # Canonical setups on a model. Included in a model test module (AnelasticTests, CompressibleTests), which defines the
-# configuration (Lz, T0, q0, ρ0, U) and the helpers (evaluate, all_finite, momentum_roundoff, ufaces, wfaces).
+# configuration (Lz, T0, q0, ρ0, U) and the helpers (evaluate, all_finite, momentum_roundoff, interior_Xz, interior_xZ).
 using TraceableEnergetics: TraceableEnergetics, linear_profile, rest_state, kelvin_helmholtz, rayleigh_benard,
     rising_bubble, lock_exchange
 
@@ -18,8 +18,8 @@ function test_canonical(init, tend!, periodic, closed)
         ds, _ = evaluate(tend!, m, s)
         @test all_finite(s) && all_finite(ds)
         if name == "rest"
-            @test maximum(abs, ds.u[ufaces(m.domain)...]) < momentum_roundoff(m)
-            @test maximum(abs, ds.w[wfaces(m.domain)...]) < momentum_roundoff(m)
+            @test maximum(abs, ds.u[interior_Xz(m.domain)...]) < momentum_roundoff(m)
+            @test maximum(abs, ds.w[interior_xZ(m.domain)...]) < momentum_roundoff(m)
         end
     end
 end

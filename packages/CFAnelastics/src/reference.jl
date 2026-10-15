@@ -21,7 +21,7 @@ function AnelasticReference(domain, space, ρ; ptop)
     Mz, Hz = dims(domain)[end], halo_size(domain)[end]
     dz = Lz / Mz
     check_length(ρ, Mz)
-    ρ_R = [cell_value(ρ, j - Hz, zpoint(domain, dz, j)) for j in 1:Mz+2Hz]
+    ρ_R = [cell_value(ρ, j - Hz, cellpoint(domain, dz, 2, j)) for j in 1:Mz+2Hz]
     # hydrostatic pressure, from the pressure above the halo
     p_R = hydrostatic_pressure(ρ_R, ptop - sum(ρ_R[Hz+Mz+1:end]) * g * dz, dz, g)
     return AnelasticReference(ptop, ρ_R, p_R)

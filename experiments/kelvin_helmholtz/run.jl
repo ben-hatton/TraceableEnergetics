@@ -47,6 +47,7 @@ thermoflux_scheme  = ThermoFluxConsistent(k_T = 1e-4, k_q = 1e-5)           # th
 
 mgr    = SIMD()                     # vectorised loops; tSIMD() (multi-threaded) pays off only on larger grids
 domain = Box2D(Mx = 64, Mz = 32, Hx = 1, Hz = 1, boundary = (Periodic, Bounded))
+spatial_scheme = Centred2()
 vortex_scheme = VortexEnergyCons()
 
 # walls at the bottom and top: free slip, no flux of consvar or q; tracer conditions are positional (consvar, q)
@@ -58,12 +59,12 @@ boundary_conditions = BoxBoundaryConditions(domain; bottom = closed, top = close
 #####
 
 # fully compressible
-fc = FC2D((; mgr, domain, space, fluid, vortex_scheme, thermoflux_scheme, viscosity_scheme, boundary_conditions))
+fc = FC2D((; mgr, domain, space, fluid, spatial_scheme, vortex_scheme, thermoflux_scheme, viscosity_scheme, boundary_conditions))
 
 # anelastic, about a reference density (a number, a function of the height z, or a vector of cell values) with
 # pressure ptop at the top
 anelastic_reference = AnelasticReference(domain, space, ρ0; ptop = 1e5)
-an = AN2D((; mgr, domain, space, fluid, vortex_scheme, buoyancy_scheme = BuoyThermo(), thermoflux_scheme,
+an = AN2D((; mgr, domain, space, fluid, spatial_scheme, vortex_scheme, buoyancy_scheme = BuoyThermo(), thermoflux_scheme,
     viscosity_scheme, anelastic_reference, boundary_conditions))
 
 #####

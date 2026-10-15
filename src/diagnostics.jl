@@ -8,8 +8,9 @@
     info = diagnostic_info(model)
 
 `CookBook` of the diagnostics of an AN2D or FC2D model, opened with `open(book; state, dstate, scratch, model)`, and
-the long name, units and grid location (`:xz`, `:Xz`, `:xZ`, `:XZ`) of each diagnostic. See `CFAnelastics.diagnostics`
-and `CFCompressible.diagnostics`: build the book once, as each session of it overwrites the same output arrays.
+the long name, units and grid location of each diagnostic: one `Face()`/`Cell()` per dimension, e.g. `(Cell(), Cell())`
+cells, `(Face(), Cell())` u-faces. See `CFAnelastics.diagnostics` and `CFCompressible.diagnostics`: build the book
+once, as each session of it overwrites the same output arrays.
 """
 diagnostics(model::AN2D) = CFAnelastics.diagnostics(model)
 diagnostics(model::FC2D) = CFCompressible.diagnostics(model)

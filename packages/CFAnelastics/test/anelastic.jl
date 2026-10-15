@@ -13,7 +13,7 @@ function an_model(; Mx = 32, Mz = 16, mgr = mgr, buoyancy_scheme = BuoyThermo(),
     domain = test_box(Mx, Mz; boundary)
     anelastic_reference = AnelasticReference(domain, space, an_density; ptop = 1e5)
     boundary_conditions = BoxBoundaryConditions(domain; walls...)
-    return AN2D((; mgr, domain, space, fluid, vortex_scheme, buoyancy_scheme, thermoflux_scheme,
+    return AN2D((; mgr, domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme, buoyancy_scheme, thermoflux_scheme,
         viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3, bulk_visc = 0.0), anelastic_reference, boundary_conditions))
 end
 
@@ -31,12 +31,12 @@ function an_state(model; active = true)
     wall_x(X) = boundary_topology(domain)[1] isa Bounded ? sin(π * X / Lx) : 1.0
     ψ(X, Z) = active ? ρ0 * U * Lz * wall_x(X) * (sin(π * Z / Lz) * (1 + 0.5 * cos(2π * X / Lx + 0.3)) +
                                                  0.3 * sin(2π * Z / Lz) * sin(4π * X / Lx)) : 0.0
-    x(i) = xpoint(domain, dx, i); z(j) = zpoint(domain, dz, j)
-    X(I) = Xpoint(domain, dx, I); Z(J) = Zpoint(domain, dz, J)
+    x(i) = cellpoint(domain, dx, 1, i); z(j) = cellpoint(domain, dz, 2, j)
+    X(I) = facepoint(domain, dx, 1, I); Z(J) = facepoint(domain, dz, 2, J)
 
-    m = alloc_xz(Float64, domain, 2)
-    u = alloc_Xz(Float64, domain)
-    w = fill!(alloc_xZ(Float64, domain), 0.0)
+    m = alloc(Float64, domain, (Cell(), Cell()), 2)
+    u = alloc(Float64, domain, (Face(), Cell()))
+    w = alloc(Float64, domain, (Cell(), Face()))
     for i in axes(m, 1), j in axes(m, 2)
         m[i, j, 1] = ρ_R[j] * θ(x(i), z(j))
         m[i, j, 2] = ρ_R[j] * q(x(i), z(j))
@@ -44,24 +44,24 @@ function an_state(model; active = true)
     for I in axes(u, 1), j in axes(u, 2)
         u[I, j] = (ψ(X(I), Z(j + 1)) - ψ(X(I), Z(j))) / (dz * ρ_R[j])
     end
-    for i in axes(w, 1), J in Zrange(domain)
-        w[i, J] = -(ψ(X(i + 1), Z(J)) - ψ(X(i), Z(J))) / (dx * avg_Z(ρ_R, J))
+    for i in axes(w, 1), J in faces(domain, 2)
+        w[i, J] = -(ψ(X(i + 1), Z(J)) - ψ(X(i), Z(J))) / (dx * ℑ(ρ_R, (2,), (Face(),), J))
     end
     # impermeable walls
-    w[:, wfaces(domain)[2][[1, end]]] .= 0
-    boundary_topology(domain)[1] isa Bounded && (u[ufaces(domain)[1][[1, end]], :] .= 0)
+    w[:, interior_xZ(domain)[2][[1, end]]] .= 0
+    boundary_topology(domain)[1] isa Bounded && (u[interior_Xz(domain)[1][[1, end]], :] .= 0)
     return (; m, u, w)
 end
 
-# per-cell energy ΔxΔz [ρ_R K + ρ_R (h(p_R, s, q) + Φ) - p_R],  K = (avg_x u² + avg_z w²) / 2
+# per-cell energy ΔxΔz [ρ_R K + ρ_R (h(p_R, s, q) + Φ) - p_R],  K = (ℑ(u², (1,), (Cell(),)) + ℑ(w², (2,), (Cell(),))) / 2
 function an_cell_energies(model, (; m, u, w))
     (; domain, dx, dz, fluid, reference) = model
     (; ρ_R, p_R) = reference
-    ic, jc = cells(domain)
+    ic, jc = interior_xz(domain)
     return [begin
         K = (u[i, j]^2 + u[east(domain, i), j]^2 + w[i, j]^2 + w[i, j+1]^2) / 4
         h = fluid(:p, :consvar, :q).specific_enthalpy(p_R[j], m[i, j, 1] / ρ_R[j], m[i, j, 2] / ρ_R[j])
-        Φ = g * (zpoint(domain, dz, j) - Lz)
+        Φ = g * (cellpoint(domain, dz, 2, j) - Lz)
         (ρ_R[j] * (K + h + Φ) - p_R[j]) * dx * dz
     end for i in ic, j in jc]
 end
@@ -69,7 +69,7 @@ end
 function an_kinetic(model, (; u, w))
     (; domain, dx, dz) = model
     ρ_R = model.reference.ρ_R
-    ic, jc = cells(domain)
+    ic, jc = interior_xz(domain)
     return sum(ρ_R[j] * (u[i, j]^2 + u[east(domain, i), j]^2 + w[i, j]^2 + w[i, j+1]^2) / 4 * dx * dz for i in ic, j in jc)
 end
 
@@ -84,9 +84,9 @@ const forced_box = (;
 function an_divergence(model, u, w)
     (; domain, dx, dz) = model
     (; ρ_R) = model.reference
-    ic, jc = cells(domain)
-    div = [ρ_R[j] * (u[east(domain, i), j] - u[i, j]) / dx + (avg_Z(ρ_R, j+1) * w[i, j+1] - avg_Z(ρ_R, j) * w[i, j]) / dz for i in ic, j in jc]
-    scale = max(maximum(abs, ρ_R[j] * u[i, j] / dx for i in ic, j in jc), maximum(abs, avg_Z(ρ_R, j) * w[i, j] / dz for i in ic, j in jc), floatmin())
+    ic, jc = interior_xz(domain)
+    div = [ρ_R[j] * (u[east(domain, i), j] - u[i, j]) / dx + (ℑ(ρ_R, (2,), (Face(),), j+1) * w[i, j+1] - ℑ(ρ_R, (2,), (Face(),), j) * w[i, j]) / dz for i in ic, j in jc]
+    scale = max(maximum(abs, ρ_R[j] * u[i, j] / dx for i in ic, j in jc), maximum(abs, ℑ(ρ_R, (2,), (Face(),), j) * w[i, j] / dz for i in ic, j in jc), floatmin())
     return div, scale
 end
 
@@ -151,7 +151,7 @@ end
 
     @testset "reference state" begin
         domain = test_box()
-        ic = zrange_interior(domain)
+        ic = interior_cells(domain, 2)
         dz = Lz / dims(domain)[2]
         zc = [(k - 1/2) * dz for k in 1:dims(domain)[2]]
         # a vector of cell values gives the same interior profiles as the function it samples
@@ -166,15 +166,15 @@ end
         # at rest, stratified, between closed walls: stays at rest
         s = CFAnelastics.initialize(model; consvar = (x, z) -> θ_rest(z), q = (x, z) -> q_rest(z))
         ds, _ = evaluate(an_tend!, model, s)
-        @test maximum(abs, ds.u[ufaces(model.domain)...]) < momentum_roundoff(model)
-        @test maximum(abs, ds.w[wfaces(model.domain)...]) < momentum_roundoff(model)
+        @test maximum(abs, ds.u[interior_Xz(model.domain)...]) < momentum_roundoff(model)
+        @test maximum(abs, ds.w[interior_xZ(model.domain)...]) < momentum_roundoff(model)
         # perturbation from a streamfunction vanishing on all walls: discretely divergence-free, no flow through walls;
         # with a mean flow when periodic in x
         ψ(X, Z) = 1e-3 * ρ0 * U * Lz * sin(2π * X / Lx) * sin(π * Z / Lz)
         for (m, mean_flow) in ((model, z -> U * tanh(z / Lz - 1/2)), (box, z -> zero(z)))
             u′, w′ = CFAnelastics.divergence_free_velocity(m, ψ)
-            @test maximum(abs, w′[:, wfaces(m.domain)[2][[1, end]]]) < 1e-15 * maximum(abs, w′)
-            ū = [mean_flow(zpoint(m.domain, m.dz, j)) for I in axes(u′, 1), j in axes(u′, 2)]
+            @test maximum(abs, w′[:, interior_xZ(m.domain)[2][[1, end]]]) < 1e-15 * maximum(abs, w′)
+            ū = [mean_flow(cellpoint(m.domain, m.dz, 2, j)) for I in axes(u′, 1), j in axes(u′, 2)]
             s = CFAnelastics.initialize(m; consvar = θ_active, q = q_active, velocity = (u′ .+ ū, w′))
             div, scale = an_divergence(m, s.u, s.w)
             @test all_finite(s) && maximum(abs, div) <= 1e-13 * scale
@@ -193,10 +193,10 @@ end
         # the fused mass divergence equals the discrete anelastic divergence ∇·(ρ_R u)
         session = open(CFAnelastics.diagnostics(model); state = active, model)
         div, scale = an_divergence(model, active.u, active.w)
-        @test maximum(abs, CookBooks.get(session, :mass_divergence)[cells(model.domain)...] - div) / scale < 1e-13
+        @test maximum(abs, CookBooks.get(session, :mass_divergence)[interior_xz(model.domain)...] - div) / scale < 1e-13
         _, scratch = evaluate(an_tend!, model, active)
         es = CFAnelastics.energetics_tendencies!(void, model, copy_state(active), scratch)
-        @test sum(es.energies.te[cells(model.domain)...]) * model.dx * model.dz ≈ sum(an_cell_energies(model, active)) rtol = 1e-12
+        @test sum(es.energies.te[interior_xz(model.domain)...]) * model.dx * model.dz ≈ sum(an_cell_energies(model, active)) rtol = 1e-12
     end
 
     @testset "driver loop" begin

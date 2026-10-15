@@ -27,7 +27,7 @@ end
 
 # # maps an averaged field to the in situ state
 # function ref_to_state!(X, Xa, map_field)
-#     @with model.mgr, for i in xrange_interior(domain), j in zrange_interior(domain)
+#     @with model.mgr, for i in interior_cells(domain, 1), j in interior_cells(domain, 2)
 #         X[i, j] = Xa[round(Int, map_field[i, j])]
 #     end
 #     periodize!(model, X)
@@ -38,7 +38,7 @@ end
 function prime!(Xp_, (X, Xa), map_field, model)
     (; domain) = model
     Xp = similar!(Xp_, X)
-    @with model.mgr, let (irange, jrange) = (xrange_interior(domain), zrange_interior(domain))
+    @with model.mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @vec for i in irange, j in jrange
             Xp[i, j] = X[i, j] - Xa[map_field[i, j]]
         end
@@ -56,7 +56,7 @@ function ae_tendencies!(ae_scratch, model::AN2D, ref_state_type::BoussinesqPDFRe
     rho0 = ρ_R[1]
 
     # compute buoyancy
-    b = ae_buoyancy!(ae_scratch.fields.b, dynamics_scratch.thermo, model, model.buoyancy)
+    b = ae_buoyancy!(ae_scratch.fields.b, dynamics_scratch.thermo, model, model.buoyancy_scheme)
 
     # compute reference state
     (; bsorted, edges, freqs, map, zeta, zeta_c, perm, iperm) = ae_scratch.reference_state
@@ -65,9 +65,9 @@ function ae_tendencies!(ae_scratch, model::AN2D, ref_state_type::BoussinesqPDFRe
 
     # create a field that maps to the reference state
     (; map_field) = ae_scratch.fields
-    map_field = similar!(map_field, [0], xdim(domain), zdim(domain))
+    map_field = similar!(map_field, [0], ncells(domain, 1), ncells(domain, 2))
     map_field .= 0
-    map_field[xrange_interior(domain), zrange_interior(domain)] = @views reshape(map, Mx, Mz)
+    map_field[interior_cells(domain, 1), interior_cells(domain, 2)] = @views reshape(map, Mx, Mz)
     periodize!(model, (map_field,))
 
     # compute reference stratification
@@ -133,10 +133,10 @@ end
 
 function centre_Xz!(uc_, u, model)
     (; mgr, domain) = model
-    uc = similar!(uc_, u, xdim(domain), zdim(domain))
-    @with mgr, let (irange, jrange) = (xrange(domain), zrange(domain))
+    uc = similar!(uc_, u, ncells(domain, 1), ncells(domain, 2))
+    @with mgr, let (irange, jrange) = (cells(domain, 1), cells(domain, 2))
         @vec for i in irange, j in jrange                      
-            uc[i, j] = avg_x(u, i, j)
+            uc[i, j] = ℑ(u, (1,), (Cell(),), i, j)
         end       
     end
     return uc
@@ -144,10 +144,10 @@ end
 
 function centre_xZ!(wc_, w, model)
     (; mgr, domain) = model
-    wc = similar!(wc_, w, xdim(domain), zdim(domain))
-    @with mgr, let (irange, jrange) = (xrange(domain), zrange(domain))
+    wc = similar!(wc_, w, ncells(domain, 1), ncells(domain, 2))
+    @with mgr, let (irange, jrange) = (cells(domain, 1), cells(domain, 2))
         @vec for i in irange, j in jrange                      
-            wc[i, j] = avg_z(w, i, j)
+            wc[i, j] = ℑ(w, (2,), (Cell(),), i, j)
         end       
     end
     return wc
@@ -212,17 +212,17 @@ function grad!((∂f∂x_, ∂f∂z_, ∂f∂x_c_, ∂f∂z_c_, absgradf_), f, s
     absgradf = similar!(absgradf_, state.m, size(state.m)[1:end-1]...)
     
     # horizontal derivative
-    @with mgr, let (irange, jrange) = (Xrange(domain), axes(∂f∂x, 2))
+    @with mgr, let (irange, jrange) = (faces(domain, 1), axes(∂f∂x, 2))
         @vec for I in irange, j in jrange
-            ∂f∂x[I, j] = inv_dx * dif_X(f, I, j)
+            ∂f∂x[I, j] = inv_dx * δ(f, (1,), (Face(),), I, j)
         end
     end
     periodize!(model, ∂f∂x)
 
     # vertical derivative
-    @with mgr, let (irange, jrange) = (axes(∂f∂z, 1), Zrange(domain))
+    @with mgr, let (irange, jrange) = (axes(∂f∂z, 1), faces(domain, 2))
         @vec for i in irange, J in jrange
-            ∂f∂z[i, J] = inv_dz * dif_Z(f, i, J)
+            ∂f∂z[i, J] = inv_dz * δ(f, (2,), (Face(),), i, J)
         end
     end
 
@@ -231,20 +231,20 @@ function grad!((∂f∂x_, ∂f∂z_, ∂f∂x_c_, ∂f∂z_c_, absgradf_), f, s
     ∂f∂z[:, end] .= 0.
 
     # interpolation onto cell centres
-    @with mgr, let (irange, jrange) = (xrange(domain), axes(∂f∂x_c, 2))
+    @with mgr, let (irange, jrange) = (cells(domain, 1), axes(∂f∂x_c, 2))
         @vec for i in irange, j in jrange
-            ∂f∂x_c[i, j] = avg_x(∂f∂x, i, j)
+            ∂f∂x_c[i, j] = ℑ(∂f∂x, (1,), (Cell(),), i, j)
         end
     end
-    @with mgr, let (irange, jrange) = (axes(∂f∂z_c, 1), zrange(domain))
+    @with mgr, let (irange, jrange) = (axes(∂f∂z_c, 1), cells(domain, 2))
         @vec for i in irange, j in jrange
-            ∂f∂z_c[i, j] = avg_z(∂f∂z, i, j)
+            ∂f∂z_c[i, j] = ℑ(∂f∂z, (2,), (Cell(),), i, j)
         end
     end
-    @with mgr, let (irange, jrange) = (xrange(domain), zrange(domain))
+    @with mgr, let (irange, jrange) = (cells(domain, 1), cells(domain, 2))
         @vec for i in irange, j in jrange
-            absgradf[i, j] = sqrt(avg_x(abs2, ∂f∂x, i, j) + avg_z(abs2, ∂f∂z, i, j))
-            # absgradf[i, j] = sqrt(avg_x(∂f∂x, i, j)^2 + avg_z(∂f∂z, i, j)^2)
+            absgradf[i, j] = sqrt(ℑ((∂f∂x, ∂f∂x), (1,), (Cell(),), i, j) + ℑ((∂f∂z, ∂f∂z), (2,), (Cell(),), i, j))
+            # absgradf[i, j] = sqrt(ℑ(∂f∂x, (1,), (Cell(),), i, j)^2 + ℑ(∂f∂z, (2,), (Cell(),), i, j)^2)
         end
     end
 
@@ -281,10 +281,10 @@ function consvar_sorted_reference_state!((mass_), state, model::AN2D{F}, dynamic
 
     mass = similar!(mass_, consvar)
 
-    @with mgr, let (irange, jrange) = (xrange(domain), zrange(domain))
+    @with mgr, let (irange, jrange) = (cells(domain, 1), cells(domain, 2))
         @vec for i in irange, j in jrange
             # calculate mass of each parcel in original position
-            mass[i, j] = dx * dz * ρ_func(zpoint(domain, dz, j))    
+            mass[i, j] = dx * dz * ρ_func(cellpoint(domain, dz, 2, j))    
         end
     end
 

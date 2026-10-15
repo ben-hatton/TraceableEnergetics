@@ -3,8 +3,8 @@ module TraceableEnergetics
 # initial conditions (setups), shared by the anelastic (AN2D) and fully compressible (FC2D) box models, the diagnostics
 # of either model, and their output during a run (NetCDF or JLD2 data files, videos).
 
-using CFBoxes: Periodic, Bounded, boundary_topology, zpoint, xdim, zdim, Xdim, Zdim, interior, coordinates, dims,
-               halo_size, xgrid, Xgrid, zgrid, Zgrid
+using CFBoxes: Periodic, Bounded, boundary_topology, cellpoint, ncells, nfaces, interior, coordinates, dims,
+               halo_size, cellgrid, facegrid, Face, Cell
 using CookBooks: CookBooks
 using CFAnelastics: CFAnelastics, AN2D
 using CFCompressible: CFCompressible, FC2D

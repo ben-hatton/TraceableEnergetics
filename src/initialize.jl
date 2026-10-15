@@ -21,6 +21,6 @@ end
 
 # face arrays (u, w) of a mean flow u(z): u(z) on the u-faces, zero on the w-faces
 function mean_flow((; domain, dz), u)
-    ū = [u(zpoint(domain, dz, j)) for I in 1:Xdim(domain), j in 1:zdim(domain)]
-    return ū, zeros(typeof(dz), xdim(domain), Zdim(domain))
+    ū = [u(cellpoint(domain, dz, 2, j)) for I in 1:nfaces(domain, 1), j in 1:ncells(domain, 2)]
+    return ū, zeros(typeof(dz), ncells(domain, 1), nfaces(domain, 2))
 end

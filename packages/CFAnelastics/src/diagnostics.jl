@@ -1,7 +1,7 @@
 ## DIAGNOSTICS
 #
 # Every diagnostic is a full array with a defined halo (from the state and the tendency scratch, or a zero-gradient
-# halo), on the grid location given by `diagnostic_info` (:xz cells, :Xz u-faces, :xZ w-faces, :XZ vertices). Names
+# halo), on the grid location given by `diagnostic_info` ((Cell(), Cell()) cells, (Face(), Cell()) u-faces, (Cell(), Face()) w-faces, (Face(), Face()) vertices). Names
 # are shared with FC2D. Derived fields use the operators of `model.spatial_scheme`. For plotting,
 # `interior(domain, field)` strips the halo and `coordinates(domain, (dx, dz), location)` gives the points.
 
@@ -85,44 +85,44 @@ Long name, units and grid location of each diagnostic of `diagnostics(model)`, a
 `(; long_name, units, location)`.
 """
 diagnostic_info(::AN2D) = (;
-    conservative_variable            = (long_name = "conservative variable",                           units = "consvar",              location = :xz),
-    composition                      = (long_name = "composition (solute mass fraction)",              units = "kg/kg",                location = :xz),
-    u                                = (long_name = "horizontal velocity",                             units = "m s⁻¹",                location = :Xz),
-    w                                = (long_name = "vertical velocity",                               units = "m s⁻¹",                location = :xZ),
-    density                          = (long_name = "reference density ρ_R",                           units = "kg m⁻³",               location = :xz),
-    ρconsvar                         = (long_name = "reference density × conservative variable",       units = "kg m⁻³ × consvar",     location = :xz),
-    ρq                               = (long_name = "reference density × composition",                 units = "kg m⁻³",               location = :xz),
-    specific_entropy                 = (long_name = "specific entropy",                                units = "J kg⁻¹ K⁻¹",           location = :xz),
-    potential_temperature            = (long_name = "potential temperature",                           units = "K",                    location = :xz),
-    pressure                         = (long_name = "pressure, p_R + ρ_R φ",                           units = "Pa",                   location = :xz),
-    temperature                      = (long_name = "temperature (at the reference pressure)",         units = "K",                    location = :xz),
-    conjugate_variable               = (long_name = "conjugate variable of consvar, ∂h/∂consvar",      units = "J kg⁻¹ / consvar",     location = :xz),
-    modified_chemical_potential      = (long_name = "modified chemical potential, ∂h/∂q",              units = "J kg⁻¹",               location = :xz),
-    forcing_potential                = (long_name = "potential of the momentum forcing",               units = "J kg⁻¹",               location = :xz),
-    buoyancy                         = (long_name = "buoyancy",                                        units = "m s⁻²",                location = :xz),
-    kinematic_pressure_anomaly       = (long_name = "kinematic pressure anomaly (p - p_R)/ρ_R",        units = "J kg⁻¹",               location = :xz),
-    vorticity                        = (long_name = "vorticity ∂u/∂z - ∂w/∂x",                         units = "s⁻¹",                  location = :XZ),
-    divergence                       = (long_name = "velocity divergence ∂u/∂x + ∂w/∂z",               units = "s⁻¹",                  location = :xz),
-    mass_flux_x                      = (long_name = "mass flux ρ_R u along x",                         units = "kg m⁻² s⁻¹",           location = :Xz),
-    mass_flux_z                      = (long_name = "mass flux ρ_R w along z",                         units = "kg m⁻² s⁻¹",           location = :xZ),
-    mass_divergence                  = (long_name = "mass divergence ∇·(ρ_R u)",                       units = "kg m⁻³ s⁻¹",           location = :xz),
-    kinetic_energy                   = (long_name = "kinetic energy per unit mass",                    units = "J kg⁻¹",               location = :xz),
-    ∂u_x                             = (long_name = "∂u/∂x",                                           units = "s⁻¹",                  location = :xz),
-    ∂w_z                             = (long_name = "∂w/∂z",                                           units = "s⁻¹",                  location = :xz),
-    ∂u_z                             = (long_name = "∂u/∂z",                                           units = "s⁻¹",                  location = :XZ),
-    ∂w_x                             = (long_name = "∂w/∂x",                                           units = "s⁻¹",                  location = :XZ),
-    consflux_x                       = (long_name = "diffusive flux of consvar along x",               units = "kg m⁻² s⁻¹ × consvar", location = :Xz),
-    consflux_z                       = (long_name = "diffusive flux of consvar along z",               units = "kg m⁻² s⁻¹ × consvar", location = :xZ),
-    qflux_x                          = (long_name = "diffusive flux of composition along x",           units = "kg m⁻² s⁻¹",           location = :Xz),
-    qflux_z                          = (long_name = "diffusive flux of composition along z",           units = "kg m⁻² s⁻¹",           location = :xZ),
-    viscous_dissipation              = (long_name = "viscous dissipation",                             units = "W m⁻³",                location = :xz),
-    conservative_variable_production = (long_name = "irreversible production of consvar",              units = "kg m⁻³ s⁻¹ × consvar", location = :xz),
-    div_consflux                     = (long_name = "divergence of the diffusive flux of consvar",     units = "kg m⁻³ s⁻¹ × consvar", location = :xz),
-    div_qflux                        = (long_name = "divergence of the diffusive flux of composition", units = "kg m⁻³ s⁻¹",           location = :xz),
-    dρconsvar                        = (long_name = "tendency of ρ_R consvar",                         units = "kg m⁻³ s⁻¹ × consvar", location = :xz),
-    dρq                              = (long_name = "tendency of ρ_R q",                               units = "kg m⁻³ s⁻¹",           location = :xz),
-    du                               = (long_name = "tendency of u",                                   units = "m s⁻²",                location = :Xz),
-    dw                               = (long_name = "tendency of w",                                   units = "m s⁻²",                location = :xZ),
+    conservative_variable            = (long_name = "conservative variable",                           units = "consvar",              location = (Cell(), Cell())),
+    composition                      = (long_name = "composition (solute mass fraction)",              units = "kg/kg",                location = (Cell(), Cell())),
+    u                                = (long_name = "horizontal velocity",                             units = "m s⁻¹",                location = (Face(), Cell())),
+    w                                = (long_name = "vertical velocity",                               units = "m s⁻¹",                location = (Cell(), Face())),
+    density                          = (long_name = "reference density ρ_R",                           units = "kg m⁻³",               location = (Cell(), Cell())),
+    ρconsvar                         = (long_name = "reference density × conservative variable",       units = "kg m⁻³ × consvar",     location = (Cell(), Cell())),
+    ρq                               = (long_name = "reference density × composition",                 units = "kg m⁻³",               location = (Cell(), Cell())),
+    specific_entropy                 = (long_name = "specific entropy",                                units = "J kg⁻¹ K⁻¹",           location = (Cell(), Cell())),
+    potential_temperature            = (long_name = "potential temperature",                           units = "K",                    location = (Cell(), Cell())),
+    pressure                         = (long_name = "pressure, p_R + ρ_R φ",                           units = "Pa",                   location = (Cell(), Cell())),
+    temperature                      = (long_name = "temperature (at the reference pressure)",         units = "K",                    location = (Cell(), Cell())),
+    conjugate_variable               = (long_name = "conjugate variable of consvar, ∂h/∂consvar",      units = "J kg⁻¹ / consvar",     location = (Cell(), Cell())),
+    modified_chemical_potential      = (long_name = "modified chemical potential, ∂h/∂q",              units = "J kg⁻¹",               location = (Cell(), Cell())),
+    forcing_potential                = (long_name = "potential of the momentum forcing",               units = "J kg⁻¹",               location = (Cell(), Cell())),
+    buoyancy                         = (long_name = "buoyancy",                                        units = "m s⁻²",                location = (Cell(), Cell())),
+    kinematic_pressure_anomaly       = (long_name = "kinematic pressure anomaly (p - p_R)/ρ_R",        units = "J kg⁻¹",               location = (Cell(), Cell())),
+    vorticity                        = (long_name = "vorticity ∂u/∂z - ∂w/∂x",                         units = "s⁻¹",                  location = (Face(), Face())),
+    divergence                       = (long_name = "velocity divergence ∂u/∂x + ∂w/∂z",               units = "s⁻¹",                  location = (Cell(), Cell())),
+    mass_flux_x                      = (long_name = "mass flux ρ_R u along x",                         units = "kg m⁻² s⁻¹",           location = (Face(), Cell())),
+    mass_flux_z                      = (long_name = "mass flux ρ_R w along z",                         units = "kg m⁻² s⁻¹",           location = (Cell(), Face())),
+    mass_divergence                  = (long_name = "mass divergence ∇·(ρ_R u)",                       units = "kg m⁻³ s⁻¹",           location = (Cell(), Cell())),
+    kinetic_energy                   = (long_name = "kinetic energy per unit mass",                    units = "J kg⁻¹",               location = (Cell(), Cell())),
+    ∂u_x                             = (long_name = "∂u/∂x",                                           units = "s⁻¹",                  location = (Cell(), Cell())),
+    ∂w_z                             = (long_name = "∂w/∂z",                                           units = "s⁻¹",                  location = (Cell(), Cell())),
+    ∂u_z                             = (long_name = "∂u/∂z",                                           units = "s⁻¹",                  location = (Face(), Face())),
+    ∂w_x                             = (long_name = "∂w/∂x",                                           units = "s⁻¹",                  location = (Face(), Face())),
+    consflux_x                       = (long_name = "diffusive flux of consvar along x",               units = "kg m⁻² s⁻¹ × consvar", location = (Face(), Cell())),
+    consflux_z                       = (long_name = "diffusive flux of consvar along z",               units = "kg m⁻² s⁻¹ × consvar", location = (Cell(), Face())),
+    qflux_x                          = (long_name = "diffusive flux of composition along x",           units = "kg m⁻² s⁻¹",           location = (Face(), Cell())),
+    qflux_z                          = (long_name = "diffusive flux of composition along z",           units = "kg m⁻² s⁻¹",           location = (Cell(), Face())),
+    viscous_dissipation              = (long_name = "viscous dissipation",                             units = "W m⁻³",                location = (Cell(), Cell())),
+    conservative_variable_production = (long_name = "irreversible production of consvar",              units = "kg m⁻³ s⁻¹ × consvar", location = (Cell(), Cell())),
+    div_consflux                     = (long_name = "divergence of the diffusive flux of consvar",     units = "kg m⁻³ s⁻¹ × consvar", location = (Cell(), Cell())),
+    div_qflux                        = (long_name = "divergence of the diffusive flux of composition", units = "kg m⁻³ s⁻¹",           location = (Cell(), Cell())),
+    dρconsvar                        = (long_name = "tendency of ρ_R consvar",                         units = "kg m⁻³ s⁻¹ × consvar", location = (Cell(), Cell())),
+    dρq                              = (long_name = "tendency of ρ_R q",                               units = "kg m⁻³ s⁻¹",           location = (Cell(), Cell())),
+    du                               = (long_name = "tendency of u",                                   units = "m s⁻²",                location = (Face(), Cell())),
+    dw                               = (long_name = "tendency of w",                                   units = "m s⁻²",                location = (Cell(), Face())),
 )
 
 """
@@ -165,10 +165,9 @@ end
 
 # buoyancy of the buoyancy scheme on the cells, from the specific volume v(p_R, consvar, q)
 function buoyancy_field!(b, model, consvar, q)
-    (; mgr, fluid, reference, space) = model
+    (; mgr, fluid, reference, space, buoyancy_scheme) = model
     (; ρ_R, p_R) = reference
     (; g) = space
-    buoyancy_scheme = model.buoyancy
     @with mgr, let (irange, jrange) = (axes(b, 1), axes(b, 2))
         @inbounds @vec for i in irange, j in jrange
             b[i, j] = buoyancy(buoyancy_scheme, g, ρ_R[j], fluid(:p, :consvar, :q).specific_volume(p_R[j], consvar[i, j], q[i, j]))
@@ -202,10 +201,10 @@ end
 function mass_flux_z!(flux, model, (; w))
     (; mgr, domain, reference) = model
     (; ρ_R) = reference
-    (; avg_Z) = operators(model.spatial_scheme)
-    @with mgr, let (irange, jrange) = (axes(flux, 1), Zrange(domain))
+    (; ℑ) = operators(model.spatial_scheme)
+    @with mgr, let (irange, jrange) = (axes(flux, 1), faces(domain, 2))
         @vec for i in irange, J in jrange
-            flux[i, J] = avg_Z(ρ_R, J) * w[i, J]
+            flux[i, J] = ℑ(ρ_R, (2,), (Face(),), J) * w[i, J]
         end
     end
     return flux
@@ -215,10 +214,10 @@ end
 # zero-gradient halo
 function divergence_field!(div, model, Vx, Vz)
     (; mgr, domain, inv_dx, inv_dz) = model
-    (; dif_x, dif_z) = operators(model.spatial_scheme)
-    @with mgr, let (irange, jrange) = (xrange_interior(domain), zrange_interior(domain))
+    (; δ) = operators(model.spatial_scheme)
+    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @vec for i in irange, j in jrange
-            div[i, j] = inv_dx * dif_x(Vx, i, j) + inv_dz * dif_z(Vz, i, j)
+            div[i, j] = inv_dx * δ(Vx, (1,), (Cell(),), i, j) + inv_dz * δ(Vz, (2,), (Cell(),), i, j)
         end
     end
     return fill_halo!(div, domain, ZeroGradient())

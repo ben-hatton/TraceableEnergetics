@@ -42,7 +42,7 @@ function relative_divergence(setup, c)
     for I in CartesianIndices(div), d in 1:N
         hi = I + CartesianIndex(ntuple(k -> k == d ? 1 : 0, N))
         k = I[N] + H[N]
-        ρlo, ρhi = d == N ? (avg_Z(ρ_R, k), avg_Z(ρ_R, k+1)) : (ρ_R[k], ρ_R[k])
+        ρlo, ρhi = d == N ? (ℑ(ρ_R, (2,), (Face(),), k), ℑ(ρ_R, (2,), (Face(),), k+1)) : (ρ_R[k], ρ_R[k])
         div[I] += (ρhi * c[d][hi] - ρlo * c[d][I]) / spacing[d]
         scale = max(scale, abs(ρhi * c[d][hi]) / spacing[d])
     end

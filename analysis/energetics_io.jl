@@ -85,7 +85,7 @@ function construct_state!(ds, keys, model::AN2D{F}) where {F}
     dsm1 = @views ds["m"][:, :, 1, :]
     dsm2 = @views ds["m"][:, :, 2, :]
 
-    let jrange = zrange(domain)
+    let jrange = cells(domain, 2)
         for j in jrange
             dsm1[:, j, :] = ds[keys.s][:, j, :] .* ρ_R[j]
             dsm2[:, j, :] = ds[keys.q][:, j, :] .* ρ_R[j]

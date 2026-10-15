@@ -126,7 +126,7 @@ function reference_state!((bvec_, edges_, freqs_, map_, zeta_, zeta_c_, z_star_)
     z_star = similar!(z_star_, b)
     
     # cut off halo cells of buoyancy and put into a vector
-    bvec .= reshape(@view(b[xrange_interior(domain), zrange_interior(domain)]), length(bvec)) 
+    bvec .= reshape(@view(b[interior_cells(domain, 1), interior_cells(domain, 2)]), length(bvec)) 
 
     # compute min, max and bin interval size for buoyancy
     b_min = minimum(bvec) - nudge
@@ -157,7 +157,7 @@ function reference_state!((bvec_, edges_, freqs_, map_, zeta_, zeta_c_, z_star_)
     zeta_c .= (zeta[1:end-1] .+ zeta[2:end])/2
 
     # reference height field
-    z_star_int = @view(z_star[xrange_interior(domain), zrange_interior(domain)])
+    z_star_int = @view(z_star[interior_cells(domain, 1), interior_cells(domain, 2)])
     @inbounds for i in eachindex(bvec)
         z_star_int[i] = zeta_c[map[i]]
     end
@@ -187,7 +187,7 @@ function reference_state!((edges_, freqs_, map_, zeta_, zeta_c_, z_star_, bsorte
     z_star = similar!(z_star_, b)
 
     # cut off halo cells of buoyancy and put into a vector
-    bvec = vec(@view b[xrange_interior(domain), zrange_interior(domain)])
+    bvec = vec(@view b[interior_cells(domain, 1), interior_cells(domain, 2)])
 
     # sort b, record perm and iperm
     sortperm!(perm, bvec)
@@ -213,13 +213,13 @@ function reference_state!((edges_, freqs_, map_, zeta_, zeta_c_, z_star_, bsorte
     end
 
     # # reference height field (binned)
-    # z_star_int = @view(z_star[xrange_interior(domain), zrange_interior(domain)])
+    # z_star_int = @view(z_star[interior_cells(domain, 1), interior_cells(domain, 2)])
     # @inbounds for i in eachindex(bvec)
     #     z_star_int[i] = zeta_c[map[i]]
     # end
 
     # reference height field (exact) : this code is a bit dodgy...
-    z_star_int = vec(@view z_star[xrange_interior(domain), zrange_interior(domain)])
+    z_star_int = vec(@view z_star[interior_cells(domain, 1), interior_cells(domain, 2)])
     for i in eachindex(z_star_int)
         z_star_int[i] = Lz * iperm[i] / (Mx * Mz)
     end

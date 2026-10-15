@@ -52,8 +52,8 @@ function record! end
 File of the diagnostics `names` (a tuple of symbols, see `diagnostic_info(model)`) of `model`, as full arrays with
 halo, one per time slice, for post-processing; the format is chosen from the extension of `path`:
 - `.nc`: NetCDF, a variable per diagnostic on the dimensions of its grid location and time, e.g. `(X, z, t)` for
-  `:Xz`, with its `long_name`, `units` and `location`, the coordinates (x, X, z, Z) [m] of every point, halo included,
-  the times `t` [s], and the grid (Mx, Mz, Hx, Hz, Lx, Lz, dx, dz) as global attributes;
+  `(Face(), Cell())`, with its `long_name`, `units` and `location` ("Xz"), the coordinates (x, X, z, Z) [m] of every
+  point, halo included, the times `t` [s], and the grid (Mx, Mz, Hx, Hz, Lx, Lz, dx, dz) as global attributes;
 - `.jld2`: JLD2, the same contents, with the diagnostic at slice n under `"name/n"` and its time under `"t/n"`.
 An existing file is overwritten. `loop` closes it when the run ends (otherwise, `close(file)`).
 
@@ -86,7 +86,7 @@ grid((; domain, space, dx, dz)) = let (Mx, Mz) = dims(domain), (Hx, Hz) = halo_s
     (; Mx, Mz, Hx, Hz, space.Lx, space.Lz, dx, dz)
 end
 grid_coordinates((; domain, dx, dz)) =
-    (; x = xgrid(domain, dx), X = Xgrid(domain, dx), z = zgrid(domain, dz), Z = Zgrid(domain, dz))
+    (; x = cellgrid(domain, dx, 1), X = facegrid(domain, dx, 1), z = cellgrid(domain, dz, 2), Z = facegrid(domain, dz, 2))
 
 ## NetCDF
 
@@ -100,13 +100,18 @@ function create_file(::Val{:nc}, path, model, info)
     end
     defDim(ds, "t", Inf)
     defVar(ds, "t", typeof(model.dx), ("t",); attrib = ["units" => "s"])
-    # a variable per diagnostic, on the dimensions of its grid location, e.g. :Xz ↦ ("X", "z", "t")
+    # a variable per diagnostic, on the dimensions of its grid location, e.g. (Face(), Cell()) ↦ ("X", "z", "t")
     for (name, (; long_name, units, location)) in pairs(info)
-        defVar(ds, string(name), typeof(model.dx), (map(string, Tuple(string(location)))..., "t");
-               attrib = ["long_name" => long_name, "units" => units, "location" => string(location)])
+        dims = map(dimname, location, (1, 2))
+        defVar(ds, string(name), typeof(model.dx), (dims..., "t");
+               attrib = ["long_name" => long_name, "units" => units, "location" => join(dims)])
     end
     return ds
 end
+
+# NetCDF dimension name along dimension d (1 = x, 2 = z) of a grid location: lower case cells, upper case faces
+dimname(::Cell, d) = ("x", "z")[d]
+dimname(::Face, d) = ("X", "Z")[d]
 
 function record!(file::DataFile{<:NCDataset}, session, t)
     n = file.slices[] += 1
