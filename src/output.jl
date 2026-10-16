@@ -16,7 +16,7 @@ when the run ends, closes the data files and saves the videos. `outputs[k]` is t
 ```julia
 outputs = Outputs(DataFile("run.nc", model, (:u, :w)), DataFile("run.jld2", model, (:u, :w)),
                   DiagnosticVideo(model, :potential_temperature; file = "run.mp4"))
-CFAnelastics.loop(model, state, scheme, params; outputs)     # writes run.nc, run.jld2 and run.mp4
+CFAnelastics.loop(state, model, scheme, params; outputs)     # writes run.nc, run.jld2 and run.mp4
 ```
 """
 struct Outputs{O <: Tuple}

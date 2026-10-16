@@ -1,9 +1,11 @@
-# Poisson solver for the anelastic pressure: pressure!(φ, solver, mgr, dU) finds φ such that the corrected tendencies
-# dU - ∇φ satisfy ∇·(ρ_R (dU - ∇φ)) = 0, with no flow through walls. Checked in 2D (periodic and bounded in x) and 3D.
+#=
+Poisson solver for the anelastic pressure: pressure!(φ, solver, mgr, dU) finds φ such that the corrected tendencies
+dU - ∇φ satisfy ∇·(ρ_R (dU - ∇φ)) = 0, with no flow through walls. Checked in 2D (periodic and bounded in x) and 3D.
+=#
 
 using CFAnelastics: PoissonSolver, pressure!
 
-# box, spacing, reference density ρ_R(z) = 1 + z/2 at cell centres, and face arrays for the tendencies
+# box, spacing, reference density ρ_R(z) = 1 + z/2 at cell centers, and face arrays for the tendencies
 function poisson_setup(topology, M; L = map(_ -> 1.0, M))
     N = length(M)
     domain = N == 2 ? Box2D(Mx = M[1], Mz = M[2], boundary = topology) :
@@ -19,7 +21,7 @@ function poisson_setup(topology, M; L = map(_ -> 1.0, M))
             solver = PoissonSolver(domain, spacing, ρ_R))
 end
 
-# coordinates of face index I along d (dual along d, primal elsewhere), or of a cell centre (d = 0)
+# coordinates of face index I along d (dual along d, primal elsewhere), or of a cell center (d = 0)
 coords(setup, d, I) = ntuple(e -> (I[e] - halo_size(setup.domain)[e] - (e == d ? 1.0 : 0.5)) * setup.spacing[e], length(I))
 
 # corrected tendency dU_d - ∂_d φ on every face of the interior cells (walls included)
@@ -60,8 +62,10 @@ const poisson_cases = (((Periodic, Bounded), (16, 8), true), ((Bounded, Bounded)
 @testset "Poisson solver" begin
     for (topology, M, convergence) in poisson_cases
         @testset "$(length(M))D $(nameof.(topology))" begin
-            # random tendencies: the corrected tendencies satisfy the constraint, with no flow through walls (pressure!
-            # zeros the wall faces of dU)
+            #=
+            random tendencies: the corrected tendencies satisfy the constraint, with no flow through walls (pressure!
+            zeros the wall faces of dU)
+            =#
             setup = poisson_setup(topology, M)
             dU = map(a -> rand!(a) .- 0.5, setup.faces)
             for d in eachindex(topology)       # tendencies are periodic in periodic directions, as in the models

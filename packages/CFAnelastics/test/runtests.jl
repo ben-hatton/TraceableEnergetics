@@ -1,6 +1,8 @@
-# Property tests for AN2D: the Poisson solver for the anelastic pressure, then the tendencies (memory safety,
-# impermeable walls, conservation, energy conservation and budget, no allocations, anelastic constraint).
-# Run with Pkg.test("CFAnelastics"), or from TraceableEnergetics with  julia -t 4 --project=. test/runtests.jl
+#=
+Property tests for AN2D: the Poisson solver for the anelastic pressure, then the tendencies (memory safety,
+impermeable walls, conservation, energy conservation and budget, no allocations, anelastic constraint).
+Run with Pkg.test("CFAnelastics"), or from TraceableEnergetics with  julia -t 4 --project=. test/runtests.jl
+=#
 using Test
 
 using LoopManagers: MultiThread, VectorizedCPU
@@ -12,9 +14,7 @@ using Random: rand!
 
 include("helpers.jl")
 
-#####
-##### Configuration: small box, all physics switched on, closed (free-slip, insulating) walls
-#####
+# Configuration: small box, all physics switched on, closed (free-slip, insulating) walls
 
 const mgr = MultiThread(VectorizedCPU())
 const space = Tank2D(Lx = 1.0, Lz = 0.5, g = 10.0)

@@ -1,11 +1,16 @@
-## TRADITIONAL ENERGETICS
+# Traditional energetics of AN2D
 
+"""
+    energetics_scratch = energetics_tendencies!(energetics_scratch, model::AN2D, state, dynamics_scratch)
 
-# energetics tendencies
+Terms of the traditional energy budget of AN2D at `state`, from the scratch `dynamics_scratch` of `tendencies!`:
+energies, Boussinesq energies, irreversible terms, pressure work and buoyancy fluxes, and thermodynamic budget
+terms, in the named tuples of `energetics_scratch` (allocated when `void`).
+"""
 function energetics_tendencies!(energetics_scratch, model::AN2D, state, dynamics_scratch)
     # energies
     (; ke, pe, te) = energetics_scratch.energies
-    ke, pe, te = energies!((ke, pe, te), state, model)
+    ke, pe, te = energies!((ke, pe, te), model, state)
 
     # Boussinesq GPE, IE
     (; gpe, ie, gpe_bz) = energetics_scratch.bq_energies
@@ -18,8 +23,8 @@ function energetics_tendencies!(energetics_scratch, model::AN2D, state, dynamics
     # irreversible entropy production: πσ = ρε - consflux·∇π - qflux·∇μ
     (; entropy_prod) = energetics_scratch.irreversible
     entropy_prod = @. entropy_prod = dynamics_scratch.thermo.conjvar * dynamics_scratch.irreversible.σ_cons
-    
-    # consvar fluxes averaged onto cell centres
+
+    # consvar fluxes averaged onto cell centers
     (; consflux_x, consflux_z) = energetics_scratch.irreversible
     consflux_x, consflux_z = consflux!((consflux_x, consflux_z), state, model, dynamics_scratch)
 
@@ -52,16 +57,26 @@ function energetics_tendencies!(energetics_scratch, model::AN2D, state, dynamics
     return energetics_scratch
 end
 
-function energies!((ke, pe, te_), (; m, u, w), model::AN2D{F}) where {F}
-    ke = kinetic_energy!(ke, (; m, u, w), model)
-    pe = potential_energy!(pe, (; m), model)
+"""
+    ke, pe, te = energies!((ke, pe, te), model::AN2D, state)
+
+Energies per unit volume [J m⁻³] at the cell centers: kinetic ke (`kinetic_energy!`), potential and internal pe
+(`potential_energy!`), and total te = ke + pe. Periodized.
+"""
+function energies!((ke, pe, te_), model::AN2D{F}, (; m, u, w)) where {F}
+    ke = kinetic_energy!(ke, model, (; m, u, w))
+    pe = potential_energy!(pe, model, (; m))
     te = alloc!(te_, F, model.mgr, model.domain, (Cell(), Cell()))
     te = @. te = ke + pe
     periodize!(model.domain, te)
     return ke, pe, te
 end
 
-# consvar fluxes averaged to the cells
+"""
+    consflux_z, consflux_x = consflux!((consflux_x, consflux_z), state, model::AN2D, dynamics_scratch)
+
+Fluxes of consvar of `dynamics_scratch` averaged from the faces to the cells.
+"""
 function consflux!((consflux_x_, consflux_z_), (; m), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, domain) = model
     (; ℑ) = operators(model.spatial_scheme)
@@ -80,6 +95,12 @@ function consflux!((consflux_x_, consflux_z_), (; m), model::AN2D{F}, dynamics_s
     return consflux_z, consflux_x
 end
 
+"""
+    gpe, ie, gpe_bz = bq_energies!((gpe, ie, gpe_bz), state, model::AN2D, pe, dynamics_scratch)
+
+Boussinesq energies at the cells: the internal energy ie = ρ_R Cp (θ - T₀) - p₀, the gravitational potential energy
+gpe = pe - ie, and gpe_bz = ρ_R (g - b) Φ / g, with the buoyancy b of the model's scheme. Periodized.
+"""
 function bq_energies!((gpe_, ie_, gpe_bz_), (; m, u, w), model::AN2D{F}, pe, dynamics_scratch) where {F}
     (; mgr, reference, fluid, space) = model
     (; p_R, ρ_R) = reference
@@ -94,12 +115,10 @@ function bq_energies!((gpe_, ie_, gpe_bz_), (; m, u, w), model::AN2D{F}, pe, dyn
             cp = fluid(:p, :consvar, :q).heat_capacity(p_R[j], dynamics_scratch.thermo.consvar[i, j], dynamics_scratch.thermo.q[i, j])
 
             # ie = ρ₀(cₚθ - p₀v₀)
-            ie[i, j] = ρ_R[j] * cp * (θ - fluid.T0) - fluid.p0 
+            ie[i, j] = ρ_R[j] * cp * (θ - fluid.T0) - fluid.p0
 
             # gpe = pe - ie
             gpe[i, j] = pe[i, j] - ie[i, j]
-
-            # ρ_R[j] * ( v(θ, q) * (p_R - p0) + Φij(model, i, j) ) + g * ρ0 * z 
 
             # gpe_bz = gz - bz
             b = buoyancy(model.buoyancy_scheme, g, ρ_R[j], fluid(:p, :consvar, :q).specific_volume(p_R[j], dynamics_scratch.thermo.consvar[i, j], dynamics_scratch.thermo.q[i, j]))
@@ -110,22 +129,31 @@ function bq_energies!((gpe_, ie_, gpe_bz_), (; m, u, w), model::AN2D{F}, pe, dyn
     return gpe, ie, gpe_bz
 end
 
-# kinetic energy tendency: KE =  ρ_R .(⟨u²⟩ᵢ + ⟨w²⟩ⱼ)/2
-function kinetic_energy!(ke_, (; m, u, w), model::AN2D{F}) where {F}
+"""
+    ke = kinetic_energy!(ke, model::AN2D, state)
+
+Kinetic energy per unit volume ke = ρ_R (ℑx(u²) + ℑz(w²)) / 2 [J m⁻³] at the cells. Periodized.
+"""
+function kinetic_energy!(ke_, model::AN2D{F}, (; m, u, w)) where {F}
     (; mgr, domain, reference) = model
     (; ρ_R) = reference
     ke = alloc!(ke_, F, mgr, domain, (Cell(), Cell()))
     @with mgr, let (irange, jrange) = (cells(domain, 1), cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
-            ke[i, j] = 0.5 * ρ_R[j] * (ℑ((u, u), (1,), (Cell(),), i, j) + ℑ((w, w), (2,), (Cell(),), i, j))
+            ke[i, j] = ρ_R[j] * (ℑ((u, u), (1,), (Cell(),), i, j) + ℑ((w, w), (2,), (Cell(),), i, j)) / 2
         end
     end
     periodize!(domain, ke)
     return ke
 end
 
-# potential energy tendency: PE = ρ_R .[ h(p_R, s, q) + Φ - p_R.v_R ]
-function potential_energy!(pe_, (; m), model::AN2D{F}) where {F}
+"""
+    pe = potential_energy!(pe, model::AN2D, state)
+
+Potential and internal energy per unit volume pe = ρ_R (h(p_R, consvar, q) + Φ) - p_R [J m⁻³] at the cells.
+Periodized.
+"""
+function potential_energy!(pe_, model::AN2D{F}, (; m)) where {F}
     (; mgr, reference, fluid) = model
     (; p_R, ρ_R) = reference
     pe = alloc!(pe_, F, model.mgr, model.domain, (Cell(), Cell()))
@@ -133,15 +161,19 @@ function potential_energy!(pe_, (; m), model::AN2D{F}) where {F}
         @inbounds @vec for i in irange, j in jrange
             s = m[i, j , 1] / ρ_R[j]
             q = m[i, j , 2] / ρ_R[j]
-            pe[i, j] = ρ_R[j] * (fluid(:p, :consvar, :q).specific_enthalpy(p_R[j], s, q) + Φij(model, i, j) ) - p_R[j] 
+            pe[i, j] = ρ_R[j] * (fluid(:p, :consvar, :q).specific_enthalpy(p_R[j], s, q) + Φij(model, i, j) ) - p_R[j]
         end
     end
     periodize!(model.domain, pe)
     return pe
 end
 
-# terms relating to consvar/composition fluxes at cells: π ∇·consflux, μ ∇·qflux, and consflux·∇π, qflux·∇μ averaged
-# from their face values (zero on wall faces: zero-gradient halo of conjvar, chempot)
+"""
+    terms = irr_flux!(terms, state, model::AN2D, dynamics_scratch)
+
+Terms of the consvar and composition fluxes at the cells: π ∇·consflux, μ ∇·qflux, and consflux·∇π, qflux·∇μ
+averaged from their face values (zero on wall faces: zero-gradient halo of conjvar, chempot); also the face values.
+"""
 function irr_flux!((conjdivconsflux_, chemdivqflux_, consfluxgradconj_, qfluxgradchem_, consfluxgradconj_x_, consfluxgradconj_z_, qfluxgradchem_x_, qfluxgradchem_z_),
                    (; m), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, domain, inv_dx, inv_dz) = model
@@ -184,7 +216,11 @@ function irr_flux!((conjdivconsflux_, chemdivqflux_, consfluxgradconj_, qfluxgra
     return conjdivconsflux, chemdivqflux, consfluxgradconj, qfluxgradchem, consfluxgradconj_x, consfluxgradconj_z, qfluxgradchem_x, qfluxgradchem_z
 end
 
-# pressure work tendency: p∇.u
+"""
+    pdivu = pdivu!(pdivu, state, model::AN2D, dynamics_scratch)
+
+Pressure work p ∇·u at the cells, with p = p_R + ρ_R φ. Periodized.
+"""
 function pdivu!(pdivu_, (; m), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, reference, domain) = model
     (; ρ_R, p_R) = reference
@@ -199,7 +235,11 @@ function pdivu!(pdivu_, (; m), model::AN2D{F}, dynamics_scratch) where {F}
     return pdivu
 end
 
-# buoyancy flux tendency: ρ_R . Σ_ϕ . u.∇Φ
+"""
+    flux = buoy_flux_Σ_ϕ!(flux, state, model::AN2D, dynamics_scratch)
+
+Buoyancy flux ρ_R Σ_ϕ u·∇Φ at the interior cells (zero elsewhere). Periodized.
+"""
 function buoy_flux_Σ_ϕ!(buoy_flux_Σ_ϕ_, (; m, w), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, reference, domain, fluid, space, inv_dz) = model
     (; ρ_R, p_R) = reference
@@ -219,7 +259,11 @@ function buoy_flux_Σ_ϕ!(buoy_flux_Σ_ϕ_, (; m, w), model::AN2D{F}, dynamics_s
     return buoy_flux_Σ_ϕ
 end
 
-# buoyancy flux tendency: ρ_R . B . u.∇Φ
+"""
+    flux = buoy_flux_B!(flux, state, model::AN2D, dynamics_scratch)
+
+Buoyancy flux ρ_R g ℑz(w) (ρ_R v - 1) at the cells. Periodized.
+"""
 function buoy_flux_B!(buoy_flux_B_, (; m, w), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, reference, domain, fluid, space) = model
     (; ρ_R, p_R) = reference
@@ -237,7 +281,12 @@ function buoy_flux_B!(buoy_flux_B_, (; m, w), model::AN2D{F}, dynamics_scratch) 
     return buoy_flux_B
 end
 
-# thermodynamic budget terms: ∇.(ρu), π∇.(ρsu), μ∇.(ρqu)
+"""
+    divru, conjdivrsu, chemdivrqu = thermodynamic_budget_terms!(terms, state, model::AN2D, dynamics_scratch)
+
+Thermodynamic budget terms at the cells: ∇·(ρ_R u) (interior cells only), π ∇·(ρ_R consvar u) and
+μ ∇·(ρ_R q u). Periodized.
+"""
 function thermodynamic_budget_terms!((divru_, conjdivrsu_, chemdivrqu_), (; m, u, w), model::AN2D{F}, dynamics_scratch) where {F}
     (; mgr, domain, reference, inv_dx, inv_dz) = model
     (; ρ_R) = reference
@@ -269,11 +318,12 @@ function thermodynamic_budget_terms!((divru_, conjdivrsu_, chemdivrqu_), (; m, u
     return divru, conjdivrsu, chemdivrqu
 end
 
-## LOOP
+"""
+    Φ = Φij(model::AN2D, i, j)
 
-# energetics loop
+Geopotential Φ = g (z - Lz) [J kg⁻¹] at the cells of level j.
+"""
 function Φij(model::AN2D, i, j)
     return model.space.g * (CFBoxes.cellpoint(model.domain, model.dz, 2, j) - model.space.Lz)
 end
 
-# initialisation

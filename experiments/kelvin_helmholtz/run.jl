@@ -46,7 +46,7 @@ thermoflux_scheme  = ThermoFluxConsistent(k_T = 1e-4, k_q = 1e-5)           # th
 #####
 
 mgr    = SIMD()                     # vectorised loops; tSIMD() (multi-threaded) pays off only on larger grids
-domain = Box2D(Mx = 64, Mz = 32, Hx = 1, Hz = 1, boundary = (Periodic, Bounded))
+domain = Box2D(Mx = 256, Mz = 128, Hx = 1, Hz = 1, boundary = (Periodic, Bounded))
 spatial_scheme = Centred2()
 vortex_scheme = VortexEnergyCons()
 
@@ -64,7 +64,7 @@ fc = FC2D((; mgr, domain, space, fluid, spatial_scheme, vortex_scheme, thermoflu
 # anelastic, about a reference density (a number, a function of the height z, or a vector of cell values) with
 # pressure ptop at the top
 anelastic_reference = AnelasticReference(domain, space, ρ0; ptop = 1e5)
-an = AN2D((; mgr, domain, space, fluid, spatial_scheme, vortex_scheme, buoyancy_scheme = BuoyThermo(), thermoflux_scheme,
+an = AN2D((; mgr, domain, space, fluid, spatial_scheme, vortex_scheme, buoyancy_scheme = ThermodynamicForcing(), thermoflux_scheme,
     viscosity_scheme, anelastic_reference, boundary_conditions))
 
 #####
@@ -90,9 +90,9 @@ states = (an = initialize(an, fields), fc = initialize(fc, fields; ptop = 1e5))
 # run each model, recording a frame of the diagnostic at t = 0 and at each time slice (see experiments/recording for
 # the other outputs: NetCDF and JLD2 data files)
 an_outputs = Outputs(DiagnosticVideo(an, diagnostic))
-CFAnelastics.loop(an, states.an, CFTimeSchemes.RungeKutta4(an), params; outputs = an_outputs)
+CFAnelastics.loop(states.an, an, CFTimeSchemes.RungeKutta4(an), params; outputs = an_outputs)
 fc_outputs = Outputs(DiagnosticVideo(fc, diagnostic))
-CFCompressible.loop(fc, states.fc, CFTimeSchemes.RungeKutta4(fc), params; outputs = fc_outputs)
+CFCompressible.loop(states.fc, fc, CFTimeSchemes.RungeKutta4(fc), params; outputs = fc_outputs)
 
 # the two models side by side (a single video saves itself, with `DiagnosticVideo(...; file)`; two runs are joined here)
 file = save(joinpath(mkpath(joinpath(@__DIR__, "output")), "kelvin_helmholtz.mp4"), an_outputs[1], fc_outputs[1])

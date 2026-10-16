@@ -29,7 +29,7 @@ function model(vortex_scheme; Mx, Mz)
     domain = Box2D(; Mx, Mz, Hx = 1, Hz = 1, boundary = (Periodic, Bounded))
     closed = Wall(tangential = FreeSlip(), tracers = (Flux(0.0), Flux(0.0)))
     return AN2D((; mgr = SIMD(), domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme,
-        buoyancy_scheme = BuoyThermo(), thermoflux_scheme = ThermoFluxConsistent(k_T = 0.0, k_q = 0.0),
+        buoyancy_scheme = ThermodynamicForcing(), thermoflux_scheme = ThermoFluxConsistent(k_T = 0.0, k_q = 0.0),
         viscosity_scheme = ViscosityScheme(dyn_visc = 0.0),
         anelastic_reference = AnelasticReference(domain, space, ρ0; ptop = 1e5),
         boundary_conditions = BoxBoundaryConditions(domain; bottom = closed, top = closed)))
@@ -69,7 +69,7 @@ function (r::Record)(model, state, dstate, scratch, book, t)
     (; ℑ) = operators(model.spatial_scheme)
     X, Zf = interior_faces(domain, 1), interior_faces(domain, 2)
     x, z = interior_cells(domain, 1), interior_cells(domain, 2)
-    _, _, te = CFAnelastics.energies!((void, void, void), state, model)
+    _, _, te = CFAnelastics.energies!((void, void, void), model, state)
     ω = scratch.derivatives.∂u_z[X, Zf] .- scratch.derivatives.∂w_x[X, Zf]
     ρ_vertex = [ℑ(ρ_R, (2,), (Face(),), J) for J in Zf]'
     enstrophy = 0.5 .* ω .^ 2 ./ ρ_vertex
@@ -91,7 +91,7 @@ end
 function run(model, fields, params)
     record = Record()
     state = initialize(model, fields)
-    CFAnelastics.loop(model, state, CFTimeSchemes.RungeKutta4(model), params; outputs = record)
+    CFAnelastics.loop(state, model, CFTimeSchemes.RungeKutta4(model), params; outputs = record)
     return record
 end
 

@@ -1,4 +1,4 @@
-## INITIAL STATE
+# Initial state of AN2D
 
 """
     state = initialize(model::AN2D; consvar, q, velocity = nothing)
@@ -17,14 +17,19 @@ function initialize(model::AN2D{F}; consvar, q, velocity = nothing) where F
         m[i, j, 1] = ρ_R[j] * consvar(x(i), z(j))
         m[i, j, 2] = ρ_R[j] * q(x(i), z(j))
     end
-    u, w = initial_velocity(velocity, F, mgr, domain)
-    return state_bc!(model, (; m, u, w))
+    u, w = initial_velocity(F, velocity, mgr, domain)
+    return state_bc!((; m, u, w), model)
 end
 
-# initial velocity: a copy of the given face arrays, or zero (at rest), in arrays placed by the manager (see `alloc`)
-initial_velocity((u, w)::Tuple, F, mgr, domain) =
+"""
+    u, w = initial_velocity(F, velocity, mgr, domain)
+
+Initial velocity of `initialize`, in arrays of eltype `F` placed by the manager (see `alloc`): a copy of the face
+arrays `velocity = (u, w)`, or zero (at rest) when `velocity` is `nothing`.
+"""
+initial_velocity(F, (u, w)::Tuple, mgr, domain) =
     (copyto!(alloc(F, mgr, domain, (Face(), Cell())), u), copyto!(alloc(F, mgr, domain, (Cell(), Face())), w))
-initial_velocity(::Nothing, F, mgr, domain) = (alloc(F, mgr, domain, (Face(), Cell())), alloc(F, mgr, domain, (Cell(), Face())))
+initial_velocity(F, ::Nothing, mgr, domain) = (alloc(F, mgr, domain, (Face(), Cell())), alloc(F, mgr, domain, (Cell(), Face())))
 
 """
     (u, w) = divergence_free_velocity(model::AN2D, ψ)
@@ -32,7 +37,7 @@ initial_velocity(::Nothing, F, mgr, domain) = (alloc(F, mgr, domain, (Face(), Ce
 Velocity on the faces with discretely divergence-free mass flux, ∇·(ρ_R u) = 0 in every cell, from a mass
 streamfunction ψ(X, Z) [kg m⁻¹ s⁻¹] evaluated at the cell vertices: ρ_R u = δ_z ψ / Δz on u-faces and
 ρ_R w = -δ_x ψ / Δx on w-faces (ρ_R averaged from the two cells). The velocity through a wall vanishes where ψ is
-constant along it. Faces without two neighbouring cells (halo edges) are zero.
+constant along it. Faces without two neighboring cells (halo edges) are zero.
 """
 function divergence_free_velocity(model::AN2D{F}, ψ) where F
     (; mgr, domain, dx, dz, reference) = model

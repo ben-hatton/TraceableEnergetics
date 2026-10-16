@@ -1,30 +1,32 @@
 using CFAnelastics
 using CFTimeSchemes: tendencies!
 
-#####
-##### AN2D configuration and states
-#####
+# AN2D configuration and states
 
 # reference density increasing with depth Lz - z
 an_density(z) = ρ0 * (1 + 0.1 * (Lz - z) / Lz)
 
-# 32 × 16 box with every physical term on: buoyancy, vortex force, thermodynamic diffusion and viscosity, using the
-# energy-conserving schemes
+#=
+32 × 16 box with every physical term on: buoyancy, vortex force, thermodynamic diffusion and viscosity, using the
+energy-conserving schemes
+=#
 function an_model(; mgr = mgr, boundary = (Periodic, Bounded), walls = (; bottom = closed_wall(), top = closed_wall()))
     domain = test_box(32, 16; boundary)
     anelastic_reference = AnelasticReference(domain, space, an_density; ptop = 1e5)
     boundary_conditions = BoxBoundaryConditions(domain; walls...)
     return AN2D((; mgr, domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme = VortexEnergyCons(),
-        buoyancy_scheme = BuoyThermo(), thermoflux_scheme = thermoflux, viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3),
+        buoyancy_scheme = ThermodynamicForcing(), thermoflux_scheme = thermoflux, viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3),
         anelastic_reference, boundary_conditions))
 end
 
 # the model's tendencies!, in the argument order of the generic checks (helpers.jl)
-an_tend!(model, dstate, scratch, state) = tendencies!(dstate, scratch, model, state, 0.0)
+an_tend!(dstate, scratch, model, state) = tendencies!(dstate, scratch, model, state, 0.0)
 
-# active state (m = ρ_R(θ, q), u, w), with no symmetry, so that every term of the tendencies is non-zero; velocities
-# from a mass streamfunction ψ vanishing on the walls, so that ∇·(ρ_R u) = 0 discretely: u = ρ_R⁻¹ δz ψ / Δz,
-# w = -ρ_R⁻¹ δx ψ / Δx with ψ at cell vertices and ρ_R averaged to the w-faces
+#=
+active state (m = ρ_R(θ, q), u, w), with no symmetry, so that every term of the tendencies is non-zero; velocities
+from a mass streamfunction ψ vanishing on the walls, so that ∇·(ρ_R u) = 0 discretely: u = ρ_R⁻¹ δz ψ / Δz,
+w = -ρ_R⁻¹ δx ψ / Δx with ψ at cell vertices and ρ_R averaged to the w-faces
+=#
 function an_state(model)
     (; domain, dx, dz, reference) = model
     (; ρ_R) = reference
@@ -85,9 +87,7 @@ function an_divergence(model, u, w)
     return div, scale
 end
 
-#####
-##### Tests
-#####
+# Tests
 
 @testset "AN2D" begin
     model = an_model(mgr = VectorizedCPU())         # closed walls, periodic in x; serial, for the allocation test

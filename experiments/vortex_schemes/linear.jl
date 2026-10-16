@@ -39,7 +39,7 @@ function models(vortex_scheme; Mx = 16, Mz = 8)
     common = (; mgr, domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme,
               thermoflux_scheme = ThermoFluxConsistent(k_T = 0.0, k_q = 0.0),
               viscosity_scheme = ViscosityScheme(dyn_visc = 0.0), boundary_conditions)
-    an = AN2D((; common..., buoyancy_scheme = BuoyThermo(), anelastic_reference = AnelasticReference(domain, space, ρ0; ptop = 1e5)))
+    an = AN2D((; common..., buoyancy_scheme = ThermodynamicForcing(), anelastic_reference = AnelasticReference(domain, space, ρ0; ptop = 1e5)))
     fc = FC2D(common)
     return an, fc
 end

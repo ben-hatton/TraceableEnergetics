@@ -1,9 +1,10 @@
-## DIAGNOSTICS
-#
-# Every diagnostic is a full array with a defined halo (from the state and the tendency scratch, or a zero-gradient
-# halo), on the grid location given by `diagnostic_info` ((Cell(), Cell()) cells, (Face(), Cell()) u-faces, (Cell(), Face()) w-faces, (Face(), Face()) vertices). Names
-# are shared with FC2D. Derived fields use the operators of `model.spatial_scheme`. For plotting,
-# `interior(domain, field)` strips the halo and `coordinates(domain, (dx, dz), location)` gives the points.
+#=
+Diagnostics of AN2D. Every diagnostic is a full array with a defined halo (from the state and the tendency scratch,
+or a zero-gradient halo), on the grid location given by `diagnostic_info`: (Cell(), Cell()) cells, (Face(), Cell())
+u-faces, (Cell(), Face()) w-faces, (Face(), Face()) vertices. Names are shared with FC2D. Derived fields use the
+operators of `model.spatial_scheme`. For plotting, `interior(domain, field)` strips the halo and
+`coordinates(domain, (dx, dz), location)` gives the points.
+=#
 
 """
     book = diagnostics(model::AN2D)
@@ -134,8 +135,13 @@ describe_diagnostics(model::AN2D) = foreach(pairs(diagnostic_info(model))) do (n
     println(rpad(name, 34), rpad(long_name, 52), units)
 end
 
-# out = f(a, b[, c]) pointwise on arrays of the same grid, halo included
+"""
+    out = pointwise!(out, mgr, f, a, b[, c])
+
+out = f(a, b[, c]) pointwise on arrays of the same grid, halo included, by the manager `mgr`.
+"""
 function pointwise!(out, mgr, f::Fun, a, b) where Fun
+    # `Fun` makes the method specialize on `f`, which the loop closure of `@with` captures without calling
     @with mgr, let (irange, jrange) = (axes(out, 1), axes(out, 2))
         @inbounds @vec for i in irange, j in jrange
             out[i, j] = f(a[i, j], b[i, j])
@@ -152,8 +158,13 @@ function pointwise!(out, mgr, f::Fun, a, b, c) where Fun
     return out
 end
 
-# reference density ρ_R(z) on the cells (a plain loop, i innermost: @vec cannot store a value independent of i)
+"""
+    ρ = density!(ρ, model::AN2D)
+
+Reference density ρ_R(z) [kg m⁻³] on the cells, halo included.
+"""
 function density!(ρ, (; mgr, reference))
+    # a plain loop, i innermost: @vec cannot store a value independent of i
     (; ρ_R) = reference
     @with mgr, let (irange, jrange) = (axes(ρ, 1), axes(ρ, 2))
         @inbounds for j in jrange, i in irange
@@ -163,7 +174,12 @@ function density!(ρ, (; mgr, reference))
     return ρ
 end
 
-# buoyancy of the buoyancy scheme on the cells, from the specific volume v(p_R, consvar, q)
+"""
+    b = buoyancy_field!(b, model::AN2D, consvar, q)
+
+Buoyancy [m s⁻²] of the model's buoyancy scheme on the cells, from the specific volume v(p_R, consvar, q) (see
+`buoyancy`).
+"""
 function buoyancy_field!(b, model, consvar, q)
     (; mgr, fluid, reference, space, buoyancy_scheme) = model
     (; ρ_R, p_R) = reference
@@ -176,7 +192,11 @@ function buoyancy_field!(b, model, consvar, q)
     return b
 end
 
-# pressure p = p_R + ρ_R φ on the cells
+"""
+    p = total_pressure!(p, model::AN2D, φ)
+
+Pressure p = p_R + ρ_R φ [Pa] on the cells.
+"""
 function total_pressure!(p, (; mgr, reference), φ)
     (; p_R, ρ_R) = reference
     @with mgr, let (irange, jrange) = (axes(p, 1), axes(p, 2))
@@ -187,7 +207,11 @@ function total_pressure!(p, (; mgr, reference), φ)
     return p
 end
 
-# mass flux ρ_R u on the u-faces (ρ_R depends on z only)
+"""
+    flux = mass_flux_x!(flux, model::AN2D, state)
+
+Mass flux ρ_R u [kg m⁻² s⁻¹] on the u-faces (ρ_R depends on z only).
+"""
 function mass_flux_x!(flux, (; mgr, reference), (; u))
     (; ρ_R) = reference
     @with mgr, let (irange, jrange) = (axes(flux, 1), axes(flux, 2))
@@ -197,7 +221,12 @@ function mass_flux_x!(flux, (; mgr, reference), (; u))
     end
     return flux
 end
-# mass flux ρ_R w on the w-faces, ρ_R averaged to the face (the lowest halo row of faces, without a cell below, is zero)
+"""
+    flux = mass_flux_z!(flux, model::AN2D, state)
+
+Mass flux ρ_R w [kg m⁻² s⁻¹] on the w-faces, ρ_R averaged to the face. The lowest halo row of faces, without a cell
+below, is zero.
+"""
 function mass_flux_z!(flux, model, (; w))
     (; mgr, domain, reference) = model
     (; ρ_R) = reference
@@ -210,8 +239,12 @@ function mass_flux_z!(flux, model, (; w))
     return flux
 end
 
-# divergence of a vector (Vx, Vz) on the faces, at the cells: δ_x Vx / Δx + δ_z Vz / Δz on the interior cells;
-# zero-gradient halo
+"""
+    div = divergence_field!(div, model, Vx, Vz)
+
+Divergence of a vector (Vx, Vz) on the faces, at the cells: δx Vx / Δx + δz Vz / Δz on the interior cells, with a
+zero-gradient halo.
+"""
 function divergence_field!(div, model, Vx, Vz)
     (; mgr, domain, inv_dx, inv_dz) = model
     (; δ) = operators(model.spatial_scheme)

@@ -1,31 +1,33 @@
-## POISSON SOLVER FOR THE ANELASTIC PRESSURE
-#
-# Problem. Given the momentum tendencies dU = (du, dw) in 2D or (du, dv, dw) in 3D on the faces of a C-grid, find the
-# modified pressure φ = (p - p_R)/ρ_R at the cell centres such that the corrected tendencies dU - ∇φ satisfy
-#       ∇·(ρ_R (dU - ∇φ)) = 0               in the fluid (anelastic constraint),
-#       (dU - ∇φ)·n = 0                     on the walls (impermeable),
-# with φ periodic in periodic directions. Writing the wall condition as dU·n = 0 and ∂φ/∂n = 0 separates the two:
-#       ∇·(ρ_R ∇φ) = ∇·(ρ_R dU)             with ∂φ/∂n = 0 on the walls.
-# Discretely, with δ_d the difference across a cell along dimension d (d = 1, …, N, z last) and Δ_d the spacing,
-#       Σ_d δ_d(ρ_d ∂_d φ) / Δ_d = Σ_d δ_d(ρ_d dU_d) / Δ_d,
-# where ρ_d is ρ_R at the cell centre on horizontal faces and ρ_w = ℑ(ρ_R) (average of the two cells) on w-faces.
-# ρ_R depends on z only, so the horizontal part of the operator is ρ_R(z) times a constant-coefficient Laplacian.
-#
-# Method, in the order of `pressure!`:
-#   1. zero dU·n on the wall faces;
-#   2. right-hand side r = ∇·(ρ dU) on the interior cells;
-#   3. transform each level horizontally: Fourier transform along periodic directions, real-to-complex (FFTW r2c,
-#      which keeps the M/2 + 1 non-negative frequencies of the first periodic direction); cosine transform (FFTW
-#      REDFT10, i.e. DCT-II) along bounded ones, applied to the real and imaginary parts separately. These
-#      diagonalise the horizontal second differences, periodic or with zero normal gradient, with eigenvalues λ ≤ 0
-#      (`horizontal_eigenvalue`). Without a periodic direction, the coefficients are real cosine coefficients;
-#   4. for each real number of the coefficients (a real or an imaginary part), solve the tridiagonal system in z
-#      (walls at bottom and top) by the Thomas algorithm: the system is real, so both parts are solved alike;
-#   5. transform back;
-#   6. fill the halo of φ: periodic copy, or zero normal gradient on walls.
-# The mean mode (λ = 0) is singular, as φ is defined up to a constant: its bottom equation is replaced by φ = 0, so
-# that the horizontal mean of φ vanishes on the bottom level (the gauge). Everything that does not depend on dU (plans,
-# eigenvalues, Thomas factors) is computed once, at construction.
+#=
+Poisson solver for the anelastic pressure
+
+Problem. Given the momentum tendencies dU = (du, dw) in 2D or (du, dv, dw) in 3D on the faces of a C-grid, find the
+modified pressure φ = (p - p_R)/ρ_R at the cell centers such that the corrected tendencies dU - ∇φ satisfy
+      ∇·(ρ_R (dU - ∇φ)) = 0               in the fluid (anelastic constraint),
+      (dU - ∇φ)·n = 0                     on the walls (impermeable),
+with φ periodic in periodic directions. Writing the wall condition as dU·n = 0 and ∂φ/∂n = 0 separates the two:
+      ∇·(ρ_R ∇φ) = ∇·(ρ_R dU)             with ∂φ/∂n = 0 on the walls.
+Discretely, with δ_d the difference across a cell along dimension d (d = 1, …, N, z last) and Δ_d the spacing,
+      Σ_d δ_d(ρ_d ∂_d φ) / Δ_d = Σ_d δ_d(ρ_d dU_d) / Δ_d,
+where ρ_d is ρ_R at the cell center on horizontal faces and ρ_w = ℑ(ρ_R) (average of the two cells) on w-faces.
+ρ_R depends on z only, so the horizontal part of the operator is ρ_R(z) times a constant-coefficient Laplacian.
+
+Method, in the order of `pressure!`:
+  1. zero dU·n on the wall faces;
+  2. right-hand side r = ∇·(ρ dU) on the interior cells;
+  3. transform each level horizontally: Fourier transform along periodic directions, real-to-complex (FFTW r2c,
+     which keeps the M/2 + 1 non-negative frequencies of the first periodic direction); cosine transform (FFTW
+     REDFT10, i.e. DCT-II) along bounded ones, applied to the real and imaginary parts separately. These
+     diagonalize the horizontal second differences, periodic or with zero normal gradient, with eigenvalues λ ≤ 0
+     (`horizontal_eigenvalue`). Without a periodic direction, the coefficients are real cosine coefficients;
+  4. for each real number of the coefficients (a real or an imaginary part), solve the tridiagonal system in z
+     (walls at bottom and top) by the Thomas algorithm: the system is real, so both parts are solved alike;
+  5. transform back;
+  6. fill the halo of φ: periodic copy, or zero normal gradient on walls.
+The mean mode (λ = 0) is singular, as φ is defined up to a constant: its bottom equation is replaced by φ = 0, so
+that the horizontal mean of φ vanishes on the bottom level (the gauge). Everything that does not depend on dU (plans,
+eigenvalues, Thomas factors) is computed once, at construction.
+=#
 
 using FFTW: FFTW
 using LinearAlgebra: mul!
@@ -35,7 +37,7 @@ using LinearAlgebra: mul!
 
 Poisson solver for the anelastic pressure on a `Box2D` or `Box3D`, with grid `spacing` (dx, dz) or (dx, dy, dz) in m.
 The vertical direction must be bounded; horizontal directions may be periodic or bounded, following the box
-topology. `ρ_R` (kg m⁻³) is the reference density at cell centres along the full z axis, halo included. `flags` are
+topology. `ρ_R` (kg m⁻³) is the reference density at cell centers along the full z axis, halo included. `flags` are
 the FFTW planner flags: `FFTW.MEASURE` times candidate algorithms at construction and keeps the fastest, so results
 may differ at round-off level between runs; `FFTW.ESTIMATE` plans at once, reproducibly, with slower transforms.
 Apply with `pressure!`.
@@ -55,7 +57,7 @@ and is solved by the Thomas algorithm, with pivots p_1 = b_1, p_j = b_j - a_j c_
 Fields:
 - `domain`: the box
 - `inv_spacing`: (1/Δx, 1/Δz) or (1/Δx, 1/Δy, 1/Δz)  [m⁻¹]
-- `ρ_R`: reference density at cell centres, full z axis (halo included)  [kg m⁻³]
+- `ρ_R`: reference density at cell centers, full z axis (halo included)  [kg m⁻³]
 - `ρ_w`: reference density on w-faces, ℑ(ρ_R), full z face axis  [kg m⁻³]
 - `rhs`: interior cells (Mx[, My], Mz): r/`scale` before the forward transform, φ after the backward one
 - `modes`: the transform coefficients of each level, as real numbers, last dimension the level. With a periodic
@@ -69,8 +71,8 @@ Fields:
   directions when none is periodic
 - `forward_cosine_plan`: in place on one level of `spectral`: DCT-II along the bounded directions, after the r2c;
   `nothing` when no direction is bounded or none is periodic
-- `backward_cosine_plan`: in place, the inverse of `forward_cosine_plan` up to its normalisation (DCT-III), or `nothing`
-- `backward_plan`: one level, `spectral` → `rhs`, the inverse of `forward_plan` up to its normalisation: c2r (which
+- `backward_cosine_plan`: in place, the inverse of `forward_cosine_plan` up to its normalization (DCT-III), or `nothing`
+- `backward_plan`: one level, `spectral` → `rhs`, the inverse of `forward_plan` up to its normalization: c2r (which
   overwrites its input), or DCT-III
 - `scale`: backward ∘ forward = `scale` × identity
 - `sub_diagonal`: a_j per level  [kg m⁻⁵]
@@ -123,25 +125,55 @@ function PoissonSolver(domain, spacing::NTuple{N, F}, ρ_R; flags = FFTW.MEASURE
                          forward_cosine_plan, backward_cosine_plan, backward_plan, scale, a, thomas_factor, inv_pivot)
 end
 
+"""
+    check_vertical(topology)
+
+Throw an error unless the vertical direction is bounded.
+"""
 check_vertical(::Bounded) = nothing
 check_vertical(::Periodic) = error("PoissonSolver: the vertical direction must be bounded.")
 
-# the coefficients of a transformed level: real cosine coefficients when every horizontal direction is bounded,
-# complex Fourier(-cosine) coefficients as soon as one is periodic
+"""
+    RealCoefficients()
+
+Layout of the coefficients of a transformed level when every horizontal direction is bounded: real cosine
+coefficients.
+"""
 struct RealCoefficients end
+
+"""
+    ComplexCoefficients()
+
+Layout of the coefficients of a transformed level as soon as one horizontal direction is periodic: complex
+Fourier(-cosine) coefficients.
+"""
 struct ComplexCoefficients end
+
+"""
+    layout = spectral_layout(horizontal)
+
+`RealCoefficients()` when every horizontal direction is bounded, `ComplexCoefficients()` otherwise.
+"""
 spectral_layout(::Tuple{Vararg{Bounded}}) = RealCoefficients()
 spectral_layout(_) = ComplexCoefficients()
 
-# number of coefficients along each horizontal direction: M, except M÷2 + 1 along the first periodic direction, whose
-# negative frequencies the r2c transform leaves out (they are the complex conjugates)
+"""
+    Mc = coefficient_counts(layout, horizontal, M)
+
+Number of coefficients along each horizontal direction: M, except M÷2 + 1 along the first periodic direction,
+whose negative frequencies the r2c transform leaves out (they are the complex conjugates).
+"""
 coefficient_counts(::RealCoefficients, horizontal, M) = M
 function coefficient_counts(::ComplexCoefficients, horizontal, M)
     halved = findfirst(t -> t isa Periodic, horizontal)
     return ntuple(d -> d == halved ? M[d] ÷ 2 + 1 : M[d], length(M))
 end
 
-# `modes` (real numbers, levels last) and its view `spectral` by the transforms
+"""
+    modes, spectral = spectral_arrays(layout, F, Mc, Mz)
+
+`modes` (real numbers, levels last) and its view `spectral` by the transforms (see `PoissonSolver`).
+"""
 function spectral_arrays(::RealCoefficients, F, Mc, Mz)
     modes = zeros(F, Mc..., Mz)
     return modes, modes
@@ -151,8 +183,12 @@ function spectral_arrays(::ComplexCoefficients, F, Mc, Mz)
     return modes, reinterpret(Complex{F}, modes)
 end
 
-# FFTW plans transforming one level: forward, forward cosine, backward cosine, backward (see `PoissonSolver`), made on
-# fresh arrays, which planning overwrites, and applied to the levels of `rhs` and `spectral`
+"""
+    forward, forward_cosine, backward_cosine, backward = horizontal_plans(layout, F, horizontal, M, Mc, flags)
+
+FFTW plans transforming one level (see `PoissonSolver`), made on fresh arrays, which planning overwrites, and
+applied to the levels of `rhs` and `spectral`.
+"""
 function horizontal_plans(::RealCoefficients, F, horizontal, M, Mc, flags)
     level, directions = zeros(F, M...), ntuple(identity, length(M))
     flags    = flags | alignment_flag(F, M)
@@ -168,31 +204,63 @@ function horizontal_plans(::ComplexCoefficients, F, horizontal, M, Mc, flags)
     forward_cosine, backward_cosine = cosine_plans(zeros(Complex{F}, Mc...), bounded, flags)
     return forward, forward_cosine, backward_cosine, backward
 end
+"""
+    forward_cosine, backward_cosine = cosine_plans(level, bounded, flags)
+
+In-place DCT-II and DCT-III plans along the `bounded` directions of a complex `level`, or `nothing` without
+bounded directions.
+"""
 cosine_plans(level, ::Tuple{}, flags) = (nothing, nothing)
 cosine_plans(level, bounded, flags) = (FFTW.plan_r2r!(level, FFTW.REDFT10, bounded; flags),
                                        FFTW.plan_r2r!(level, FFTW.REDFT01, bounded; flags)) # complex levels: aligned
 
-# FFTW's SIMD algorithms need the data to start on a 16-byte boundary, as the arrays the plans are made on do. Level k
-# of an array starts (k - 1) × (bytes per level) after its first element: every level of `rhs` is aligned when a level
-# of M real numbers fills a whole number of 16 bytes (every complex level is), otherwise the plans that read or write
-# `rhs` must be UNALIGNED, about twice slower. FFTW checks the alignment whenever a plan is applied.
+#=
+FFTW's SIMD algorithms need the data to start on a 16-byte boundary, as the arrays the plans are made on do. Level k
+of an array starts (k - 1) × (bytes per level) after its first element: every level of `rhs` is aligned when a level
+of M real numbers fills a whole number of 16 bytes (every complex level is), otherwise the plans that read or write
+`rhs` must be UNALIGNED, about twice slower. FFTW checks the alignment whenever a plan is applied.
+=#
+"""
+    flag = alignment_flag(F, M)
+
+`FFTW.UNALIGNED` for the plans that read or write `rhs` when its levels of M real numbers do not all start on a
+16-byte boundary, 0 otherwise.
+"""
 alignment_flag(F, M) = iszero(prod(M) * sizeof(F) % 16) ? 0 : FFTW.UNALIGNED
 
-# factor of backward ∘ forward along one direction of M points: Fourier (periodic) or cosine (bounded) transforms
+"""
+    factor = normalization(topology, M)
+
+Factor of backward ∘ forward along one direction of M points: M for Fourier (periodic), 2M for cosine (bounded)
+transforms.
+"""
 normalization(::Periodic, M) = M
 normalization(::Bounded, M) = 2M
 
-# eigenvalue of the second difference (φ_{m+1} - 2φ_m + φ_{m-1})/Δ² for the coefficient m = 0, 1, … along one
-# direction of M points: frequency min(m, M-m) of the Fourier transform (periodic), or the cosine mode m (bounded)
+"""
+    λ = horizontal_eigenvalue(topology, m, M, Δ)
+
+Eigenvalue of the second difference (φ_{m+1} - 2φ_m + φ_{m-1})/Δ² for the coefficient m = 0, 1, … along one
+direction of M points: frequency min(m, M-m) of the Fourier transform (periodic), or the cosine mode m (bounded).
+"""
 horizontal_eigenvalue(::Periodic, m, M, Δ) = -(2 * sin(π * min(m, M - m) / M) / Δ)^2
 horizontal_eigenvalue(::Bounded, m, M, Δ) = -(2 * sin(π * m / (2M)) / Δ)^2
 
-# eigenvalue of each row of `modes_by_level`: for each coefficient (counts Mc), in memory order, the sum over
-# horizontal directions; complex coefficients have two rows, their real and imaginary parts, with the same λ. The
-# first coefficient (all m = 0) is the horizontal mean, with λ = 0.
+"""
+    λ = horizontal_eigenvalues(layout, horizontal, M, Mc, spacing)
+
+Eigenvalue of each row of `modes_by_level`: for each coefficient (counts Mc), in memory order, the sum over
+horizontal directions; complex coefficients have two rows, their real and imaginary parts, with the same λ. The
+first coefficient (all m = 0) is the horizontal mean, with λ = 0.
+"""
 horizontal_eigenvalues(::RealCoefficients, horizontal, M, Mc, spacing) = vec(coefficient_eigenvalues(horizontal, M, Mc, spacing))
 horizontal_eigenvalues(::ComplexCoefficients, horizontal, M, Mc, spacing) =
     repeat(vec(coefficient_eigenvalues(horizontal, M, Mc, spacing)), inner = 2)
+"""
+    λ = coefficient_eigenvalues(horizontal, M, Mc, spacing)
+
+Eigenvalue of each coefficient (counts Mc): the sum over horizontal directions of `horizontal_eigenvalue`.
+"""
 function coefficient_eigenvalues(horizontal, M, Mc, spacing)
     λ = zeros(eltype(spacing), Mc...)
     for I in CartesianIndices(λ), d in eachindex(M)
@@ -201,8 +269,12 @@ function coefficient_eigenvalues(horizontal, M, Mc, spacing)
     return λ
 end
 
-# ρ_w on the faces J of the full z axis: ρ_w[J] = ℑ(ρ_R) between cells J-1 and J. The two outermost faces, beyond the
-# halo, have no cell on one side and are left at zero (never read).
+"""
+    ρ_w = face_densities(ρ_R)
+
+ρ_w on the faces J of the full z axis: ρ_w[J] = ℑ(ρ_R) between cells J-1 and J. The two outermost faces, beyond the
+halo, have no cell on one side and are left at zero (never read).
+"""
 function face_densities(ρ_R)
     ρ_w = zeros(eltype(ρ_R), length(ρ_R) + 1)
     for J in 2:length(ρ_R)
@@ -211,8 +283,12 @@ function face_densities(ρ_R)
     return ρ_w
 end
 
-# couplings of interior level j to the levels below (a_j) and above (c_j): ρ_w / Δz² through the face between them,
-# zero through the walls (no flux). Face Hz+j is the lower face of cell Hz+j.
+"""
+    a, c = vertical_coefficients(ρ_w, Mz, Hz, Δz)
+
+Couplings of interior level j to the levels below (a_j) and above (c_j): ρ_w / Δz² through the face between them,
+zero through the walls (no flux). Face Hz+j is the lower face of cell Hz+j.
+"""
 function vertical_coefficients(ρ_w, Mz, Hz, Δz)
     a = [ρ_w[Hz+j] / Δz^2 for j in 1:Mz]
     c = [ρ_w[Hz+j+1] / Δz^2 for j in 1:Mz]
@@ -220,10 +296,14 @@ function vertical_coefficients(ρ_w, Mz, Hz, Δz)
     return a, c
 end
 
-# Thomas factors c_j / p_j and 1 / p_j of every row (see `PoissonSolver`), with ρ the reference density of the
-# interior levels. The rows of the mean (λ = 0: its real part, and its imaginary part, which is zero) are singular:
-# their first equation becomes φ_1 = 0 (the gauge), by setting both factors of (row, level 1) to zero, so that y_1 = 0
-# and level 2 sees a known φ_1.
+"""
+    thomas_factor, inv_pivot = thomas_factors(λ, ρ, a, c)
+
+Thomas factors c_j / p_j and 1 / p_j of every row (see `PoissonSolver`), with ρ the reference density of the
+interior levels. The rows of the mean (λ = 0: its real part, and its imaginary part, which is zero) are singular:
+their first equation becomes φ_1 = 0 (the gauge), by setting both factors of (row, level 1) to zero, so that y_1 = 0
+and level 2 sees a known φ_1.
+"""
 function thomas_factors(λ, ρ, a, c)
     Mz = length(a)
     thomas_factor, inv_pivot = zeros(eltype(λ), length(λ), Mz), zeros(eltype(λ), length(λ), Mz)
@@ -243,7 +323,7 @@ end
 """
     pressure!(φ, solver::PoissonSolver, mgr, dU)
 
-Solve for the modified pressure `φ` = (p - p_R)/ρ_R (m² s⁻², cell centres, halo included) such that `dU - ∇φ`
+Solve for the modified pressure `φ` = (p - p_R)/ρ_R (m² s⁻², cell centers, halo included) such that `dU - ∇φ`
 satisfies the discrete anelastic constraint ∇·(ρ_R (dU - ∇φ)) = 0 with no flow through walls, `dU = (du, dw)` or
 `(du, dv, dw)` being the momentum tendencies on faces (m s⁻²), periodized in periodic directions. Sets the normal
 components of `dU` on wall faces to zero. Fills the halo of `φ`: periodic, or zero normal gradient on walls. The
@@ -263,9 +343,13 @@ function pressure!(φ, solver::PoissonSolver, mgr, dU)
     return φ
 end
 
-# r = ∇·(ρ dU) on the interior cells, in 2D and 3D: Σ_d δ_d(ρ_d dU_d) / Δ_d, ρ_R(z) on horizontal faces and ρ_w on w-faces,
-# times `factor`, written into `rhs` (interior cells only: cell i of the domain is i - H in `rhs`, H the halo width).
-# Wall faces carry dU·n = 0, hence no flux.
+"""
+    rhs = divergence!(rhs, solver::PoissonSolver, mgr, dU, factor)
+
+r = ∇·(ρ dU) on the interior cells, in 2D and 3D: Σ_d δ_d(ρ_d dU_d) / Δ_d, ρ_R(z) on horizontal faces and ρ_w on
+w-faces, times `factor`, written into `rhs` (interior cells only: cell i of the domain is i - H in `rhs`, H the halo
+width). Wall faces carry dU·n = 0, hence no flux.
+"""
 function divergence!(rhs, (; domain, inv_spacing, ρ_R, ρ_w)::PoissonSolver{2}, mgr, (du, dw), factor)
     inv_dx, inv_dz = inv_spacing
     Hx, Hz = halo_size(domain)
@@ -290,7 +374,11 @@ function divergence!(rhs, (; domain, inv_spacing, ρ_R, ρ_w)::PoissonSolver{3},
     return rhs
 end
 
-# φ = rhs on the interior cells of the halo-included φ, after `solve!`
+"""
+    φ = copy_to_interior!(φ, solver::PoissonSolver, mgr)
+
+φ = rhs on the interior cells of the halo-included φ, after `solve!`.
+"""
 function copy_to_interior!(φ, (; domain, rhs)::PoissonSolver{2}, mgr)
     Hx, Hz = halo_size(domain)
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
@@ -312,9 +400,13 @@ function copy_to_interior!(φ, (; domain, rhs)::PoissonSolver{3}, mgr)
     return φ
 end
 
-# Steps 3–5: transform the levels of `rhs` into `modes`, solve the tridiagonal system of each row (see
-# `PoissonSolver`), transform back into `rhs`. The Thomas sweeps run over the levels j, all rows at once (contiguous
-# inner loop).
+"""
+    rhs = solve!(solver::PoissonSolver, mgr)
+
+Steps 3–5: transform the levels of `rhs` into `modes`, solve the tridiagonal system of each row (see
+`PoissonSolver`), transform back into `rhs`. The Thomas sweeps run over the levels j, all rows at once (contiguous
+inner loop).
+"""
 function solve!(solver::PoissonSolver, mgr)
     (; modes_by_level, sub_diagonal, thomas_factor, inv_pivot) = solver
     a, y = sub_diagonal, modes_by_level
@@ -347,9 +439,13 @@ function solve!(solver::PoissonSolver, mgr)
     return solver.rhs
 end
 
-# 3. each level k (the last dimension): `rhs` → `spectral`, then the cosine transforms of the bounded directions in
-# place. Levels are contiguous in memory, so the one-level plans apply to them, and independent: they run in parallel
-# under a threaded manager.
+"""
+    spectral = forward_transform!(solver::PoissonSolver, mgr)
+
+Step 3, for each level k (the last dimension): `rhs` → `spectral`, then the cosine transforms of the bounded
+directions in place. Levels are contiguous in memory, so the one-level plans apply to them, and independent: they
+run in parallel under a threaded manager.
+"""
 function forward_transform!((; rhs, spectral, forward_plan, forward_cosine_plan)::PoissonSolver{N}, mgr) where {N}
     @with mgr, let levels = axes(rhs, N)
         for k in levels
@@ -360,7 +456,12 @@ function forward_transform!((; rhs, spectral, forward_plan, forward_cosine_plan)
     end
     return spectral
 end
-# 5. each level k: the inverse cosine transforms in place, then `spectral` → `rhs` (overwriting `spectral`)
+"""
+    rhs = backward_transform!(solver::PoissonSolver, mgr)
+
+Step 5, for each level k: the inverse cosine transforms in place, then `spectral` → `rhs` (overwriting
+`spectral`).
+"""
 function backward_transform!((; rhs, spectral, backward_cosine_plan, backward_plan)::PoissonSolver{N}, mgr) where {N}
     @with mgr, let levels = axes(rhs, N)
         for k in levels
@@ -371,5 +472,10 @@ function backward_transform!((; rhs, spectral, backward_cosine_plan, backward_pl
     end
     return rhs
 end
+"""
+    level = transform_in_place!(plan, level)
+
+Apply `plan` to `level` in place, or nothing when `plan` is `nothing`.
+"""
 transform_in_place!(::Nothing, level) = level
 transform_in_place!(plan, level) = plan * level
