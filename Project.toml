@@ -33,5 +33,4 @@ CFAnelastics = {path = "packages/CFAnelastics"}
 CFBoxes = {path = "packages/CFBoxes"}
 CFCompressible = {path = "packages/CFCompressible"}
 CFDiffusionSchemes = {path = "packages/CFDiffusionSchemes"}
-CFPlanets = {path = "packages/CFPlanets"}
 ClimFluids = {path = "packages/ClimFluids"}
