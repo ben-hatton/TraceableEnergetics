@@ -18,7 +18,7 @@ MutatingOrNot = "6a37069a-9a67-4b2d-a34a-f09ab4b23c7c"
 CFBoxes = {path = "../CFBoxes"}
 
 [compat]
-CFBoxes = "0.0.3"
+CFBoxes = "0.0.4"
 CFDiffusionSchemes = "0.0.3"
 CFPlanets = "0.1.4"
 CFTimeSchemes = "0.3.7"
