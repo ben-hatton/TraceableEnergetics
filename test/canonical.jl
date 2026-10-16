@@ -1,7 +1,10 @@
 # Canonical setups on a model. Included in a model test module (AnelasticTests, CompressibleTests), which defines the
-# configuration (Lz, T0, q0, ρ0, U) and the helpers (evaluate, all_finite, momentum_roundoff, interior_Xz, interior_xZ).
+# configuration (fluid, Lz, T0, q0, ρ0, U) and the helpers (evaluate, all_finite, interior_Xz, interior_xZ).
 using TraceableEnergetics: TraceableEnergetics, linear_profile, rest_state, kelvin_helmholtz, rayleigh_benard,
     rising_bubble, lock_exchange
+
+# round-off level of the momentum tendency: B = h - πθ - μq is a difference of O(Cp θ) numbers, divided by Δx
+momentum_roundoff(model) = 100 * eps() * fluid.Cp0 * T0 / min(model.dx, model.dz)
 
 # canonical setups, on the periodic and the closed-box configurations
 setups(box) = (

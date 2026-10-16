@@ -1,9 +1,10 @@
-# Property tests for AN2D. Run with Pkg.test("CFAnelastics"), or from TraceableEnergetics with
-#   julia -t 4 --project=. test/runtests.jl
+# Property tests for AN2D: the Poisson solver for the anelastic pressure, then the tendencies (memory safety,
+# impermeable walls, conservation, energy conservation and budget, no allocations, anelastic constraint).
+# Run with Pkg.test("CFAnelastics"), or from TraceableEnergetics with  julia -t 4 --project=. test/runtests.jl
 using Test
 
 using LoopManagers: MultiThread, VectorizedCPU
-using CFBoxes, CFDiffusionSchemes, ClimFluids, CFTimeSchemes, CookBooks, ForwardDiff
+using CFBoxes, CFDiffusionSchemes, ClimFluids, CFTimeSchemes, ForwardDiff
 using CFPlanets: Tank2D
 import MutatingOrNot
 using MutatingOrNot: void
@@ -26,9 +27,6 @@ const fluid_params = (; p0 = 1e5, T0, q0, Cp0 = 4000.0, v0 = 1e-3,
 const fluid = NonlinearBinaryFluid(:potential_temperature, fluid_params)
 
 const thermoflux = ThermoFluxConsistent(k_T = 1e-4, k_q = 1e-5)
-
-# round-off level of the momentum tendency: B = h - πθ - μq is a difference of O(Cp θ) numbers, divided by Δx
-momentum_roundoff(model) = 100 * eps() * fluid.Cp0 * T0 / min(model.dx, model.dz)
 
 test_box(Mx = 32, Mz = 16; boundary = (Periodic, Bounded)) = Box2D(; Mx, Mz, Hx = 1, Hz = 1, boundary)
 
