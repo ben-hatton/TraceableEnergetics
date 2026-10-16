@@ -12,8 +12,8 @@ Show that anelastic (and hence Boussinesq) dynamics are energetically traceable 
 equations, using energy-consistent finite-volume discretisations of both models in a box.
 
 ## LAYOUT
-- packages/: work-in-progress packages. CFAnelastics is in-tree; CFCompressible, ClimFluids and CFBoxes are git
-  submodules of the user's forks, each on the branch `traceable-energetics`.
+- packages/: work-in-progress packages. CFAnelastics is in-tree; CFCompressible and CFBoxes are git submodules of the
+  user's forks, each on the branch `traceable-energetics`.
 - src/, test/: the TraceableEnergetics package itself: model-independent setups and their initialisation of each model.
 - The environment uses packages/ through [sources] in Project.toml. Never `Pkg.develop` or edit ~/.julia/dev.
 - experiments/, analysis/, tools/: the science that uses the packages. Experiment-specific code (I/O, plotting,

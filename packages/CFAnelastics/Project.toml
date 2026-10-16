@@ -16,7 +16,6 @@ MutatingOrNot = "6a37069a-9a67-4b2d-a34a-f09ab4b23c7c"
 
 [sources]
 CFBoxes = {path = "../CFBoxes"}
-ClimFluids = {path = "../ClimFluids"}
 
 [compat]
 CFBoxes = "0.0.3"
