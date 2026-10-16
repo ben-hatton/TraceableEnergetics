@@ -30,7 +30,7 @@ end
 #     @with model.mgr, for i in interior_cells(domain, 1), j in interior_cells(domain, 2)
 #         X[i, j] = Xa[round(Int, map_field[i, j])]
 #     end
-#     periodize!(model, X)
+#     periodize!(model.domain, X)
 #     return X
 # end
 
@@ -43,7 +43,7 @@ function prime!(Xp_, (X, Xa), map_field, model)
             Xp[i, j] = X[i, j] - Xa[map_field[i, j]]
         end
     end
-    periodize!(model, X)
+    periodize!(domain, X)
     return Xp
 end
 
@@ -68,7 +68,7 @@ function ae_tendencies!(ae_scratch, model::AN2D, ref_state_type::BoussinesqPDFRe
     map_field = similar!(map_field, [0], ncells(domain, 1), ncells(domain, 2))
     map_field .= 0
     map_field[interior_cells(domain, 1), interior_cells(domain, 2)] = @views reshape(map, Mx, Mz)
-    periodize!(model, (map_field,))
+    periodize!(domain, (map_field,))
 
     # compute reference stratification
     (; N2) = ae_scratch.fields
@@ -217,7 +217,7 @@ function grad!((∂f∂x_, ∂f∂z_, ∂f∂x_c_, ∂f∂z_c_, absgradf_), f, s
             ∂f∂x[I, j] = inv_dx * δ(f, (1,), (Face(),), I, j)
         end
     end
-    periodize!(model, ∂f∂x)
+    periodize!(domain, ∂f∂x)
 
     # vertical derivative
     @with mgr, let (irange, jrange) = (axes(∂f∂z, 1), faces(domain, 2))
@@ -260,7 +260,7 @@ end
 #     ape = available_potential_energy!(ape, state, model)
 #     bse = background_static_energy!(bse, state, model)
 #     W   = background_pressure_work!(W, state, model)
-#     periodize!(model, (ape, bse, W))
+#     periodize!(model.domain, (ape, bse, W))
 
 #     energetics_scratch = (;
 #         available_energies = (; ape, bse, W),

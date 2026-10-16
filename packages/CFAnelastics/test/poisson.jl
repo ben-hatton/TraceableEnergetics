@@ -65,7 +65,7 @@ const poisson_cases = (((Periodic, Bounded), (16, 8), true), ((Bounded, Bounded)
             setup = poisson_setup(topology, M)
             dU = map(a -> rand!(a) .- 0.5, setup.faces)
             for d in eachindex(topology)       # tendencies are periodic in periodic directions, as in the models
-                topology[d] === Periodic && foreach(a -> CFBoxes.periodize!((; domain = setup.domain), a), dU)
+                topology[d] === Periodic && foreach(a -> CFBoxes.periodize!(setup.domain, a), dU)
             end
             pressure!(setup.φ, setup.solver, mgr, dU)
             c = corrected(setup, dU)

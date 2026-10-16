@@ -5,7 +5,7 @@
 function state_bc!(model::AN2D, (; m, u, w))
     (; domain, boundary, dx, dz, viscosity) = model
     fill_velocity_halo!(boundary, domain, (u, w), (dx, dz), viscosity.dyn_visc)
-    fill_halo!(m, domain, ZeroGradient())
+    fill_halo!(domain, m, ZeroGradient())
     return (; m, u, w)
 end
 

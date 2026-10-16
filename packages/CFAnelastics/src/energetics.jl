@@ -57,7 +57,7 @@ function energies!((ke, pe, te_), (; m, u, w), model::AN2D{F}) where {F}
     pe = potential_energy!(pe, (; m), model)
     te = alloc!(te_, F, model.mgr, model.domain, (Cell(), Cell()))
     te = @. te = ke + pe
-    periodize!(model, te)
+    periodize!(model.domain, te)
     return ke, pe, te
 end
 
@@ -106,7 +106,7 @@ function bq_energies!((gpe_, ie_, gpe_bz_), (; m, u, w), model::AN2D{F}, pe, dyn
             gpe_bz[i, j] = ρ_R[j] * (g - b) * Φij(model, i, j) / g
         end
     end
-    periodize!(model, (gpe, ie, gpe_bz))
+    periodize!(model.domain, (gpe, ie, gpe_bz))
     return gpe, ie, gpe_bz
 end
 
@@ -120,7 +120,7 @@ function kinetic_energy!(ke_, (; m, u, w), model::AN2D{F}) where {F}
             ke[i, j] = 0.5 * ρ_R[j] * (ℑ((u, u), (1,), (Cell(),), i, j) + ℑ((w, w), (2,), (Cell(),), i, j))
         end
     end
-    periodize!(model, ke)
+    periodize!(domain, ke)
     return ke
 end
 
@@ -136,7 +136,7 @@ function potential_energy!(pe_, (; m), model::AN2D{F}) where {F}
             pe[i, j] = ρ_R[j] * (fluid(:p, :consvar, :q).specific_enthalpy(p_R[j], s, q) + Φij(model, i, j) ) - p_R[j] 
         end
     end
-    periodize!(model, pe)
+    periodize!(model.domain, pe)
     return pe
 end
 
@@ -180,7 +180,7 @@ function irr_flux!((conjdivconsflux_, chemdivqflux_, consfluxgradconj_, qfluxgra
             qfluxgradchem[i, j]    = ℑ(qfluxgradchem_x, (1,), (Cell(),), i, j) + ℑ(qfluxgradchem_z, (2,), (Cell(),), i, j)
         end
     end
-    periodize!(model, (conjdivconsflux, chemdivqflux, consfluxgradconj, qfluxgradchem))
+    periodize!(domain, (conjdivconsflux, chemdivqflux, consfluxgradconj, qfluxgradchem))
     return conjdivconsflux, chemdivqflux, consfluxgradconj, qfluxgradchem, consfluxgradconj_x, consfluxgradconj_z, qfluxgradchem_x, qfluxgradchem_z
 end
 
@@ -195,7 +195,7 @@ function pdivu!(pdivu_, (; m), model::AN2D{F}, dynamics_scratch) where {F}
             pdivu[i, j] = p * (dynamics_scratch.derivatives.∂u_x[i, j] + dynamics_scratch.derivatives.∂w_z[i, j])
         end
     end
-    periodize!(model, pdivu)
+    periodize!(domain, pdivu)
     return pdivu
 end
 
@@ -215,7 +215,7 @@ function buoy_flux_Σ_ϕ!(buoy_flux_Σ_ϕ_, (; m, w), model::AN2D{F}, dynamics_s
             buoy_flux_Σ_ϕ[i, j] = ρ_R[j] * g * ℑ(w, (2,), (Cell(),), i, j) * (2 - ρ_R[j] * v + δp * ∂v_R∂Φ)
         end
     end
-    periodize!(model, buoy_flux_Σ_ϕ)
+    periodize!(domain, buoy_flux_Σ_ϕ)
     return buoy_flux_Σ_ϕ
 end
 
@@ -233,7 +233,7 @@ function buoy_flux_B!(buoy_flux_B_, (; m, w), model::AN2D{F}, dynamics_scratch) 
             buoy_flux_B[i, j] = ρ_R[j] * g * ℑ(w, (2,), (Cell(),), i, j) * (ρ_R[j] * v - 1)
         end
     end
-    periodize!(model, buoy_flux_B)
+    periodize!(domain, buoy_flux_B)
     return buoy_flux_B
 end
 
@@ -265,7 +265,7 @@ function thermodynamic_budget_terms!((divru_, conjdivrsu_, chemdivrqu_), (; m, u
             divru[i, j] = ρ_R[j] * δ(u, (1,), (Cell(),), i, j) * inv_dx + (ℑ(ρ_R, (2,), (Face(),), j+1) * w[i, j+1] - ℑ(ρ_R, (2,), (Face(),), j) * w[i, j]) * inv_dz
         end
     end
-    periodize!(model, (divru, conjdivrsu, chemdivrqu))
+    periodize!(domain, (divru, conjdivrsu, chemdivrqu))
     return divru, conjdivrsu, chemdivrqu
 end
 

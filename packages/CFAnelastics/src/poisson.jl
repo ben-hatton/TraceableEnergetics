@@ -259,7 +259,7 @@ function pressure!(φ, solver::PoissonSolver, mgr, dU)
     solve!(solver, mgr)
     copy_to_interior!(φ, solver, mgr)
     # 6. halo
-    fill_halo!(φ, domain, ZeroGradient())
+    fill_halo!(domain, φ, ZeroGradient())
     return φ
 end
 

@@ -220,5 +220,5 @@ function divergence_field!(div, model, Vx, Vz)
             div[i, j] = inv_dx * δ(Vx, (1,), (Cell(),), i, j) + inv_dz * δ(Vz, (2,), (Cell(),), i, j)
         end
     end
-    return fill_halo!(div, domain, ZeroGradient())
+    return fill_halo!(domain, div, ZeroGradient())
 end

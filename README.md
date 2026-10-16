@@ -11,8 +11,6 @@ src/               the TraceableEnergetics package: model-independent setups (in
 packages/          work-in-progress packages, each with its own Project.toml and tests
   CFAnelastics/    anelastic 2D box model (AN2D)
   CFCompressible/  git submodule: fork of ClimFlows/CFCompressible.jl (FC2D)
-  ClimFluids/      git submodule: fork of ClimFlows/ClimFluids.jl (NonlinearBinaryFluid)
-  CFBoxes/         git submodule: fork of ClimFlows/CFBoxes.jl
 experiments/       simulations that use the packages (e.g. shear/: Kelvin-Helmholtz)
 analysis/          post-processing
 tools/             helpers shared by scripts (setup.jl, output, NetCDF)

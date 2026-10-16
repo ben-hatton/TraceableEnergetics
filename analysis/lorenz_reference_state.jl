@@ -161,7 +161,7 @@ function reference_state!((bvec_, edges_, freqs_, map_, zeta_, zeta_c_, z_star_)
     @inbounds for i in eachindex(bvec)
         z_star_int[i] = zeta_c[map[i]]
     end
-    periodize!(model, (z_star,))
+    periodize!(domain, (z_star,))
 
     return bvec, edges, freqs, map, zeta, zeta_c, z_star
 end
@@ -223,7 +223,7 @@ function reference_state!((edges_, freqs_, map_, zeta_, zeta_c_, z_star_, bsorte
     for i in eachindex(z_star_int)
         z_star_int[i] = Lz * iperm[i] / (Mx * Mz)
     end
-    periodize!(model, (z_star,))
+    periodize!(domain, (z_star,))
 
     return edges, freqs, map, zeta, zeta_c, z_star, bsorted, perm, iperm
 end

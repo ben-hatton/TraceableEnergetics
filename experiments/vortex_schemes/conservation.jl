@@ -28,8 +28,8 @@ model = (mgr = plain(), domain = box, spatial_scheme = Centred2(), inv_dx = 1 / 
 (; ℑ, δ) = operators(model.spatial_scheme)
 X, Z, x, z = interior_faces(box, 1), interior_faces(box, 2), interior_cells(box, 1), interior_cells(box, 2)
 
-random(location) = (a = rand(size(alloc(Float64, nothing, box, location))...) .- 0.5; periodize!(model, (a,)); a)
-positive(location) = (a = 1 .+ rand(size(alloc(Float64, nothing, box, location))...); periodize!(model, (a,)); a)
+random(location) = (a = rand(size(alloc(Float64, nothing, box, location))...) .- 0.5; periodize!(model.domain, (a,)); a)
+positive(location) = (a = 1 .+ rand(size(alloc(Float64, nothing, box, location))...); periodize!(model.domain, (a,)); a)
 
 # vorticity, potential vorticity and the tendency of the vorticity at the vertices
 vorticity(u, w) = [inv(dz) * δ(u, (2,), (Face(),), I, J) - inv(dx) * δ(w, (1,), (Face(),), I, J) for I in X, J in Z]
@@ -55,7 +55,7 @@ function C2(scheme, ρ)
     for i in x, J in Z
         w[i, J] = -inv(dx) * δ(ψ, (1,), (Cell(),), i, J) / ρᴶ[i, J]
     end
-    periodize!(model, (u, w))
+    periodize!(model.domain, (u, w))
     vortex_x, vortex_z, _ = vortex_force!((void, void, void), model, scheme, (u, w), ρ)
     η = vorticity(u, w) ./ vertex_density(ρ)
     return relative(η .* vorticity_tendency(vortex_x, vortex_z))
@@ -68,7 +68,7 @@ function C3(scheme, (u, w), ρ)
     for i in x, j in z
         dρ[i, j] = -inv(dx) * δ((ρᴵ, u), (1,), (Cell(),), i, j) - inv(dz) * δ((ρᴶ, w), (2,), (Cell(),), i, j)
     end
-    periodize!(model, (dρ,))
+    periodize!(model.domain, (dρ,))
     η = vorticity(u, w) ./ vertex_density(ρ)
     return relative(η .* vorticity_tendency(vortex_x, vortex_z), -0.5 * η .^ 2 .* vertex_density(dρ))
 end
@@ -80,7 +80,7 @@ function advection((u, w), ρ, scheme)
     for i in x, j in z
         K[i, j] = 0.5 * (ℑ((u, u), (1,), (Cell(),), i, j) + ℑ((w, w), (2,), (Cell(),), i, j))
     end
-    periodize!(model, (K,))
+    periodize!(model.domain, (K,))
     adv_x = [-vortex_x[I, j] - inv(dx) * δ(K, (1,), (Face(),), I, j) for I in X, j in z]
     adv_z = [-vortex_z[i, J] - inv(dz) * δ(K, (2,), (Face(),), i, J) for i in x, J in Z]
     return adv_x, adv_z
@@ -92,7 +92,7 @@ function C4(scheme, ρ; ū = 1.0, ε = 1e-3)
     u′, w′ = alloc(Float64, nothing, box, (Face(), Cell())), alloc(Float64, nothing, box, (Cell(), Face()))
     u′ .= rand(1, size(u′, 2)) .- 0.5
     w′ .= rand(1, size(w′, 2)) .- 0.5
-    periodize!(model, (u′, w′))
+    periodize!(model.domain, (u′, w′))
     plus, minus = advection((ū .+ ε .* u′, ε .* w′), ρ, scheme), advection((ū .- ε .* u′, -ε .* w′), ρ, scheme)
     residual = map((p, m) -> (p - m) / 2ε, plus, minus)
     # relative to the size of the terms that should cancel, ū ω′

@@ -107,7 +107,7 @@ function thermodynamics!((consvar_, q_, T_, conjvar_, chempot_, Cp_, ∂consvar_
         end
     end
 
-    fill_halo!((consvar, q, T, conjvar, chempot, Cp, ∂consvar_∂q, Γ, B), domain, ZeroGradient())
+    fill_halo!(domain, (consvar, q, T, conjvar, chempot, Cp, ∂consvar_∂q, Γ, B), ZeroGradient())
 
     return consvar, q, T, conjvar, chempot, Cp, ∂consvar_∂q, Γ, B
 end
@@ -153,7 +153,7 @@ function kinematics!((∂u_x_, ∂w_z_, ∂u_z_, ∂w_x_, K_), model::AN2D{F}, (
         end
     end
 
-    periodize!(model, (∂u_x, ∂w_z, ∂u_z, ∂w_x, K))
+    periodize!(domain, (∂u_x, ∂w_z, ∂u_z, ∂w_x, K))
 
     return ∂u_x, ∂w_z, ∂u_z, ∂w_x, K
 end
@@ -184,7 +184,7 @@ function advective_flux!((mu_, mw_), model::AN2D{F}, (; m, u, w)) where {F}
             mw2[i, J] = w[i, J] * ℑ(m2, (2,), (Face(),), i, J)
         end
     end
-    periodize!(model, (mu, mw))
+    periodize!(domain, (mu, mw))
     return mu, mw
 end
 
@@ -220,7 +220,7 @@ function viscous_stress!((uτ_x_, uτ_z_, F_x_, F_z_, wτ_xz_, uτ_xz_), model::
             uτ_xz[I, J] = ℑ(u, (2,), (Face(),), I, J) * τ_xz
         end
     end
-    periodize!(model, (wτ_xz, uτ_xz))
+    periodize!(domain, (wτ_xz, uτ_xz))
 
     @with mgr, let (irange, jrange) = (faces(domain, 1), cells(domain, 2))
         @inbounds @vec for I in irange, j in jrange
@@ -245,7 +245,7 @@ function viscous_stress!((uτ_x_, uτ_z_, F_x_, F_z_, wτ_xz_, uτ_xz_), model::
         end
     end
 
-    periodize!(model, (uτ_x, uτ_z, F_x, F_z))
+    periodize!(domain, (uτ_x, uτ_z, F_x, F_z))
 
     return uτ_x, uτ_z, F_x, F_z, wτ_xz, uτ_xz
 end
@@ -287,7 +287,7 @@ function fluxes!((consflux_x_, consflux_z_, qflux_x_, qflux_z_, diffusive_heatin
     end
 
     apply_tracer_bcs!((consflux_x, qflux_x, consflux_z, qflux_z), model, thermo)
-    periodize!(model, (consflux_x, consflux_z, qflux_x, qflux_z, diffusive_heating_x, diffusive_heating_z))
+    periodize!(domain, (consflux_x, consflux_z, qflux_x, qflux_z, diffusive_heating_x, diffusive_heating_z))
 
     return consflux_x, consflux_z, qflux_x, qflux_z, diffusive_heating_x, diffusive_heating_z
 end
@@ -391,7 +391,7 @@ function dissipative_heating!((ρε_, σ_cons_), model::AN2D{F}, ::ThermoFluxCon
         end
     end
 
-    fill_halo!((ρε, σ_cons), domain, ZeroGradient())
+    fill_halo!(domain, (ρε, σ_cons), ZeroGradient())
 
     return ρε, σ_cons
 end
@@ -409,7 +409,7 @@ function dissipative_heating!((ρε_, σ_cons_), model::AN2D{F}, ::ThermoFluxDow
         end
     end
 
-    fill_halo!(ρε, domain, ZeroGradient())
+    fill_halo!(domain, ρε, ZeroGradient())
 
     return ρε, σ_cons
 end
@@ -444,7 +444,7 @@ function velocity_tendencies!((du_, dw_), model::AN2D{F}, ::BuoyThermo, (; m), (
         end
     end
 
-    periodize!(model, (du, dw))
+    periodize!(domain, (du, dw))
 
     return du, dw
 end
@@ -468,7 +468,7 @@ function velocity_tendencies!((du_, dw_), model::AN2D{F}, ::BuoyDyn, _, (; B), (
         end
     end
 
-    periodize!(model, (du, dw))
+    periodize!(domain, (du, dw))
 
     return du, dw
 end
