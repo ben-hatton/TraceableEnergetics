@@ -12,16 +12,16 @@ Show that anelastic (and hence Boussinesq) dynamics are energetically traceable 
 equations, using energy-consistent finite-volume discretisations of both models in a box.
 
 ## LAYOUT
-- packages/: work-in-progress packages. CFAnelastics is in-tree; CFCompressible, ClimFluids, CFBoxes and
-  CFDiffusionSchemes are git submodules of the user's forks, each on the branch `traceable-energetics`.
+- packages/: work-in-progress packages. CFAnelastics is in-tree; CFCompressible, ClimFluids and CFBoxes are git
+  submodules of the user's forks, each on the branch `traceable-energetics`.
 - src/, test/: the TraceableEnergetics package itself: model-independent setups and their initialisation of each model.
 - The environment uses packages/ through [sources] in Project.toml. Never `Pkg.develop` or edit ~/.julia/dev.
 - experiments/, analysis/, tools/: the science that uses the packages. Experiment-specific code (I/O, plotting,
   setups) lives here or in src/, never in the packages.
 
 ## MANAGING THE PACKAGES
-- Edit freely: CFAnelastics, the box code of CFCompressible (FC2D files), CFBoxes, CFDiffusionSchemes.
-- Ask first: ClimFluids, the non-box code of CFCompressible, CFDomains, CFPlanets, any new package.
+- Edit freely: CFAnelastics, the box code of CFCompressible (FC2D files), CFBoxes.
+- Ask first: ClimFluids, the non-box code of CFCompressible, CFDomains, CFPlanets, CFDiffusionSchemes, any new package.
 - Never touch branches other than `traceable-energetics`, upstream ClimFlows repos, or files outside this repository.
 - When changes are made to the finite volume dynamical code in CFCompressible, analogous changes must be made in
   CFAnelastics, and vice versa, in the same piece of work (or listed as pending). Shared code is mirrored by hand.
