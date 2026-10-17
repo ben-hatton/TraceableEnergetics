@@ -83,7 +83,7 @@ end
     consvar, q, T, conjvar, chempot, Cp, ∂consvar_∂q, Γ, B = thermodynamics!(outputs, model::AN2D, state)
 
 Pointwise thermodynamics at the reference pressure p_R, from m = ρ_R (consvar, q), on the interior cells: consvar, q,
-T, conjvar, chempot, Cp, ∂consvar/∂q, Γ = ρ_R ∂μ/∂p / ∂μ/∂q (barodiffusion) and B, the potential of the momentum
+T, conjvar, chempot, Cp, ∂consvar/∂q, Γ = -∂μ/∂p / ∂μ/∂q (barodiffusion) and B, the potential of the momentum
 forcing (`forcing_potential`). Zero-gradient halo: every difference across a wall vanishes.
 """
 function thermodynamics!((consvar_, q_, T_, conjvar_, chempot_, Cp_, ∂consvar_∂q_, Γ_, B_), model::AN2D{F}, (; m)) where {F}
@@ -113,7 +113,7 @@ function thermodynamics!((consvar_, q_, T_, conjvar_, chempot_, Cp_, ∂consvar_
             conjvar[i, j], chempot[i, j] = conj, chem
             Cp[i, j]          = fluid(:p, :consvar, :q).heat_capacity(p_R[j], cons, qij)
             ∂consvar_∂q[i, j] = fluid(:p, :consvar, :q).dcons_dq(p_R[j], cons, qij)
-            Γ[i, j]           = ρ_R[j] * ∂μ_∂p / ∂μ_∂q
+            Γ[i, j]           = - ∂μ_∂p / ∂μ_∂q
             B[i, j]           = forcing_potential(buoyancy_scheme, fluid, g, ρ_R[j], p_R[j], cons, qij, conj, chem)
         end
     end
@@ -293,14 +293,15 @@ end
 """
     consflux_x, consflux_z, qflux_x, qflux_z, diffusive_heating_x, diffusive_heating_z = fluxes!(outputs, model::AN2D, thermo)
 
-Irreversible fluxes on the faces: qflux = -ρ_R k_q (∂q - Γ ∂Φ) and consflux (carrying the heat flux -ρ_R Cp k_T ∂T,
-or down the gradient of consvar, see `consvar_flux`), coefficients averaged from the two cells, ∂Φ = g on w-faces;
+Irreversible fluxes on the faces: qflux = -ρ_R k_q (∂q - Γ ∂p_R) and consflux (carrying the heat flux -ρ_R Cp k_T ∂T,
+or down the gradient of consvar, see `consvar_flux`), coefficients averaged from the two cells, ∂p_R = δz p_R / Δz = -g ℑz(ρ_R)
+on w-faces and 0 on u-faces;
 on wall faces, from `apply_tracer_bcs!`. Also the diffusive heating -(consflux ∂conjvar + qflux ∂chempot), zero on
 wall faces (zero-gradient halo of conjvar, chempot). Periodized.
 """
 function fluxes!((consflux_x_, consflux_z_, qflux_x_, qflux_z_, diffusive_heating_x_, diffusive_heating_z_), model::AN2D{F}, thermo) where {F}
     (; mgr, domain, space, thermoflux, inv_dx, inv_dz, reference, spatial_scheme) = model
-    (; ρ_R) = reference
+    (; ρ_R, p_R) = reference
     (; g) = space
     (; consvar, q, conjvar, chempot, T, Cp, ∂consvar_∂q, Γ) = thermo
     (; ℑ, δ) = operators(spatial_scheme)
@@ -322,7 +323,7 @@ function fluxes!((consflux_x_, consflux_z_, qflux_x_, qflux_z_, diffusive_heatin
     end
     @with mgr, let (irange, jrange) = (axes(consflux_z, 1), faces(domain, 2))
         @inbounds @vec for i in irange, J in jrange
-            qflux    = salt_flux(thermoflux, ℑ(ρ_R, (2,), (Face(),), J), ℑ(Γ, (2,), (Face(),), i, J), inv_dz * δ(q, (2,), (Face(),), i, J), g)
+            qflux    = salt_flux(thermoflux, ℑ(ρ_R, (2,), (Face(),), J), ℑ(Γ, (2,), (Face(),), i, J), inv_dz * δ(q, (2,), (Face(),), i, J), inv_dz * δ(p_R, (2,), (Face(),), J))
             consflux = consvar_flux(thermoflux, ℑ(ρ_R, (2,), (Face(),), J), ℑ(Cp, (2,), (Face(),), i, J), inv_dz * δ(T, (2,), (Face(),), i, J), inv_dz * δ(consvar, (2,), (Face(),), i, J), qflux, ℑ(conjvar, (2,), (Face(),), i, J), ℑ(∂consvar_∂q, (2,), (Face(),), i, J))
             qflux_z[i, J], consflux_z[i, J] = qflux, consflux
             diffusive_heating_z[i, J] = - inv_dz * ( consflux * δ(conjvar, (2,), (Face(),), i, J) + qflux * δ(chempot, (2,), (Face(),), i, J) )
@@ -336,12 +337,13 @@ function fluxes!((consflux_x_, consflux_z_, qflux_x_, qflux_z_, diffusive_heatin
 end
 
 """
-    flux = salt_flux(scheme, ρ, Γ, ∂q, ∂Φ)
+    flux = salt_flux(scheme, ρ, Γ, ∂q, ∂p)
 
-Diffusive flux of composition -ρ k_q (∂q - Γ ∂Φ), with barodiffusion in the consistent scheme only.
+Diffusive flux of composition -ρ k_q (∂q - Γ ∂p), with barodiffusion in the consistent scheme only (∂p the gradient of
+the pressure p_R).
 """
-@inline salt_flux(hf::ThermoFluxConsistent, ρ, Γ, ∂q, ∂Φ) = - ρ * hf.k_q * (∂q - Γ * ∂Φ)
-@inline salt_flux(hf::ThermoFluxDowngradient, ρ, Γ, ∂q, ∂Φ) = - ρ * hf.k_q * ∂q
+@inline salt_flux(hf::ThermoFluxConsistent, ρ, Γ, ∂q, ∂p) = - ρ * hf.k_q * (∂q - Γ * ∂p)
+@inline salt_flux(hf::ThermoFluxDowngradient, ρ, Γ, ∂q, ∂p) = - ρ * hf.k_q * ∂q
 """
     flux = heat_to_consvar(scheme, JT, qflux, conj, ∂consvar_∂q)
 
@@ -385,7 +387,7 @@ function apply_tracer_bcs!((consflux, qflux), (cons_bc, q_bc), side, D, model::A
     # plain loops: about 2(Mx + Mz) faces, too few for vectorization or threads to pay off
     for I in slice(qflux, D)                                               # each position along the wall
         i_face, i_cell = across(I, D, side.face), across(I, D, side.cell)
-        wall = wall_state(model, D, side, i_face, i_cell)                 # (; n, d, ρ, p, ∂Φ) on the wall face
+        wall = wall_state(model, D, side, i_face, i_cell)                 # (; n, d, ρ, p, ∂p) on the wall face
         # q flux: Flux → n F;  Value → face flux with the wall value at distance d
         qflux[i_face] = q_flux_bc(q_bc, bc_value(q_bc, I), thermo, i_cell, wall, model)
         # consvar flux: Flux → n F;  HeatFlux → n F / conjvar (+ cross term);  Value → face flux with T_wall (uses qflux)
@@ -396,15 +398,15 @@ end
 """
     wall = wall_state(model::AN2D, D, side, i_face, i_cell)
 
-State on a wall face normal to dimension `D`: `(; n, d, ρ, p, ∂Φ)`, the inward normal n, the distance d to the cell
-center, the reference density ρ and pressure p on the face, and the normal gradient ∂Φ of the geopotential. On
-bottom and top walls, p is extrapolated hydrostatically from the cell.
+State on a wall face normal to dimension `D`: `(; n, d, ρ, p, ∂p)`, the inward normal n, the distance d to the cell
+center, the reference density ρ and pressure p on the face, and the gradient ∂p of the reference pressure along D
+(-ρ g on bottom and top walls, 0 on the others). On bottom and top walls, p is extrapolated hydrostatically from the cell.
 """
 @inline function wall_state(model::AN2D, ::Val{1}, side, i_face, i_cell)
     (; reference, dx) = model
     (; ρ_R, p_R) = reference
     j = i_cell[2]
-    return (; n = side.n, d = dx / 2, ρ = ρ_R[j], p = p_R[j], ∂Φ = zero(dx))
+    return (; n = side.n, d = dx / 2, ρ = ρ_R[j], p = p_R[j], ∂p = zero(dx))
 end
 @inline function wall_state(model::AN2D, ::Val{2}, side, i_face, i_cell)
     (; reference, space, spatial_scheme, dz) = model
@@ -412,7 +414,8 @@ end
     (; g) = space
     (; ℑ) = operators(spatial_scheme)
     j, d = i_cell[2], dz / 2
-    return (; n = side.n, d, ρ = ℑ(ρ_R, (2,), (Face(),), i_face[2]), p = p_R[j] + side.n * ρ_R[j] * g * d, ∂Φ = g)
+    ρ_w = ℑ(ρ_R, (2,), (Face(),), i_face[2])
+    return (; n = side.n, d, ρ = ρ_w, p = p_R[j] + side.n * ρ_R[j] * g * d, ∂p = - ρ_w * g)
 end
 
 """
@@ -424,7 +427,7 @@ Flux of composition on a wall face: the prescribed flux `F` of ρq (`Flux`), or 
 @inline q_flux_bc(::Flux, F, thermo, i_cell, wall, model) = wall.n * F
 @inline function q_flux_bc(::Value, q_w, (; q, Γ), i_cell, wall, model)
     (; thermoflux) = model
-    return salt_flux(thermoflux, wall.ρ, Γ[i_cell], wall.n * (q[i_cell] - q_w) / wall.d, wall.∂Φ)
+    return salt_flux(thermoflux, wall.ρ, Γ[i_cell], wall.n * (q[i_cell] - q_w) / wall.d, wall.∂p)
 end
 """
     flux = cons_flux_bc(bc, value, thermo, i_cell, wall, model, qflux)

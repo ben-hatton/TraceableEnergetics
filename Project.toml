@@ -5,13 +5,13 @@ version = "0.1.0"
 
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 CFAnelastics = "45b71fc6-fff6-4b4e-ba1f-6968b823c40d"
 CFBoxes = "435ea534-530f-4103-a4e2-07b06daf33cf"
 CFCompressible = "a33e4613-43be-4f0e-b500-138f013d70af"
 CFDiffusionSchemes = "c98386de-3084-4a91-9df5-5a8c5033d229"
 CFPlanets = "9c2ca15e-caec-41c0-a22c-2e93fe5a241f"
 CFTimeSchemes = "79282218-dfaf-41aa-91df-a06f65ece871"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 ClimFluids = "68475963-a72f-47d4-b871-9c5545ecd1c0"
 CookBooks = "7bce7c31-0f61-4fd7-bdaf-6b04abfa2cc7"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
@@ -31,3 +31,6 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 [sources]
 CFAnelastics = {path = "packages/CFAnelastics"}
 CFCompressible = {path = "packages/CFCompressible"}
+
+[compat]
+CFBoxes = "0.0.5"
