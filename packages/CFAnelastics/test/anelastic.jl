@@ -109,6 +109,12 @@ end
         test_no_allocations(an_tend!, model, active)
     end
 
+    # a short run of the time loop, 3 steps per slice
+    @testset "loop" begin
+        test_loop(CFAnelastics.loop, CFTimeSchemes.RungeKutta4(model), model, active, (; mass = nothing, q = 2),
+                  (; Nslice = 2, slice_size = 0.2, dt_max = 1.0, cfl = 0.9))
+    end
+
     # every kind of wall condition: the wall fluxes and the work of the wall stresses enter the budgets exactly
     @testset "forced walls, closed box, threaded" begin
         s = an_state(box)
