@@ -1,7 +1,7 @@
 # Common setup for experiment and analysis scripts:  include("<relative path>/tools/setup.jl")
 import Pkg
 
-# activate the TraceableEnergetics environment; the work-in-progress packages come from packages/ via [sources]
+# activate the TraceableEnergetics environment; CFAnelastics and CFCompressible come from their GitHub forks via [sources]
 Pkg.activate(joinpath(@__DIR__, ".."))
 
 # allow packages to automatically update when edited

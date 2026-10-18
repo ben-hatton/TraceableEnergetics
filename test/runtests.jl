@@ -1,11 +1,11 @@
 # Run from the TraceableEnergetics folder with:  julia -t 4 --project=. test/runtests.jl
-# Runs the setups tests, the model suites of the work-in-progress packages against the versions in packages/, and
-# the canonical setups on both models. Cross-model (traceability) tests will live here.
+# Runs the setups tests, the canonical setups on both models, and the diagnostics and outputs on both models. The model
+# suites of CFAnelastics and CFCompressible are run from their own repositories. Cross-model (traceability) tests will
+# live here.
 using Test
 using TraceableEnergetics, CookBooks
 using CFBoxes: Bounded
 
-const PACKAGES = joinpath(@__DIR__, "..", "packages")
 const TESTS = @__DIR__
 
 @testset "TraceableEnergetics" begin
@@ -18,7 +18,9 @@ const TESTS = @__DIR__
     end
     # each suite in its own module, as both define the same configuration names
     @eval module AnelasticTests
-        include(joinpath($PACKAGES, "CFAnelastics", "test", "runtests.jl"))
+        include(joinpath($TESTS, "config.jl"))
+        include(joinpath($TESTS, "helpers.jl"))
+        include(joinpath($TESTS, "an_model.jl"))
         include(joinpath($TESTS, "canonical.jl"))
         const make_model, make_state, tend! = an_model, an_state, an_tend!     # model-independent names, used below
         @testset "canonical setups, AN2D" begin
@@ -27,7 +29,9 @@ const TESTS = @__DIR__
         end
     end
     @eval module CompressibleTests
-        include(joinpath($PACKAGES, "CFCompressible", "test", "box2d.jl"))
+        include(joinpath($TESTS, "config.jl"))
+        include(joinpath($TESTS, "helpers.jl"))
+        include(joinpath($TESTS, "fc_model.jl"))
         include(joinpath($TESTS, "canonical.jl"))
         const make_model, make_state, tend! = fc_model, fc_state, fc_tend!
         @testset "canonical setups, FC2D" begin

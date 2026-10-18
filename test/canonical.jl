@@ -1,5 +1,5 @@
-# Canonical setups on a model. Included in a model test module (AnelasticTests, CompressibleTests), which defines the
-# configuration (fluid, Lz, T0, q0, ρ0, U) and the helpers (evaluate, all_finite, interior_Xz, interior_xZ).
+# Canonical setups on a model. Included in a model test module (AnelasticTests, CompressibleTests), which includes
+# config.jl (fluid, Lz, T0, q0, ρ0, U), helpers.jl (evaluate, all_finite, interior_Xz, interior_xZ) and the model file.
 using TraceableEnergetics: TraceableEnergetics, linear_profile, rest_state, kelvin_helmholtz, rayleigh_benard,
     rising_bubble, lock_exchange
 

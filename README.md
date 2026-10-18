@@ -8,24 +8,25 @@ compressible equations, using models built in the [ClimFlows](https://github.com
 ```
 src/               the TraceableEnergetics package: model-independent setups (initial conditions) and their
                    lowering to each model's initialize
-packages/          work-in-progress packages, each with its own Project.toml and tests
-  CFAnelastics/    git submodule: fork of ClimFlows/CFAnelastics.jl (AN2D)
-  CFCompressible/  git submodule: fork of ClimFlows/CFCompressible.jl (FC2D)
 experiments/       simulations that use the packages (e.g. shear/: Kelvin-Helmholtz)
 energetics/        staging area: energetics of AN2D (traditional and available energetics, NetCDF post-processing),
                    moved out of CFAnelastics
 analysis/          post-processing
 tools/             helpers shared by scripts (setup.jl, output, NetCDF)
-test/              setups tests, the package model suites, canonical setups on both models; cross-model tests
+test/              setups tests, canonical setups and diagnostics on both models; cross-model tests
 ```
 
-`Project.toml` points to `packages/` through `[sources]` (Julia ≥ 1.11), so the environment always uses
-the local versions of the packages.
+The models are ordinary dependencies, developed in their own repositories:
+[CFAnelastics](https://github.com/ben-hatton/CFAnelastics.jl) (AN2D) and
+[CFCompressible](https://github.com/ben-hatton/CFCompressible.jl) (FC2D), both forks of
+[ClimFlows](https://github.com/ClimFlows) packages, on the branch `traceable-energetics`. `Project.toml` installs them
+from there through `[sources]` (Julia ≥ 1.11). Their own test suites (conservation, walls, allocations) run in their
+repositories.
 
 ## Getting started
 
 ```bash
-git clone --recursive https://github.com/ben-hatton/TraceableEnergetics.git   # or: git submodule update --init
+git clone https://github.com/ben-hatton/TraceableEnergetics.git
 cd TraceableEnergetics
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 julia -t 4 --project=. test/runtests.jl
@@ -33,19 +34,9 @@ julia -t 4 --project=. test/runtests.jl
 
 Scripts start with `include("<path to>/tools/setup.jl")`, which activates this environment and loads Revise.
 
-## Working on the forked packages
+## Updating or changing the models
 
-Each submodule is a full clone of a fork, checked out on the branch `traceable-energetics`. Changes are
-committed in two steps:
-
-```bash
-cd packages/ClimFluids
-git add -p && git commit -m "..."
-git push -u origin traceable-energetics
-cd ../..
-git add packages/ClimFluids          # record the new submodule commit
-git commit -m "Bump ClimFluids"
-```
-
-The parent repository only records which commit of each package to use. Push the package first, so that
-the recorded commit exists on GitHub.
+`Manifest.toml` is untracked, so the models follow the tip of `traceable-energetics`: to pick up new commits run
+`Pkg.update("CFAnelastics", "CFCompressible")`. To change a model, work in a clone of its fork (e.g. with
+`Pkg.develop(path = "<clone>")` in a scratch environment), push the branch to the fork, then update here.
+Changes to ClimFlows packages go upstream by pull request from the fork.

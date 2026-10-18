@@ -27,8 +27,8 @@ Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [sources]
-CFAnelastics = {path = "packages/CFAnelastics"}
-CFCompressible = {path = "packages/CFCompressible"}
+CFAnelastics = {url = "https://github.com/ben-hatton/CFAnelastics.jl", rev = "traceable-energetics"}
+CFCompressible = {url = "https://github.com/ben-hatton/CFCompressible.jl", rev = "traceable-energetics"}
 
 [compat]
 CFBoxes = "0.0.5"
