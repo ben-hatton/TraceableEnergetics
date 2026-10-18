@@ -15,7 +15,8 @@ equations, using energy-consistent finite-volume discretisations of both models 
 - packages/: work-in-progress packages. CFAnelastics is in-tree; CFCompressible is a git submodule of the user's fork,
   on the branch `traceable-energetics`.
 - src/, test/: the TraceableEnergetics package itself: model-independent setups and their initialisation of each model.
-- The environment uses packages/ through [sources] in Project.toml. Never `Pkg.develop` or edit ~/.julia/dev.
+- The environment uses packages/ through [sources] in Project.toml. `Pkg.develop` and ~/.julia/dev are off limits,
+  except under the procedure for upstream ClimFlows packages in MANAGING THE PACKAGES.
 - experiments/, analysis/, tools/: the science that uses the packages. Experiment-specific code (I/O, plotting,
   setups) lives here or in src/, never in the packages.
 
@@ -23,7 +24,14 @@ equations, using energy-consistent finite-volume discretisations of both models 
 - Edit freely: CFAnelastics, the box code of CFCompressible (FC2D files).
 - Ask first: ClimFluids, the non-box code of CFCompressible, CFDomains, CFPlanets, CFDiffusionSchemes, CFBoxes, any new
   package.
-- Never touch branches other than `traceable-energetics`, upstream ClimFlows repos, or files outside this repository.
+- Never touch branches other than `traceable-energetics`, upstream ClimFlows repos, or files outside this repository,
+  except under the procedure below.
+- Upstream ClimFlows packages (CFDiffusionSchemes, ClimFluids, CFBoxes, CFPlanets, CFDomains, ...): changes may be
+  *proposed* by developing the package with `Pkg.develop` from ~/.julia/dev/<Package> on a local branch
+  `traceable-energetics`, but only after the user has given explicit permission for that package and that change.
+  The agent never commits or pushes. The user pushes the branch to their own fork first, then opens the pull request
+  to the upstream repository themselves. Manifest.toml files are untracked, so `Pkg.develop` changes no tracked file.
+  Outside this procedure, never `Pkg.develop` or edit ~/.julia/dev, and never touch upstream repositories.
 - When changes are made to the finite volume dynamical code in CFCompressible, analogous changes must be made in
   CFAnelastics, and vice versa, in the same piece of work (or listed as pending). Shared code is mirrored by hand.
 - Keep packages upstream-ready: follow ClimFlows conventions, nothing specific to this project.
@@ -43,8 +51,9 @@ first, then record the submodule pointers in the parent repository.
   and never modify the interior of the state.
 
 ## CODE CONVENTIONS
-- ClimFlows idioms: ManagedLoops `@with mgr, let ... @vec for ...`; MutatingOrNot `similar!`/`void` for
-  scratch; `tendencies!(dstate, scratch, model, state, t)` returning `(dstate, scratch)`.
+- ClimFlows idioms: ManagedLoops `@with mgr, let ... @vec for ...`; CFBoxes `alloc!(scratch_, F, mgr, domain, location)`
+  with MutatingOrNot `void` for scratch (not `similar!`); `tendencies!(dstate, scratch, model, state, t)` returning
+  `(dstate, scratch)`.
 - Each kernel's comment states the continuous equation and its discrete form and staggering.
 - Every exported type and function gets a docstring with units and sign conventions.
 

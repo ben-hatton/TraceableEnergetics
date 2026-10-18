@@ -20,17 +20,19 @@ const TESTS = @__DIR__
     @eval module AnelasticTests
         include(joinpath($PACKAGES, "CFAnelastics", "test", "runtests.jl"))
         include(joinpath($TESTS, "canonical.jl"))
+        const make_model, make_state, tend! = an_model, an_state, an_tend!     # model-independent names, used below
         @testset "canonical setups, AN2D" begin
-            test_canonical(TraceableEnergetics.initialize, an_tend!, an_model(mgr = VectorizedCPU()),
-                           an_model(boundary = (Bounded, Bounded), walls = forced_box))
+            test_canonical(TraceableEnergetics.initialize, tend!, make_model(mgr = VectorizedCPU()),
+                           make_model(boundary = (Bounded, Bounded), walls = forced_box))
         end
     end
     @eval module CompressibleTests
         include(joinpath($PACKAGES, "CFCompressible", "test", "box2d.jl"))
         include(joinpath($TESTS, "canonical.jl"))
+        const make_model, make_state, tend! = fc_model, fc_state, fc_tend!
         @testset "canonical setups, FC2D" begin
-            test_canonical((m, fields) -> TraceableEnergetics.initialize(m, fields; ptop = 1e5), fc_tend!,
-                           fc_model(mgr = VectorizedCPU()), fc_model(boundary = (Bounded, Bounded), walls = forced_box))
+            test_canonical((m, fields) -> TraceableEnergetics.initialize(m, fields; ptop = 1e5), tend!,
+                           make_model(mgr = VectorizedCPU()), make_model(boundary = (Bounded, Bounded), walls = forced_box))
         end
     end
     # AN2D and FC2D share their diagnostic names, apart from the model-specific ones
@@ -42,9 +44,9 @@ const TESTS = @__DIR__
     # for either model, every diagnostic without its halo matches the coordinates of its grid location, and every
     # diagnostic is defined on its full array, halo included (no uninitialised memory)
     @testset "interior diagnostics, $M" for (M, T) in (("AN2D", AnelasticTests), ("FC2D", CompressibleTests))
-        model = (M == "AN2D" ? T.an_model : T.fc_model)(boundary = (Bounded, Bounded), walls = T.forced_box)
-        state = M == "AN2D" ? T.an_state(model) : T.fc_state(model)
-        dstate, scratch = T.evaluate(M == "AN2D" ? T.an_tend! : T.fc_tend!, model, state)
+        model = T.make_model(boundary = (Bounded, Bounded), walls = T.forced_box)
+        state = T.make_state(model)
+        dstate, scratch = T.evaluate(T.tend!, model, state)
         session = open(diagnostics(model); state, dstate, scratch, model)
         for name in keys(diagnostic_info(model))
             x, z = diagnostic_coordinates(model, name)
@@ -56,9 +58,9 @@ const TESTS = @__DIR__
     # for either model, data files read back the full diagnostics, with halo, at each time, in either format, and
     # videos hold their interior
     @testset "outputs, $M" for (M, T) in (("AN2D", AnelasticTests), ("FC2D", CompressibleTests))
-        model = (M == "AN2D" ? T.an_model : T.fc_model)(boundary = (Bounded, Bounded), walls = T.forced_box)
-        state = M == "AN2D" ? T.an_state(model) : T.fc_state(model)
-        dstate, scratch = T.evaluate(M == "AN2D" ? T.an_tend! : T.fc_tend!, model, state)
+        model = T.make_model(boundary = (Bounded, Bounded), walls = T.forced_box)
+        state = T.make_state(model)
+        dstate, scratch = T.evaluate(T.tend!, model, state)
         names, book, dir = (:u, :w, :conservative_variable, :vorticity), diagnostics(model), mktempdir()
         outputs = Outputs(DataFile(joinpath(dir, "out.nc"), model, names), DataFile(joinpath(dir, "out.jld2"), model, names),
                           DiagnosticVideo(model, :vorticity))

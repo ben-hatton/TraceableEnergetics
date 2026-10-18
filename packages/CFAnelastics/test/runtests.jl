@@ -28,8 +28,6 @@ const fluid = NonlinearBinaryFluid(:potential_temperature, fluid_params)
 
 const thermoflux = ThermoFluxConsistent(k_T = 1e-4, k_q = 1e-5)
 
-test_box(Mx = 32, Mz = 16; boundary = (Periodic, Bounded)) = Box2D(; Mx, Mz, Hx = 1, Hz = 1, boundary)
-
 # closed (impermeable, insulating, no salt flux) walls
 closed_wall(tangential = FreeSlip()) = Wall(; tangential, tracers = (Flux(0.0), Flux(0.0)))   # (consvar, q)
 
