@@ -15,6 +15,7 @@
 include("../../tools/setup.jl")
 
 using TraceableEnergetics, CFAnelastics
+include("../../energetics/energetics.jl")      # energies!
 using CFBoxes, CFDiffusionSchemes, ClimFluids, CFTimeSchemes
 using CFPlanets: Tank2D
 using MutatingOrNot: void
@@ -69,7 +70,7 @@ function (r::Record)(model, state, dstate, scratch, book, t)
     (; ℑ) = operators(model.spatial_scheme)
     X, Zf = interior_faces(domain, 1), interior_faces(domain, 2)
     x, z = interior_cells(domain, 1), interior_cells(domain, 2)
-    _, _, te = CFAnelastics.energies!((void, void, void), model, state)
+    _, _, te = energies!((void, void, void), model, state)
     ω = scratch.derivatives.∂u_z[X, Zf] .- scratch.derivatives.∂w_x[X, Zf]
     ρ_vertex = [ℑ(ρ_R, (2,), (Face(),), J) for J in Zf]'
     enstrophy = 0.5 .* ω .^ 2 ./ ρ_vertex

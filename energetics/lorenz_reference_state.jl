@@ -2,7 +2,8 @@
 # Load after the model packages; available_energetics.jl needs lorenz_reference_state.jl and energetics_io.jl.
 using NCDatasets
 using CFBoxes
-using CFAnelastics: AN2D, energetics_tendencies!, Φij
+using CFAnelastics: AN2D
+include("energetics.jl")
 using CFTimeSchemes: CFTimeSchemes
 using ManagedLoops: @vec, @with
 using MutatingOrNot: Void, void, similar!

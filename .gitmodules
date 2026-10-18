@@ -2,3 +2,7 @@
 	path = packages/CFCompressible
 	url = https://github.com/ben-hatton/CFCompressible.jl.git
 	branch = traceable-energetics
+[submodule "packages/CFAnelastics"]
+	path = packages/CFAnelastics
+	url = https://github.com/ben-hatton/CFAnelastics.jl.git
+	branch = traceable-energetics

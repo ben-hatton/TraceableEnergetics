@@ -1,4 +1,10 @@
-# Traditional energetics of AN2D
+# Traditional energetics of AN2D. Staging area: moved out of CFAnelastics (project-specific, not model code), to be
+# reworked here. Load after the model packages:  include("<path to>/energetics/energetics.jl")
+using CFAnelastics: CFAnelastics, AN2D, buoyancy      # buoyancy: internal to CFAnelastics
+using CFBoxes
+using CFBoxes: slice, across
+using ManagedLoops: @vec, @with
+using MutatingOrNot: void
 
 """
     energetics_scratch = energetics_tendencies!(energetics_scratch, model::AN2D, state, dynamics_scratch)

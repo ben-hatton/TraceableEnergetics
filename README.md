@@ -9,9 +9,11 @@ compressible equations, using models built in the [ClimFlows](https://github.com
 src/               the TraceableEnergetics package: model-independent setups (initial conditions) and their
                    lowering to each model's initialize
 packages/          work-in-progress packages, each with its own Project.toml and tests
-  CFAnelastics/    anelastic 2D box model (AN2D)
+  CFAnelastics/    git submodule: fork of ClimFlows/CFAnelastics.jl (AN2D)
   CFCompressible/  git submodule: fork of ClimFlows/CFCompressible.jl (FC2D)
 experiments/       simulations that use the packages (e.g. shear/: Kelvin-Helmholtz)
+energetics/        staging area: energetics of AN2D (traditional and available energetics, NetCDF post-processing),
+                   moved out of CFAnelastics
 analysis/          post-processing
 tools/             helpers shared by scripts (setup.jl, output, NetCDF)
 test/              setups tests, the package model suites, canonical setups on both models; cross-model tests

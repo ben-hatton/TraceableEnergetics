@@ -1,9 +1,10 @@
 # Post-processing of AN2D output stored in NetCDF files (moved out of CFAnelastics, which no longer depends on
 # NCDatasets). Load after the model packages, e.g. from an experiment's analysis script:
-#     include("<path to>/analysis/energetics_io.jl")
+#     include("<path to>/energetics/energetics_io.jl")
 using NCDatasets
 using CFBoxes
-using CFAnelastics: AN2D, energetics_tendencies!, Φij
+using CFAnelastics: AN2D
+include("energetics.jl")
 using CFTimeSchemes: CFTimeSchemes
 using ManagedLoops: @vec, @with
 using MutatingOrNot: Void, void, similar!
