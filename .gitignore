@@ -33,3 +33,4 @@ JuliaLocalPreferences.toml
 
 # Experiment output (videos, data)
 experiments/*/output/
+TraceableEnergetics.code-workspace

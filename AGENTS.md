@@ -54,6 +54,11 @@ change in this repository.
 - ClimFlows idioms: ManagedLoops `@with mgr, let ... @vec for ...`; CFBoxes `alloc!(scratch_, F, mgr, domain, location)`
   with MutatingOrNot `void` for scratch (not `similar!`); `tendencies!(dstate, scratch, model, state, t)` returning
   `(dstate, scratch)`.
+- Grid locations (CFBoxes `CGrid`) are tuples of `Cell()`/`Face()`, one per dimension: `(Face(), Cell())` for u,
+  `(Cell(), Face())` for w, `(Face(), Face())` for vertices. The old `:xz`/`:Xz` symbols are obsolete. Declare a
+  location once (`diagnostic_info`), never infer it from another array. Operators are `ℑ(a, dims, to, I...)` and
+  `δ(...)` with explicit dimensions and target staggering (read `CFBoxes/src/CGrid/operators.jl`); `I, J` index
+  faces, `i, j` centres.
 - Each kernel's comment states the continuous equation and its discrete form and staggering.
 - Every exported type and function gets a docstring with units and sign conventions.
 
