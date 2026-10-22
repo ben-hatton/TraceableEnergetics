@@ -32,7 +32,7 @@ CFCompressible = {url = "git@github.com:ben-hatton/CFCompressible.jl.git", rev =
 CFPlanets = {url = "git@github.com:ben-hatton/CFPlanets.jl.git", rev = "traceable-energetics"}
 
 [compat]
-CFAnelastics = "0.2"
+CFAnelastics = "0.1.2"
 CFBoxes = "0.0.5"
-CFCompressible = "0.2"
+CFCompressible = "0.1.3"
 CFPlanets = "0.1.5"
