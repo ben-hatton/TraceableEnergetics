@@ -9,9 +9,6 @@ compressible equations, using models built in the [ClimFlows](https://github.com
 src/               the TraceableEnergetics package: model-independent setups (initial conditions) and their
                    lowering to each model's initialize
 experiments/       simulations that use the packages (e.g. shear/: Kelvin-Helmholtz)
-energetics/        staging area: energetics of AN2D (traditional and available energetics, NetCDF post-processing),
-                   moved out of CFAnelastics
-analysis/          post-processing
 tools/             helpers shared by scripts (setup.jl, output, NetCDF)
 test/              setups tests, canonical setups and diagnostics on both models; cross-model tests
 ```

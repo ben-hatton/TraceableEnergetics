@@ -15,13 +15,12 @@
 include("../../tools/setup.jl")
 
 using TraceableEnergetics, CFAnelastics
-include("../../energetics/energetics.jl")      # energies!
 using CFBoxes, CFDiffusionSchemes, ClimFluids, CFTimeSchemes
 using CFPlanets: Tank2D
-using MutatingOrNot: void
+using CookBooks: CookBook
 using CairoMakie, Random
 
-space = Tank2D(Lx = 1.0, Lz = 0.5, g = 10.0)
+space = Tank2D(Lx = 1.0, Lz = 0.5, g = 10.0, z0 = 0.5)       # geopotential g (z - Lz), zero at the top
 T0, q0, ρ0 = 280.0, 0.035, 1000.0
 fluid = NonlinearBinaryFluid(:potential_temperature, (; p0 = 1e5, T0, q0, Cp0 = 4000.0, v0 = 1 / ρ0, α_T = 2e-4,
     α_q = 0.8, α_p = 1e-6, M_s = 3.14038218e-2, R = 8.31446261815324, α_TT = 1e-5, γ = 1e-7))
@@ -60,8 +59,9 @@ struct Record
     Z::Vector{Float64}
     Z_high::Vector{Float64}
     ω::Ref{Matrix{Float64}}
+    book::CookBook                  # diagnostics of the model, for the total energy
 end
-Record() = Record(Float64[], Float64[], Float64[], Float64[], Ref(zeros(0, 0)))
+Record(model) = Record(Float64[], Float64[], Float64[], Float64[], Ref(zeros(0, 0)), diagnostics(model))
 Base.close(::Record) = nothing
 
 function (r::Record)(model, state, dstate, scratch, book, t)
@@ -70,14 +70,16 @@ function (r::Record)(model, state, dstate, scratch, book, t)
     (; ℑ) = operators(model.spatial_scheme)
     X, Zf = interior_faces(domain, 1), interior_faces(domain, 2)
     x, z = interior_cells(domain, 1), interior_cells(domain, 2)
-    _, _, te = energies!((void, void, void), model, state)
+    session = open(r.book; state, dstate, scratch, model)
+    budget = energy_budget(session)
+    close(session)
     ω = scratch.derivatives.∂u_z[X, Zf] .- scratch.derivatives.∂w_x[X, Zf]
     ρ_vertex = [ℑ(ρ_R, (2,), (Face(),), J) for J in Zf]'
     enstrophy = 0.5 .* ω .^ 2 ./ ρ_vertex
     spectrum = x_spectrum(ω ./ sqrt.(ρ_vertex))
     high = (size(ω, 1) ÷ 4 + 2):lastindex(spectrum)              # kₓ > Mx/4 (index kₓ + 1)
     push!(r.t, t)
-    push!(r.E, sum(te[x, z]) * dx * dz)
+    push!(r.E, budget.kinetic + budget.potential)
     push!(r.Z, sum(enstrophy) * dx * dz)
     push!(r.Z_high, sum(spectrum[high]) / sum(spectrum))
     r.ω[] = ω
@@ -90,7 +92,7 @@ x_spectrum(a) = let N = size(a, 1)
 end
 
 function run(model, fields, params)
-    record = Record()
+    record = Record(model)
     state = initialize(model, fields)
     CFAnelastics.loop(state, model, CFTimeSchemes.RungeKutta4(model), params; outputs = record)
     return record

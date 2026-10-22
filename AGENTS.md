@@ -12,11 +12,10 @@ Show that anelastic (and hence Boussinesq) dynamics are energetically traceable 
 equations, using energy-consistent finite-volume discretisations of both models in a box.
 
 ## LAYOUT
-- CFAnelastics and CFCompressible are ordinary dependencies, installed from the user's forks (branch
-  `traceable-energetics`) through [sources] in Project.toml. They are developed in their own repositories, not here.
-- energetics/: staging area for the energetics code (traditional/available energetics of AN2D, post-processing),
-  moved out of CFAnelastics; to be reworked.
-- experiments/, analysis/, tools/: the science that uses the packages. Experiment-specific code (I/O, plotting,
+- CFAnelastics, CFCompressible and CFPlanets are ordinary registered dependencies (compat in Project.toml). They are
+  developed in their own repositories, not here; while a change is pending, the dependency is the user's fork branch
+  `traceable-energetics` through [sources] in Project.toml.
+- experiments/, tools/: the science that uses the packages. Experiment-specific code (I/O, plotting,
   setups) lives here or in src/, never in the packages.
 
 ## MANAGING THE PACKAGES
