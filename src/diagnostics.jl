@@ -9,13 +9,17 @@
 
 `CookBook` of the diagnostics of an AN2D or FC2D model, opened with `open(book; state, dstate, scratch, model)`, and
 the long name, units and grid location of each diagnostic: one `Face()`/`Cell()` per dimension, e.g. `(Cell(), Cell())`
-cells, `(Face(), Cell())` u-faces. See `CFAnelastics.diagnostics` and `CFCompressible.diagnostics`: build the book
-once, as each session of it overwrites the same output arrays.
+cells, `(Face(), Cell())` u-faces. They are those of `CFAnelastics.diagnostics` and `CFCompressible.diagnostics`, and
+the energetics diagnostics of `energetics_diagnostics`, to which the keyword `reference` is passed. Build the
+book once, as each session of it overwrites the same output arrays.
 """
-diagnostics(model::AN2D) = CFAnelastics.diagnostics(model)
-diagnostics(model::FC2D) = CFCompressible.diagnostics(model)
-diagnostic_info(model::AN2D) = CFAnelastics.diagnostic_info(model)
-diagnostic_info(model::FC2D) = CFCompressible.diagnostic_info(model)
+diagnostics(model::AN2D; kwargs...) = with_energetics!(CFAnelastics.diagnostics(model), model; kwargs...)
+diagnostics(model::FC2D; kwargs...) = with_energetics!(CFCompressible.diagnostics(model), model; kwargs...)
+diagnostic_info(model::AN2D) = merge(CFAnelastics.diagnostic_info(model), energetics_info(model))
+diagnostic_info(model::FC2D) = merge(CFCompressible.diagnostic_info(model), energetics_info(model))
+
+# add the energetics diagnostics to the book of the model package
+with_energetics!(book, model; kwargs...) = (merge!(book.recipes, energetics_diagnostics(model; kwargs...).recipes); book)
 
 """
     field = interior_diagnostic(session, name)

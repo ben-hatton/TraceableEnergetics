@@ -1,6 +1,6 @@
 # Canonical setups on a model. Included in a model test module (AnelasticTests, CompressibleTests), which includes
 # config.jl (fluid, Lz, T0, q0, ρ0, U), helpers.jl (evaluate, all_finite, interior_Xz, interior_xZ) and the model file.
-using TraceableEnergetics: TraceableEnergetics, linear_profile, rest_state, kelvin_helmholtz, rayleigh_benard,
+using TraceableEnergetics: TraceableEnergetics, linear_profile, setup, kelvin_helmholtz, rayleigh_benard,
     rising_bubble, lock_exchange
 
 # round-off level of the momentum tendency: B = h - πθ - μq is a difference of O(Cp θ) numbers, divided by Δx
@@ -8,7 +8,7 @@ momentum_roundoff(model) = 100 * eps() * fluid.Cp0 * T0 / min(model.dx, model.dz
 
 # canonical setups, on the periodic and the closed-box configurations
 setups(box) = (
-    ("rest", rest_state(box.periodic; θ = linear_profile(T0, T0 + 1, Lz), q = linear_profile(q0, q0 - 0.002, Lz)), box.periodic),
+    ("rest", setup(box.periodic; θ = linear_profile(box.periodic, T0, T0 + 1), q = linear_profile(box.periodic, q0, q0 - 0.002)), box.periodic),
     ("Kelvin-Helmholtz", kelvin_helmholtz(box.periodic; θ₀ = T0, Δθ = 1.0, q₀ = q0, Δu = U, ρ₀ = ρ0), box.periodic),
     ("Rayleigh-Bénard", rayleigh_benard(box.periodic; θ_bottom = T0 + 1, θ_top = T0, q₀ = q0, ρ₀ = ρ0), box.periodic),
     ("rising bubble", rising_bubble(box.closed; θ₀ = T0, Δθ = 0.5, q₀ = q0), box.closed),

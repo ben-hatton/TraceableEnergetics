@@ -30,7 +30,7 @@ closed = Wall(tangential = FreeSlip(), tracers = (Flux(0.0), Flux(0.0)))
 an = AN2D((; mgr, domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme = VortexEnergyCons(), buoyancy_scheme = ThermodynamicForcing(),
     thermoflux_scheme = ThermoFluxConsistent(k_T = 1e-4, k_q = 1e-5),
     viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3),
-    anelastic_reference = AnelasticReference(domain, space, ρ0; ptop = 1e5),
+    anelastic_reference = AnelasticReference(domain, space, ρ0; pref = 1e5), gauge_offset = 0.0,
     boundary_conditions = BoxBoundaryConditions(domain; bottom = closed, top = closed)))
 
 # a bubble 2 K warmer than its neutral surroundings: buoyancy g α_T Δθ ≈ 4e-3 m s⁻², enough to rise ~0.1 m in 20 s

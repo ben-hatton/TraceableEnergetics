@@ -10,13 +10,13 @@ an_density(z) = ρ0 * (1 + 0.1 * (Lz - z) / Lz)
 32 × 16 box with every physical term on: buoyancy, vortex force, thermodynamic diffusion and viscosity, using the
 energy-conserving schemes
 =#
-function an_model(; mgr = mgr, boundary = (Periodic, Bounded), walls = (; bottom = closed_wall(), top = closed_wall()))
+function an_model(; mgr = mgr, gauge_offset = 0.0, boundary = (Periodic, Bounded), walls = (; bottom = closed_wall(), top = closed_wall()))
     domain = Box2D(; Mx = 32, Mz = 16, boundary)
-    anelastic_reference = AnelasticReference(domain, space, an_density; ptop = 1e5)
+    anelastic_reference = AnelasticReference(domain, space, an_density; pref = 1e5)
     boundary_conditions = BoxBoundaryConditions(domain; walls...)
     return AN2D((; mgr, domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme = VortexEnergyCons(),
         buoyancy_scheme = ThermodynamicForcing(), thermoflux_scheme = thermoflux, viscosity_scheme = ViscosityScheme(dyn_visc = 1e-3),
-        anelastic_reference, boundary_conditions))
+        anelastic_reference, boundary_conditions, gauge_offset))
 end
 
 # the model's tendencies!, in the argument order of the generic checks (helpers.jl)

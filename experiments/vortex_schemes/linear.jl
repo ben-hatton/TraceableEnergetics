@@ -39,7 +39,7 @@ function models(vortex_scheme; Mx = 16, Mz = 8)
     common = (; mgr, domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme,
               thermoflux_scheme = ThermoFluxConsistent(k_T = 0.0, k_q = 0.0),
               viscosity_scheme = ViscosityScheme(dyn_visc = 0.0), boundary_conditions)
-    an = AN2D((; common..., buoyancy_scheme = ThermodynamicForcing(), anelastic_reference = AnelasticReference(domain, space, ρ0; ptop = 1e5)))
+    an = AN2D((; common..., buoyancy_scheme = ThermodynamicForcing(), anelastic_reference = AnelasticReference(domain, space, ρ0; pref = 1e5), gauge_offset = 0.0))
     fc = FC2D(common)
     return an, fc
 end
@@ -49,19 +49,15 @@ end
 #####
 
 Lz = space.Lz
-base_state(model, ::Val{:uniform}, U) =
-    (; consvar = consvar_from_theta(fluid, T0, q0), q = (x, z) -> q0, u = z -> U, ψ = (X, Z) -> zero(X))
-base_state(model, ::Val{:stratified}, U; Δθ = 1.0) =
-    (; consvar = consvar_from_theta(fluid, linear_profile(T0, T0 + Δθ, Lz), q0), q = (x, z) -> q0, u = z -> U,
-       ψ = (X, Z) -> zero(X))
+base_state(model, ::Val{:uniform}, U) = setup(model; θ = T0, q = q0, u = z -> U)
+base_state(model, ::Val{:stratified}, U; Δθ = 1.0) = setup(model; θ = linear_profile(model, T0, T0 + Δθ), q = q0, u = z -> U)
 base_state(model, ::Val{:shear}, U; Δθ = 1.0, δ = Lz / 8) =
-    (; consvar = consvar_from_theta(fluid, tanh_profile(T0 - Δθ / 2, T0 + Δθ / 2, Lz / 2, δ), q0), q = (x, z) -> q0,
-       u = z -> U * tanh((z - Lz / 2) / δ), ψ = (X, Z) -> zero(X))
+    setup(model; θ = tanh_profile(model, T0 - Δθ / 2, T0 + Δθ / 2, δ), q = q0, u = shear(model, 2U, δ))
 # minimum Richardson number N² / u_z² of the shear state, N² ≈ g α_T θ_z
 richardson_shear(U; Δθ = 1.0, δ = Lz / 8) = space.g * 2e-4 * (Δθ / 2δ) / (U / δ)^2
 
 state0(model::AN2D, fields) = initialize(model, fields)
-state0(model::FC2D, fields) = initialize(model, fields; ptop = 1e5)
+state0(model::FC2D, fields) = initialize(model, fields; pref = 1e5)
 
 #####
 ##### Jacobian over the interior degrees of freedom

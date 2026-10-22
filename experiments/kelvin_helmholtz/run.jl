@@ -62,10 +62,11 @@ boundary_conditions = BoxBoundaryConditions(domain; bottom = closed, top = close
 fc = FC2D((; mgr, domain, space, fluid, spatial_scheme, vortex_scheme, thermoflux_scheme, viscosity_scheme, boundary_conditions))
 
 # anelastic, about a reference density (a number, a function of the height z, or a vector of cell values) with
-# pressure ptop at the top
-anelastic_reference = AnelasticReference(domain, space, ρ0; ptop = 1e5)
+# pressure pref at the height z0 where the geopotential vanishes (the bottom by default); the constant of the kinematic
+# pressure (gauge_offset) changes no tendency
+anelastic_reference = AnelasticReference(domain, space, ρ0; pref = 1e5)
 an = AN2D((; mgr, domain, space, fluid, spatial_scheme, vortex_scheme, buoyancy_scheme = ThermodynamicForcing(), thermoflux_scheme,
-    viscosity_scheme, anelastic_reference, boundary_conditions))
+    viscosity_scheme, anelastic_reference, boundary_conditions, gauge_offset = 0.0))
 
 #####
 ##### Initial condition, shared by both models
@@ -85,7 +86,7 @@ diagnostic = :conservative_variable
 params = (; Nslice = 120, slice_size = 0.25, dt_max = 0.05, cfl = 0.9)
 
 # initial states; FC2D also needs the pressure at the top, to build its balanced initial density
-states = (an = initialize(an, fields), fc = initialize(fc, fields; ptop = 1e5))
+states = (an = initialize(an, fields), fc = initialize(fc, fields; pref = 1e5))
 
 # run each model, recording a frame of the diagnostic at t = 0 and at each time slice (see experiments/recording for
 # the other outputs: NetCDF and JLD2 data files)

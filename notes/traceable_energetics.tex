@@ -51,9 +51,9 @@ The velocity is $\bu=(u,w)$ and $\bomega=\omega\,\hat{\mathbf y}$ with
 \end{equation}
 Gravity acts along $-\ez$ with constant magnitude $g>0$. The geopotential is
 \begin{equation}
-  \Phi(z) = g\,(z - L_z),\qquad \bnabla\Phi = g\,\ez .
+  \Phi(z) = g\,(z - z_0),\qquad \bnabla\Phi = g\,\ez ,
 \end{equation}
-The origin of $\Phi$ is arbitrary: shifting it changes the total energy by a constant times the (conserved) mass.
+with $z$ the height above the bottom of the box and $z_0$ the height at which $\Phi$ vanishes (\code{space.z0}, by default the bottom, $z_0=0$). The origin of $\Phi$ is arbitrary: shifting it changes the total energy by a constant times the (conserved) mass.
 
 The fluid is a binary mixture (solvent and solute) with mass fraction $q$ of solute and an entropic
 variable $\vt$ that is a function of the specific entropy $s$ and of $q$ only, $\vt=\vt(s,q)$, and is therefore
@@ -66,6 +66,7 @@ conserved by adiabatic, isohaline motion. In the experiments $\vt$ is the potent
 \hline
 Symbol & Meaning [unit] & Code \\ \hline
 $L_x,L_z,g$ & box size [m], gravity [m\,s$^{-2}$] & \code{space.Lx}, \code{space.Lz}, \code{space.g} \\
+$z_0$ & height above the bottom where $\Phi=0$ [m] & \code{space.z0} \\
 $\rho$, $v=1/\rho$ & density [kg\,m$^{-3}$], specific volume & \code{m[:,:,1]} (FC2D) \\
 $P$ & pressure [Pa] & \code{p} \\
 $p$ & reduced pressure (AN2D), $p=(P-P_R)/\rho_R$ [J\,kg$^{-1}$] & \code{scratch.phi} \\
@@ -255,8 +256,9 @@ $\partial_t\bu+\bomega\times\bu+\bnabla K=-v\bnabla P-g\ez+\bF/\rho$. Sound wave
 \subsection{Reference state}
 The reference state is a density profile $\rho_R(z)>0$ and the hydrostatic pressure
 \begin{equation}
-  \frac{\mathrm{d}P_R}{\mathrm{d}z}=-\rho_R\,g,\qquad P_R(L_z)=P_{\rm top}.
+  \frac{\mathrm{d}P_R}{\mathrm{d}z}=-\rho_R\,g,\qquad P_R(z_0)=P_{\rm ref},
 \end{equation}
+anchored at the height $z_0$ where the geopotential vanishes (\code{space.z0}; \code{pref} in the code). The anchor matters for the physics: the thermodynamic functions are evaluated at $P_R$, whereas $z_0$ alone only shifts the energy by a constant.
 Nothing else is specified: the thermodynamic state of the fluid is $(\vt,q)$, and $\rho_R(z)v(P_R,\vt,q)\neq1$ in general; the
 mismatch is the buoyancy. The model replaces the full pressure by $P_R$ in all thermodynamic functions:
 $\hth,\hq,B,T,c_p,\ldots$ below mean $\hth(P_R(z),\vt,q)$, etc.
@@ -579,7 +581,7 @@ Before the pressure correction, at interior $x$-faces $(I,j)$ and $z$-faces $(i,
   \dot w&=-v^w\Big[(\Iz m^\vt)\,\partial_z\hth+(\Iz m^q)\,\partial_z\hq\Big]-\partial_z\big(B+K+\Phi\big)-S_z+v^wF_z,
   \label{eq:wdot}
 \end{align}
-with $\Phi_j=g(z_j-L_z)$, for which $\partial_z\Phi=g$ exactly. Here $B=h-\vt\hth-q\hq$ is the Bernoulli potential of step 1; $m^\vt,m^q$ are the tracer densities ($m^1,m^2$ in AN2D, $m^2,m^3$ in FC2D), so that $v^u\Ix m^\vt$ is the discrete $\vt$ at the $x$-face.
+with $\Phi_j=g(z_j-z_0)$, for which $\partial_z\Phi=g$ exactly. Here $B=h-\vt\hth-q\hq$ is the Bernoulli potential of step 1; $m^\vt,m^q$ are the tracer densities ($m^1,m^2$ in AN2D, $m^2,m^3$ in FC2D), so that $v^u\Ix m^\vt$ is the discrete $\vt$ at the $x$-face.
 In AN2D, with a buoyancy option ($B\to b$ computed in step 1), instead
 \begin{equation}
   \dot u=-\partial_xK-S_x+v^uF_x,\qquad\dot w=\Iz b-\partial_zK-S_z+v^wF_z .
@@ -671,7 +673,7 @@ with $a_1=0$ and $c_{M_z}=0$ (no flux through the walls). The factorisation is p
 For $\lambda_m=0$ ($m=0$; both its real rows) the matrix is singular: $b_j=-a_j-c_j$, and the rows sum to zero because $c_j=a_{j+1}$ and $a_1=c_{M_z}=0$.
 The factorisation is computed level by level as above, but for these rows the level-one values are overwritten right after level one is processed, $f_1\leftarrow0$ and $\mathrm{ip}_1\leftarrow0$, so that $\mathrm{pv}_2=b_2$. The solve then gives $y_1=0$, $y_2=\hat r_2/b_2$, \dots, and back substitution gives
 $\hat p_1=y_1-f_1\hat p_2=0$. In effect the level-one equation is discarded and $\hat p_1=0$ is imposed, so \emph{the horizontal mean of $p$ on the bottom level is zero}. Because the rows sum to zero, the discarded equation is the negative of the sum of the retained ones,
-and is therefore satisfied exactly when $\sum_j\hat r_j=0$ for the mean mode, which is property (iv). The total pressure is $P=P_R+\rho_Rp$, defined up to this gauge.
+and is therefore satisfied exactly when $\sum_j\hat r_j=0$ for the mean mode, which is property (iv). The total pressure is $P=P_R+\rho_Rp$, defined up to this gauge. The user may add a constant to $p$ after the solve (\code{gauge\_offset}, default $0$, so that the horizontal mean of $p$ on the bottom level is the offset). It changes the pressure but no tendency, and no term of the energy budget except the fluxes $\rho_R\Sigma\mathbf u$ and $(P-P_R)\mathbf u$, which change by the constant times the mass flux; their divergences do not, since $\nabla\!\cdot(\rho_R\mathbf u)=0$ discretely (tested).
 
 \subsection{Assembly}
 The steps in \code{pressure!}: (1) zero the wall-normal $\dot u,\dot w$ on the walls; (2) form $r/s$ at interior cells; (3) forward transform each level $j$ in $x$; (4) Thomas solve each row; (5) backward transform;
@@ -683,13 +685,9 @@ In step 7 the wall faces receive $0$ from the zero-gradient halo, so the correct
 The reference state is held at the cell centres of the \emph{full} vertical axis, halo included, $j=1-H,\dots,M_z+H$:
 \begin{itemize}
   \item $\rho_{R,j}$: a number $\rho_0$; or a function $\rho_R(z)$ evaluated at the cell centres $z_j$ (also in the halo, i.e.\ the function is extrapolated); or a vector of $M_z$ values, extended into the halo by repeating its end values.
-  \item $P_{R,j}$: hydrostatic, by marching down from the top. Set $P^{\rm up}=P_{\rm top}-g\Delta z\sum_{j=M_z+1}^{M_z+H}\rho_{R,j}$ (the pressure at the upper face of the highest halo cell, so that the pressure at the top of the \emph{domain} is $P_{\rm top}$). Then for $j=M_z+H,\dots,1-H$:
-        \begin{equation}
-          P_{R,j}=P^{\rm up}+\tfrac12\rho_{R,j}\,g\Delta z,\qquad P^{\rm up}\leftarrow P^{\rm up}+\rho_{R,j}\,g\Delta z .
-          \label{eq:hydro}
-        \end{equation}
+  \item $P_{R,j}$: hydrostatic, $P_{R,j}-P_{R,j-1}=-g\Delta z\,\Iz\rho_R$ between the centres $j-1$ and $j$ (the density of the face between them is the average of the two cells), up to a constant fixed by the anchor. The pressure at $z_0$ is that of the piecewise-linear interpolant of the cell-centre values $P_{R,j}$, taken in the segment between two interior cells that contains $z_0$ (linearly extrapolated from the nearest segment if $z_0$ is outside the box), and it equals $P_{\rm ref}$.
 \end{itemize}
-Consequently $\partial_zP_R=-g\,\Iz\rho_R=-g\rho^w$ exactly: the discrete hydrostatic balance uses the face density $\rho^w$ that weights the vertical mass flux and the Poisson operator. $P_{R,M_z}=P_{\rm top}+\tfrac12\rho_{R,M_z}g\Delta z$.
+Consequently $\partial_zP_R=-g\,\Iz\rho_R=-g\rho^w$ exactly: the discrete hydrostatic balance uses the face density $\rho^w$ that weights the vertical mass flux and the Poisson operator. FC2D has no reference state; its balanced rest density (\code{balanced\_density}) has the pressure $P_{\rm ref}$ at $z_0$ in the same sense, the pressure at the top cell being found by secant iterations on the interpolated pressure at $z_0$.
 The specific volume is not stored; face values of $\rho_R$ are $\Iz\rho_R$.
 
 \subsection{Initial state}
@@ -753,7 +751,7 @@ The kinetic energy is thus weighted by the same face densities $\rho^u,\rho^w$ a
 \subsection{The discrete energy}
 \begin{equation}
   E_d=\Delta x\Delta z\,\Sigma_c\Big[\rho^cK+\mathcal U\Big],\qquad
-  \mathcal U=\begin{cases}\rho\,(h-Pv+\Phi_j)&\text{FC2D},\\ \rho_{R,j}(h(P_{R,j},\vt,q)+\Phi_j)-P_{R,j}&\text{AN2D},\end{cases}\quad\Phi_j=g(z_j-L_z).
+  \mathcal U=\begin{cases}\rho\,(h-Pv+\Phi_j)&\text{FC2D},\\ \rho_{R,j}(h(P_{R,j},\vt,q)+\Phi_j)-P_{R,j}&\text{AN2D},\end{cases}\quad\Phi_j=g(z_j-z_0).
 \end{equation}
 An additive constant in $\Phi$ changes $E_d$ by a constant (since $\Sigma_c\rho^c$ is conserved: trivially for AN2D, and by step~9 for FC2D). $\mathcal U$ is a pointwise function of the cell values $m^c_{i,j}$ with the derivatives
 \begin{equation}

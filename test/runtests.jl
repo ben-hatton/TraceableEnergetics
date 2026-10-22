@@ -4,11 +4,21 @@
 # live here.
 using Test
 using TraceableEnergetics, CookBooks
-using CFBoxes: Bounded
+using CFBoxes: Bounded, Periodic
+using LoopManagers: VectorizedCPU
 
 const TESTS = @__DIR__
 
+# reference state (density increasing with depth, as that of the AN2D test model) on the grid of `model`, for the diagnostics
+# bytes allocated by a second call of f(args...), the arguments being concrete
+allocated(f, args...) = (f(args...); @allocated f(args...))
+
+test_reference(model) = AnelasticTests.AnelasticReference(model.domain, model.space, AnelasticTests.an_density; pref = 1e5)
+
+include(joinpath(TESTS, "..", "tools", "scales.jl"))
+
 @testset "TraceableEnergetics" begin
+    include(joinpath(TESTS, "scales.jl"))
     @eval module SetupTests
         using Test, TraceableEnergetics
         using CFBoxes: Periodic, Bounded, Box2D
@@ -35,7 +45,7 @@ const TESTS = @__DIR__
         include(joinpath($TESTS, "canonical.jl"))
         const make_model, make_state, tend! = fc_model, fc_state, fc_tend!
         @testset "canonical setups, FC2D" begin
-            test_canonical((m, fields) -> TraceableEnergetics.initialize(m, fields; ptop = 1e5), tend!,
+            test_canonical((m, fields) -> TraceableEnergetics.initialize(m, fields; pref = 1e5), tend!,
                            make_model(mgr = VectorizedCPU()), make_model(boundary = (Bounded, Bounded), walls = forced_box))
         end
     end
@@ -51,13 +61,87 @@ const TESTS = @__DIR__
         model = T.make_model(boundary = (Bounded, Bounded), walls = T.forced_box)
         state = T.make_state(model)
         dstate, scratch = T.evaluate(T.tend!, model, state)
-        session = open(diagnostics(model); state, dstate, scratch, model)
+        # FC2D has no reference state: the one of the matching AN2D (same density profile) serves for the manipulated conversion
+        session = open(diagnostics(model; reference = test_reference(model)); state, dstate, scratch, model)
         for name in keys(diagnostic_info(model))
             x, z = diagnostic_coordinates(model, name)
             @test size(interior_diagnostic(session, name)) == (length(x), length(z))
             @test all(isfinite, CookBooks.get(session, name))
         end
         close(session)
+    end
+    # energy budget of energy.tex, for either model, with periodic, closed and forced boundaries: the budget of ρP closes at
+    # each cell, the closure Q = Q_ϑ + Q_q + ρε_K holds, the vortex force does no work with the energy-conserving scheme, and
+    # the budget of K + P closes in the volume integral; the manipulated conversion is close to C
+    @testset "energy budget, $M, $(label)" for (M, T) in (("AN2D", AnelasticTests), ("FC2D", CompressibleTests)),
+                                              (label, boundary, walls) in (("periodic", (Periodic, Bounded), (; bottom = T.closed_wall(), top = T.closed_wall())),
+                                                                           ("closed", (Bounded, Bounded), (; left = T.closed_wall(), right = T.closed_wall(), bottom = T.closed_wall(), top = T.closed_wall())),
+                                                                           ("forced", (Bounded, Bounded), T.forced_box))
+        model = T.make_model(; boundary, walls, mgr = VectorizedCPU())
+        state = T.make_state(model)
+        dstate, scratch = T.evaluate(T.tend!, model, state)
+        session = open(diagnostics(model; reference = test_reference(model)); state, dstate, scratch, model)
+        largest(name) = maximum(abs, interior_diagnostic(session, name))
+        @test largest(:potential_budget_residual) < 1e-10 * largest(:dρP)
+        @test largest(:heating_residual) < 1e-10 * largest(:heating)
+        @test largest(:conversion_residual) < 1e-2 * largest(:conversion)
+        budget = energy_budget(session)
+        @test abs(budget.residual) < 1e-12 * budget.potential
+        @test abs(budget.vortex_work) < 1e-12 * budget.potential     # in the integral only: VF is not zero at a cell
+        label == "forced" || @test abs(budget.tendency) < 1e-12 * budget.potential    # no energy enters
+        # the kernels allocate nothing on a serial manager (the arrays belong to the book)
+        divergence_args = (CookBooks.get(session, :kinetic_flux_rev_x), CookBooks.get(session, :kinetic_flux_rev_z))
+        out = copy(CookBooks.get(session, :div_kinetic_flux_rev))
+        @test allocated(TraceableEnergetics.divergence!, out, model, divergence_args...) == 0
+        close(session)
+    end
+    # the origin z0 of the geopotential in the tank shifts P by -g z0 and nothing else
+    @testset "geopotential origin, $M" for (M, T) in (("AN2D", AnelasticTests), ("FC2D", CompressibleTests))
+        model = T.make_model(boundary = (Bounded, Bounded), walls = T.forced_box)
+        tank = T.Tank2D(Lx = T.Lx, Lz = T.Lz, g = T.g, z0 = 0.3)
+        # the same model in a tank with another origin: every field but `space` is the same
+        shifted = typeof(model)(map(f -> f === :space ? tank : getfield(model, f), fieldnames(typeof(model)))...)
+        state = T.make_state(model)
+        dstate, scratch = T.evaluate(T.tend!, model, state)
+        P(m) = copy(interior_diagnostic(open(diagnostics(m; reference = test_reference(m)); state, dstate, scratch, model = m), :potential_energy))
+        @test P(shifted) .- P(model) ≈ fill(-T.g * 0.3, size(P(model)))
+    end
+    # the gauge of the anelastic pressure (a constant added to φ) changes the pressure and no tendency or budget term: the
+    # divergences of ρΣu and (p - p_R)u, whose fluxes change by the constant times the mass flux, stay the same because
+    # ∇·(ρ_R u) = 0 discretely
+    @testset "pressure gauge, AN2D, $label" for (label, boundary, walls) in (("periodic", (Periodic, Bounded), (; bottom = AnelasticTests.closed_wall(), top = AnelasticTests.closed_wall())),
+                                                                              ("forced", (Bounded, Bounded), AnelasticTests.forced_box))
+        T, c = AnelasticTests, 100.0
+        results = map((0.0, c)) do gauge_offset
+            model = T.make_model(; boundary, walls, mgr = VectorizedCPU(), gauge_offset)
+            state = T.make_state(model)
+            dstate, scratch = T.evaluate(T.tend!, model, state)
+            session = open(diagnostics(model); state, dstate, scratch, model)
+            get(name) = copy(interior_diagnostic(session, name))
+            (; model, dstate = map(copy, dstate), get = get, budget = energy_budget(session))
+        end
+        (zero_gauge, shifted) = results
+        # differences are round-off: the tendencies subtract ε c/Δ from δφ, the budget terms are noise of about 1e-11 of the
+        # largest term (the tendency of ρP), as the residual maps show
+        noise = 10 * eps() * c / min(zero_gauge.model.dx, zero_gauge.model.dz)
+        for name in (:u, :w, :m)
+            @test maximum(abs, getproperty(shifted.dstate, name) .- getproperty(zero_gauge.dstate, name)) < noise
+        end
+        invariant = (:dρK, :dρP, :conversion, :conversion_consvar, :conversion_composition, :conversion_bernoulli, :heating, :heating_residual,
+                     :div_kinetic_flux_rev, :div_kinetic_flux_irr, :div_potential_flux_rev, :div_potential_flux_irr,
+                     :kinetic_budget_residual, :potential_budget_residual, :div_pressure_flux, :buoyancy_conversion, :pressure_dilatation,
+                     :conversion_residual, :potential_energy, :vortex_work)
+        tolerance = 1e-11 * maximum(abs, zero_gauge.get(:dρP))
+        for name in invariant
+            @test maximum(abs, shifted.get(name) .- zero_gauge.get(name)) <= tolerance
+        end
+        ρ_R = zero_gauge.get(:density)
+        @test zero_gauge.get(:kinematic_pressure_anomaly) .+ c ≈ shifted.get(:kinematic_pressure_anomaly)
+        @test zero_gauge.get(:pressure) .+ c .* ρ_R ≈ shifted.get(:pressure)
+        @test zero_gauge.get(:pressure_anomaly) .+ c .* ρ_R ≈ shifted.get(:pressure_anomaly)
+        for key in (:kinetic, :potential, :tendency, :boundary_flux, :vortex_work, :residual)
+            @test getproperty(shifted.budget, key) ≈ getproperty(zero_gauge.budget, key) atol = 1e-11 * zero_gauge.budget.potential
+        end
     end
     # for either model, data files read back the full diagnostics, with halo, at each time, in either format, and
     # videos hold their interior

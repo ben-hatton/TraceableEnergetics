@@ -32,7 +32,7 @@ function model(vortex_scheme; Mx, Mz)
     return AN2D((; mgr = SIMD(), domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme,
         buoyancy_scheme = ThermodynamicForcing(), thermoflux_scheme = ThermoFluxConsistent(k_T = 0.0, k_q = 0.0),
         viscosity_scheme = ViscosityScheme(dyn_visc = 0.0),
-        anelastic_reference = AnelasticReference(domain, space, ρ0; ptop = 1e5),
+        anelastic_reference = AnelasticReference(domain, space, ρ0; pref = 1e5), gauge_offset = 0.0,
         boundary_conditions = BoxBoundaryConditions(domain; bottom = closed, top = closed)))
 end
 

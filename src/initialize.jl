@@ -2,19 +2,19 @@
 
 """
     state = initialize(model::AN2D, (; consvar, q, u, ψ))
-    state = initialize(model::FC2D, (; consvar, q, u, ψ); ptop)
+    state = initialize(model::FC2D, (; consvar, q, u, ψ); pref)
 
 State of `model` from the fields of a setup (tracers consvar(x, z) and q(x, z), mean flow u(z), mass streamfunction
 ψ(X, Z)), in three steps: the rest profiles (AN2D: the reference density of the model; FC2D: the balanced density of
-each column, with pressure `ptop` in the top cell), the discretely divergence-free perturbation from ψ for them, then
+each column, with pressure `pref` at the height z0 of the geopotential origin), the discretely divergence-free perturbation from ψ for them, then
 the state, with the velocity the mean flow plus the perturbation.
 """
 function initialize(model::AN2D, (; consvar, q, u, ψ)::NamedTuple)
     velocity = mean_flow(model, u) .+ CFAnelastics.divergence_free_velocity(model, ψ)
     return CFAnelastics.initialize(model; consvar, q, velocity)
 end
-function initialize(model::FC2D, (; consvar, q, u, ψ)::NamedTuple; ptop)
-    density = CFCompressible.balanced_density(model; consvar, q, ptop)
+function initialize(model::FC2D, (; consvar, q, u, ψ)::NamedTuple; pref)
+    density = CFCompressible.balanced_density(model; consvar, q, pref)
     velocity = mean_flow(model, u) .+ CFCompressible.divergence_free_velocity(model, density, ψ)
     return CFCompressible.initialize(model; density, consvar, q, velocity)
 end

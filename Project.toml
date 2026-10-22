@@ -27,8 +27,12 @@ Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [sources]
-CFAnelastics = {url = "https://github.com/ben-hatton/CFAnelastics.jl", rev = "traceable-energetics"}
-CFCompressible = {url = "https://github.com/ben-hatton/CFCompressible.jl", rev = "traceable-energetics"}
+CFAnelastics = {url = "git@github.com:ben-hatton/CFAnelastics.jl.git", rev = "traceable-energetics"}
+CFCompressible = {url = "git@github.com:ben-hatton/CFCompressible.jl.git", rev = "traceable-energetics"}
+CFPlanets = {url = "git@github.com:ben-hatton/CFPlanets.jl.git", rev = "traceable-energetics"}
 
 [compat]
+CFAnelastics = "0.2"
 CFBoxes = "0.0.5"
+CFCompressible = "0.2"
+CFPlanets = "0.1.5"

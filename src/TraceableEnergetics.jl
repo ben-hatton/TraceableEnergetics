@@ -4,8 +4,10 @@ module TraceableEnergetics
 # of either model, and their output during a run (NetCDF or JLD2 data files, videos).
 
 using CFBoxes: Periodic, Bounded, boundary_topology, cellpoint, ncells, nfaces, interior, coordinates, dims,
-               halo_size, cellgrid, facegrid, Face, Cell
-using CookBooks: CookBooks
+               halo_size, cellgrid, facegrid, Face, Cell, alloc, interior_cells, interior_faces, fill_halo!, ZeroGradient, periodize!,
+               operators
+using ManagedLoops: @vec, @with
+using CookBooks: CookBooks, CookBook
 using CFAnelastics: CFAnelastics, AN2D
 using CFCompressible: CFCompressible, FC2D
 using NCDatasets: NCDataset, defDim, defVar
@@ -13,13 +15,15 @@ using JLD2: JLD2, jldopen
 using CairoMakie: Makie, Figure, Axis, Colorbar, Observable, heatmap!, lift, record
 
 export linear_profile, tanh_profile, shear, jet, couette, mode, noise, consvar_from_theta
-export rest_state, kelvin_helmholtz, rayleigh_benard, rising_bubble, lock_exchange
+export setup, kelvin_helmholtz, rayleigh_benard, rising_bubble, lock_exchange
 export initialize
 export diagnostics, diagnostic_info, interior_diagnostic, diagnostic_coordinates
+export energetics_diagnostics, energetics_info, energy_budget
 export Outputs, record!, DataFile, read_diagnostic, DiagnosticVideo
 
 include("setups.jl")
 include("initialize.jl")
+include("energetics.jl")
 include("diagnostics.jl")
 include("output.jl")
 
