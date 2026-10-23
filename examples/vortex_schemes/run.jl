@@ -9,7 +9,7 @@
 #
 # RK4's weak damping of the fastest modes plays the role of the dissipation of Sadourny's time filter.
 #
-#   julia -t 4 experiments/vortex_schemes/run.jl
+#   julia -t 4 examples/vortex_schemes/run.jl
 #
 # Output: output/turbulence.png, output/kelvin_helmholtz.png.
 include("../../tools/setup.jl")
@@ -17,7 +17,7 @@ include("../../tools/setup.jl")
 using TraceableEnergetics, CFAnelastics
 using CFBoxes, CFDiffusionSchemes, ClimFluids, CFTimeSchemes
 using CFPlanets: Tank2D
-using CookBooks: CookBook
+using CookBooks: CookBooks, CookBook
 using CairoMakie, Random
 
 space = Tank2D(Lx = 1.0, Lz = 0.5, g = 10.0, z0 = 0.5)       # geopotential g (z - Lz), zero at the top
@@ -71,7 +71,7 @@ function (r::Record)(model, state, dstate, scratch, book, t)
     X, Zf = interior_faces(domain, 1), interior_faces(domain, 2)
     x, z = interior_cells(domain, 1), interior_cells(domain, 2)
     session = open(r.book; state, dstate, scratch, model)
-    budget = energy_budget(session)
+    energy = CookBooks.get(session, :integrated_kinetic_energy) + CookBooks.get(session, :integrated_potential_energy)
     close(session)
     ω = scratch.derivatives.∂u_z[X, Zf] .- scratch.derivatives.∂w_x[X, Zf]
     ρ_vertex = [ℑ(ρ_R, (2,), (Face(),), J) for J in Zf]'
@@ -79,7 +79,7 @@ function (r::Record)(model, state, dstate, scratch, book, t)
     spectrum = x_spectrum(ω ./ sqrt.(ρ_vertex))
     high = (size(ω, 1) ÷ 4 + 2):lastindex(spectrum)              # kₓ > Mx/4 (index kₓ + 1)
     push!(r.t, t)
-    push!(r.E, budget.kinetic + budget.potential)
+    push!(r.E, energy)
     push!(r.Z, sum(enstrophy) * dx * dz)
     push!(r.Z_high, sum(spectrum[high]) / sum(spectrum))
     r.ω[] = ω

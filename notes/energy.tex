@@ -1,0 +1,1288 @@
+\documentclass{article}
+
+\usepackage[english]{babel}
+
+\usepackage[a4paper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+\setlength\parindent{0pt}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{graphicx}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+
+\title{Energy budgets for compressible and anelastic fluids}
+\author{Benedict Hatton}
+
+\begin{document}
+\maketitle
+
+\section{Governing equations}
+\begin{gather}
+    \frac{\partial \mathbf{u}}{\partial t}
+    = 
+    - \nabla\left(
+        K 
+        + \Sigma 
+        - \Sigma_\vartheta \vartheta
+        - \Sigma_q q
+        \right)
+    - \vartheta \nabla \Sigma_{\vartheta}
+    - q \nabla \Sigma_{q}
+    - \boldsymbol{\omega}\times \mathbf{u}
+    + \frac{1}{\rho} \nabla \cdot \boldsymbol{\tau}
+    \\
+    \frac{\partial \rho}{\partial t}
+    = - \nabla\cdot (\rho \mathbf{u})
+    \\
+    \frac{\partial (\rho \vartheta)}{\partial t}
+    =
+    - \nabla\cdot (\rho \vartheta \mathbf{u})
+    - \nabla \cdot \mathbf{J}_\vartheta
+    + \sigma_{\vartheta}
+    \\
+    \frac{\partial (\rho q)}{\partial t}
+    = 
+    - \nabla\cdot (\rho q \mathbf{u})
+    - \nabla\cdot \mathbf{J}_{q}
+\end{gather}
+Compressible: \(\Sigma(\vartheta, q, z, p) = h(\vartheta, q, p) + gz\) 
+
+Anelastic: \(\rho = \rho_R(z)\), \(\Sigma(\vartheta, q, z, p) = h(\vartheta, q, p_R(z)) + (p - p_R(z))/ \rho_R(z) + gz\) 
+
+\section{Energy}
+Energy quantities \(K\), \(P\) expressed as specific energy \([\text{J}\,\text{kg}^{-1}]\) 
+
+Volume-integrated given by
+\begin{equation}
+    \int_{V} E \, \mathrm{d} m
+\end{equation}
+where \(\mathrm{d}m = \rho \mathrm{d}V\) (compressible) or \(\mathrm{d}m = \rho_R(z) \mathrm{d}V\) (anelastic). 
+
+Kinetic energy:
+\begin{equation}
+    K = \frac{1}{2} \mathbf{u}\cdot \mathbf{u}
+\end{equation}
+Potential energy:
+\begin{equation}
+    P = \Sigma - p \frac{\partial \Sigma}{\partial p} 
+\end{equation}
+Compressible:
+\begin{align}
+    \rho P 
+    & =
+    \rho \Sigma(\vartheta, q, z, p) - p
+    \\
+    & =
+    \rho h(\vartheta, q, p) - p + \rho gz
+\end{align}
+Anelastic:
+\begin{align}
+    \rho_R(z) P 
+    & = 
+    \rho_R(z) \Sigma(\vartheta, q, z, p) - p
+    \\
+    & = 
+    \rho_R(z) h(\vartheta, q, p_R(z)) - p_R(z) + \rho_R(z) gz
+\end{align}
+
+\section{Energy budgets}
+\subsection{Model energy budget}
+Identities are exact, product rule properties of discrete operator assumed.
+
+Define \(\mathbf{F} = \nabla\cdot \boldsymbol{\tau}\) and \(\rho \varepsilon_K = \nabla\cdot (\mathbf{u}\cdot \boldsymbol{\tau}) - \mathbf{u}\cdot \mathbf{F}\).  
+
+Note that \(\nabla\cdot (\rho \mathbf{u}) = 0\) in the anelastic case. 
+
+Kinetic energy:
+\begin{align}
+    \partial_t(\rho K)
+    & = 
+    - \nabla\cdot (\rho K \mathbf{u} )
+    - \rho \vartheta \mathbf{u} \cdot  \nabla \Sigma_\vartheta
+    - \rho q\mathbf{u} \cdot  \nabla \Sigma_q
+    - \rho \mathbf{u} \cdot  \nabla (
+        \Sigma 
+        - \vartheta \Sigma_\vartheta
+        - q \Sigma_q
+        )
+    - \rho \mathbf{u} \cdot (\boldsymbol{\omega }\times \mathbf{u})
+    + \mathbf{u} \cdot \mathbf{F}
+    \\
+    & = 
+    - \nabla\cdot (
+        \rho K \mathbf{u}
+        - \mathbf{u}\cdot \boldsymbol{\tau}
+        )
+    - \rho \vartheta \mathbf{u} \cdot  \nabla \Sigma_\vartheta
+    - \rho q\mathbf{u} \cdot  \nabla \Sigma_q
+    \nonumber
+    \\
+    & \quad
+    - \rho \mathbf{u} \cdot  \nabla (
+        \Sigma 
+        - \vartheta \Sigma_\vartheta
+        - q \Sigma_q
+        )
+    - \rho \mathbf{u} \cdot (\boldsymbol{\omega }\times \mathbf{u})
+    - \rho \varepsilon_K
+\end{align}
+
+Potential energy:
+\begin{align}
+    \partial _t (\rho P)
+    & = 
+    - (\Sigma - \vartheta \Sigma_\vartheta - q \Sigma_q) \nabla \cdot (\rho \mathbf{u})
+    - \Sigma_\vartheta \nabla \cdot (\rho \vartheta \mathbf{u})
+    - \Sigma_q \nabla \cdot (\rho q \mathbf{u})
+    \nonumber
+    \\
+    & \quad
+    - \Sigma_\vartheta \nabla \cdot \mathbf{J}_\vartheta
+    - \Sigma_q \nabla \cdot  \mathbf{J}_q
+    + \Sigma_\vartheta \sigma_\vartheta
+    \\
+    & =
+    - \nabla \cdot (\Sigma_\vartheta \mathbf{J}_\vartheta + \Sigma_q \mathbf{J}_q)
+    - (\Sigma - \vartheta \Sigma_\vartheta - q \Sigma_q) \nabla \cdot (\rho \mathbf{u})
+    - \Sigma_\vartheta \nabla \cdot (\rho \vartheta \mathbf{u})
+    - \Sigma_q \nabla \cdot (\rho q \mathbf{u})
+    \nonumber
+    \\
+    & \quad
+    + \mathbf{J}_\vartheta \cdot \nabla \Sigma_\vartheta 
+    + \mathbf{J}_q \cdot  \nabla \Sigma_q
+    + \Sigma_\vartheta \sigma_\vartheta
+    \\
+    & =
+    - \nabla \cdot (
+        \rho \Sigma\mathbf{u} 
+        + \Sigma_\vartheta \mathbf{J}_\vartheta 
+        + \Sigma_q \mathbf{J}_q
+        )
+    + \rho \vartheta \mathbf{u} \cdot  \nabla \Sigma_\vartheta
+    + \rho q\mathbf{u} \cdot  \nabla \Sigma_q
+    \nonumber
+    \\
+    & \quad
+    + \rho \mathbf{u} \cdot  \nabla (
+        \Sigma
+        - \vartheta \Sigma_\vartheta
+        - q \Sigma_q
+        )
+    + \mathbf{J}_\vartheta \cdot \nabla \Sigma_\vartheta
+    + \mathbf{J}_q \cdot  \nabla \Sigma_q
+    + \Sigma_\vartheta \sigma_\vartheta
+\end{align}
+Define the following fluxes:
+\begin{align}
+    \mathbf{J}^{rev}_K & = \rho K \mathbf{u} 
+    \\
+    \mathbf{J}^{irr}_K & = - \mathbf{u} \cdot  \boldsymbol{\tau}
+    \\
+    \mathbf{J}^{rev}_P & = \rho \Sigma \mathbf{u}
+    \\
+    \mathbf{J}^{irr}_P & = \Sigma_\vartheta \mathbf{J}_\vartheta + \Sigma_q \mathbf{J}_q
+\end{align}
+Define the following reversible conversion terms
+\begin{align}
+    C_\vartheta & = - \rho \vartheta \mathbf{u}\cdot \nabla \Sigma_\vartheta
+    \\
+    C_q & = - \rho q \mathbf{u}\cdot \nabla \Sigma_q
+    \\
+    C_\Sigma & = - \rho \mathbf{u}\cdot \nabla (
+        \Sigma 
+        - \vartheta \Sigma_\vartheta
+        - q \Sigma_q
+        )
+\end{align}
+Define the following heating terms:
+\begin{align}
+    Q_\vartheta & = -\mathbf{J}_\vartheta \cdot \nabla \Sigma_\vartheta
+    \\
+    Q_q & = -\mathbf{J}_q \cdot \nabla \Sigma_q
+    \\
+    Q & = \Sigma_\vartheta \sigma_\vartheta
+\end{align}
+Define the vortex force work
+\begin{equation}
+    VF = - \rho \mathbf{u} \cdot (\boldsymbol{\omega }\times \mathbf{u})
+\end{equation}
+
+Then we can write
+\begin{align}
+    \partial _t (\rho K)
+    & =
+    - \nabla\cdot (
+        \mathbf{J}_K^{rev}
+        + \mathbf{J}_K^{irr}
+        )
+    + C_\vartheta + C_q + C_\Sigma
+    - \rho \varepsilon_K
+    + VF
+    \\
+    \partial_t (\rho P)
+    & = 
+    - \nabla \cdot (
+        \mathbf{J}_P^{rev}
+        + \mathbf{J}_P^{irr}
+        )
+    - C_\vartheta - C_q - C_\Sigma
+    - Q_\vartheta - Q_q  + Q
+\end{align}
+Closure of the energy budget is given by
+\begin{equation}
+    Q = Q_\vartheta + Q_q + \rho \varepsilon_K
+\end{equation}
+
+Volume integral:
+\begin{equation}
+    \frac{\mathrm{d} }{\mathrm{d} t} \int_{V} (K + P) \, \rho \mathrm{d}V
+    = - \oint_{\partial V} (
+        \mathbf{J}_K^{rev} 
+        + \mathbf{J}_K^{irr}
+        + \mathbf{J}_P^{rev} 
+        + \mathbf{J}_P^{irr}
+        )\cdot \mathrm{d}\mathbf{S}
+    + \int_{V} VF \, \mathrm{d}V
+\end{equation}
+
+
+\subsection{Manipulations (beyond discrete exactness)}
+Let \(C = C_\vartheta + C_q + C_\Sigma\), then
+\begin{align}
+    C 
+    & = 
+    - \rho \mathbf{u} \cdot \nabla (
+        \vartheta \Sigma_\vartheta
+        + q \Sigma_q
+        + \Sigma - \vartheta \Sigma_\vartheta - q \Sigma_q
+        )
+    + \rho \Sigma_\vartheta \mathbf{u} \cdot \nabla \vartheta
+    + \rho \Sigma_q \mathbf{u} \cdot \nabla q
+    \\
+    & =
+    - \rho \mathbf{u} \cdot \nabla \Sigma
+    + \rho \Sigma_\vartheta \mathbf{u} \cdot \nabla \vartheta
+    + \rho \Sigma_q \mathbf{u} \cdot \nabla q
+\end{align}
+Note
+\begin{equation}
+    \nabla \Sigma
+    = 
+    \Sigma_\vartheta \nabla \vartheta
+    + \Sigma_q \nabla q
+    + \Sigma_z \nabla z
+    + \Sigma_p \nabla p
+\end{equation}
+so
+\begin{align}
+    C 
+    & = 
+    - \rho \Sigma_z \mathbf{u} \cdot \nabla z
+    - \rho \Sigma_p \mathbf{u} \cdot \nabla p
+    \\
+    & = 
+    - \rho \Sigma_z \mathbf{u} \cdot \nabla z
+    - \mathbf{u} \cdot \nabla p
+\end{align}
+Compressible:
+\begin{align}
+    C_{FC}
+    & =
+    - \nabla\cdot (p \mathbf{u})
+    - \rho g w 
+    + p \nabla \cdot \mathbf{u}
+    \\
+    & =
+    - \nabla \cdot \left[ (p - p_R) \mathbf{u} \right]
+    + \rho g (\rho_R v - 1) w
+    + (p - p_R) \nabla \cdot  \mathbf{u} 
+\end{align}
+Anelastic:
+\begin{equation}
+    C_{AN}
+    =
+    - \nabla \cdot \left[ (p - p_R) \mathbf{u} \right]
+    + \rho_R bw
+\end{equation}
+where \(b(\vartheta, q, z) = g \left( \rho_R(z) v(\vartheta, q, p_R(z)) - 1 \right)\).
+
+Denote
+\begin{align}
+    C_b
+    & =
+    \begin{cases}
+        \rho g (\rho_R(z) v - 1)w
+        \quad& FC
+        \\
+        \rho_R(z) g ( \rho_R(z) v(\vartheta, q, p_R(z)) - 1)w
+        \quad& AN
+    \end{cases}
+    \\
+    C_D
+    & = 
+    (p - p_R) \nabla \cdot \mathbf{u}
+    \\
+    \mathbf{J}_C 
+    & = (p - p_R(z)) \mathbf{u}
+\end{align}
+such that
+\begin{equation}
+    C = 
+    \begin{cases}
+    - \nabla\cdot \mathbf{J}_C + C_b + C_D
+    \quad & FC
+    \\
+    - \nabla\cdot \mathbf{J}_C + C_b
+    \quad & AN
+    \end{cases}
+\end{equation}
+
+\section{Available energy}
+
+\subsection{Definitions}
+Lorenz reference state: rearrangement of the fluid to a state of rest filling the domain \(V\), conserving \(\vartheta\), \(q\) and mass of each parcel.
+Reference pressure \(p_*(z, t)\), parcel reference position \(z_*(\vartheta, q, t)\).
+
+Available energy (AE):
+\begin{equation}
+    A
+    =
+    \Sigma(\vartheta, q, z, p)
+    - \Sigma(\vartheta, q, z_*, p_*(z_*, t))
+    - (p - p_*(z, t)) \Sigma_p(\vartheta, q, z, p)
+\end{equation}
+Decomposed as
+\begin{equation}
+     A = \Pi_1 + \Pi_2
+\end{equation}
+with
+\begin{align}
+    \Pi_1
+    & =
+    \Sigma(\vartheta, q, z, p)
+    - \Sigma(\vartheta, q, z, p_*(z, t))
+    - (p - p_*(z, t)) \Sigma_p(\vartheta, q, z, p)
+    \\
+    \Pi_2
+    & =
+    \Sigma(\vartheta, q, z, p_*(z, t))
+    - \Sigma(\vartheta, q, z_*, p_*(z_*, t))
+\end{align}
+\(\Pi_1\): compression from \(p_*(z, t)\) to \(p\) at fixed \(z\). \(\Pi_2\): displacement from \(z_*\) to \(z\) through the reference state.
+
+Compressible:
+\begin{align}
+    \Pi_1
+    & =
+    h(\vartheta, q, p)
+    - h(\vartheta, q, p_*(z, t))
+    - \frac{p - p_*(z, t)}{\rho}
+    \\
+    \Pi_2
+    & =
+    h(\vartheta, q, p_*(z, t))
+    - h(\vartheta, q, p_*(z_*, t))
+    + g(z - z_*)
+\end{align}
+Anelastic (\(\Sigma\) linear in \(p\)):
+\begin{align}
+    \Pi_1
+    & = 0
+    \\
+    \Pi_2
+    & =
+    h(\vartheta, q, p_R(z))
+    - h(\vartheta, q, p_R(z_*))
+    + \frac{p_*(z, t) - p_R(z)}{\rho_R(z)}
+    - \frac{p_*(z_*, t) - p_R(z_*)}{\rho_R(z_*)}
+    + g(z - z_*)
+\end{align}
+
+Reference specific volume \(v_*(z, t)\), defined from \(p_*\) by
+
+Compressible:
+\begin{equation}
+    v_* \frac{\partial p_*}{\partial z}
+    =
+    - g
+\end{equation}
+with reference density \(\rho_* = 1 / v_*\).
+
+Anelastic:
+\begin{equation}
+    \frac{\partial}{\partial z}
+    \left(
+        \frac{p_* - p_R}{\rho_R}
+    \right)
+    =
+    g \left( \rho_R v_* - 1 \right)
+\end{equation}
+
+\subsection{Reference state}
+Conditions on \(p_*\) and \(z_*\), derived from a variational principle in appendix \ref{app:variational}.
+
+\subsubsection{Level of neutral buoyancy equation}
+Level of neutral buoyancy (LNB) equation, defining \(z_*\) (first order condition):
+\begin{equation}
+    \left.
+    \frac{\partial}{\partial z}
+    \Sigma(\vartheta, q, z, p_*(z, t))
+    \right|_{z = z_*}
+    =
+    \Sigma_z(\vartheta, q, z_*, p_*(z_*, t))
+    + \Sigma_p(\vartheta, q, z_*, p_*(z_*, t)) \frac{\partial p_*}{\partial z}(z_*, t)
+    = 0
+\end{equation}
+Every parcel sits at its \(z_*\) in the reference state, so this is also hydrostatic balance of \(p_*\).
+
+Compressible:
+\begin{equation}
+    v(\vartheta, q, p_*(z_*, t))
+    =
+    v_*(z_*, t)
+\end{equation}
+Anelastic:
+\begin{equation}
+    v(\vartheta, q, p_R(z_*))
+    =
+    v_*(z_*, t)
+\end{equation}
+
+\subsubsection{Maximal APE condition}
+Second order condition (maximum of APE with respect to \(z_*\), stable stratification of the reference state):
+\begin{equation}
+    \left.
+    \frac{\partial^2}{\partial z^2}
+    \Sigma(\vartheta, q, z, p_*(z, t))
+    \right|_{z = z_*}
+    > 0
+\end{equation}
+Define the squared buoyancy frequency of the reference state, at the parcel's reference position:
+\begin{equation}
+    N_*^2(\vartheta, q, t)
+    =
+    \left.
+    \frac{\partial^2}{\partial z^2}
+    \Sigma(\vartheta, q, z, p_*(z, t))
+    \right|_{z = z_*}
+\end{equation}
+so the second order condition is \(N_*^2 > 0\), and \(\Pi_2 \approx \frac{1}{2} N_*^2 (z - z_*)^2 \geq 0\) near \(z_*\).
+
+Compressible:
+\begin{align}
+    N_*^2
+    & =
+    g
+    \left.
+    \frac{\partial}{\partial z}
+    \left[
+        \rho_*(z, t)
+        \left(
+            v_*(z, t)
+            - v(\vartheta, q, p_*(z, t))
+        \right)
+    \right]
+    \right|_{z = z_*}
+    \\
+    & =
+    g \rho_*(z_*, t) \frac{\partial v_*}{\partial z}(z_*, t)
+    + g^2 \rho_*^2(z_*, t) v_p(\vartheta, q, p_*(z_*, t))
+\end{align}
+Anelastic:
+\begin{align}
+    N_*^2
+    & =
+    g
+    \left.
+    \frac{\partial}{\partial z}
+    \left[
+        \rho_R(z)
+        \left(
+            v_*(z, t)
+            - v(\vartheta, q, p_R(z))
+        \right)
+    \right]
+    \right|_{z = z_*}
+    \\
+    & =
+    g \rho_R(z_*) \frac{\partial v_*}{\partial z}(z_*, t)
+    + g^2 \rho_R^2(z_*) v_p(\vartheta, q, p_R(z_*))
+\end{align}
+
+Alternatively, in terms of the reference state fields \(\vartheta_*\), \(q_*\) (which may vary horizontally due to density compensation).
+The LNB equation holds at every point of the reference state,
+\begin{equation}
+    \left.
+    \frac{\partial}{\partial z}
+    \Sigma(\vartheta, q, z, p_*(z, t))
+    \right|_{\vartheta = \vartheta_*, \, q = q_*}
+    = 0
+\end{equation}
+Differentiating vertically along the reference state, at fixed horizontal position,
+\begin{equation}
+    N_*^2
+    =
+    - \left.
+    \frac{\partial^2}{\partial \vartheta \partial z}
+    \Sigma(\vartheta, q, z, p_*(z, t))
+    \right|_{z = z_*}
+    \frac{\partial \vartheta_*}{\partial z}
+    - \left.
+    \frac{\partial^2}{\partial q \partial z}
+    \Sigma(\vartheta, q, z, p_*(z, t))
+    \right|_{z = z_*}
+    \frac{\partial q_*}{\partial z}
+\end{equation}
+with \(\partial_z \vartheta_*\), \(\partial_z q_*\) evaluated at the parcel's position in the reference state.
+
+Compressible:
+\begin{equation}
+    N_*^2
+    =
+    g \rho_*(z_*, t)
+    \left(
+        v_\vartheta(\vartheta, q, p_*(z_*, t)) \frac{\partial \vartheta_*}{\partial z}
+        + v_q(\vartheta, q, p_*(z_*, t)) \frac{\partial q_*}{\partial z}
+    \right)
+\end{equation}
+Anelastic:
+\begin{equation}
+    N_*^2
+    =
+    g \rho_R(z_*)
+    \left(
+        v_\vartheta(\vartheta, q, p_R(z_*)) \frac{\partial \vartheta_*}{\partial z}
+        + v_q(\vartheta, q, p_R(z_*)) \frac{\partial q_*}{\partial z}
+    \right)
+\end{equation}
+
+
+\section{Available energy budgets}
+Reference state assumed diagnosed: \(z_*(\vartheta, q, t)\), \(p_*(z, t)\), \(v_*(z, t)\), and \(\partial_t p_*(z, t)\) (from successive reference states).
+
+Closed domain: \(\mathbf{u}\), \(\mathbf{J}_\vartheta\), \(\mathbf{J}_q\) and \(\mathbf{u}\cdot \boldsymbol{\tau}\) have no normal component on \(\partial V\).
+
+Material derivative \(D/Dt = \partial_t + \mathbf{u}\cdot \nabla\), with
+\begin{gather}
+    \rho \frac{D X}{D t}
+    =
+    \partial_t (\rho X)
+    + \nabla\cdot (\rho X \mathbf{u})
+    \\
+    \rho \frac{D \vartheta}{D t}
+    =
+    - \nabla \cdot \mathbf{J}_\vartheta
+    + \sigma_\vartheta
+    \\
+    \rho \frac{D q}{D t}
+    =
+    - \nabla \cdot \mathbf{J}_q
+\end{gather}
+In both models \(\rho \Sigma_p(\vartheta, q, z, p) = 1\) (\(\rho = \rho_R(z)\) in the anelastic case), so mass conservation gives
+\begin{equation}
+    \rho \frac{D \Sigma_p}{D t}
+    =
+    \nabla \cdot \mathbf{u}
+\end{equation}
+
+\subsection{Conversion relative to the reference state}
+Third decomposition of \(C = - \rho \Sigma_z \mathbf{u} \cdot \nabla z - \mathbf{u} \cdot \nabla p\) (after \(C_\vartheta + C_q + C_\Sigma\) and the split about \(p_R\)), splitting \(p = p_* + (p - p_*)\) with \(p_*\) horizontally uniform:
+\begin{equation}
+    C
+    =
+    - \nabla \cdot \left[ (p - p_*) \mathbf{u} \right]
+    + (p - p_*) \nabla \cdot \mathbf{u}
+    - \left( \rho \Sigma_z + \frac{\partial p_*}{\partial z} \right) w
+\end{equation}
+Compressible (\(\rho \Sigma_z + \partial_z p_* = \rho g - \rho_* g\)):
+\begin{equation}
+    C_{FC}
+    =
+    - \nabla \cdot \left[ (p - p_*) \mathbf{u} \right]
+    + \rho g (\rho_* v - 1) w
+    + (p - p_*) \nabla \cdot \mathbf{u}
+\end{equation}
+Anelastic (using \(\nabla \cdot (\rho_R \mathbf{u}) = 0\), so \(\nabla \cdot \left[ (p_* - p_R) \mathbf{u} \right] = \rho_R w \partial_z \left[ (p_* - p_R) / \rho_R \right]\)):
+\begin{align}
+    C_{AN}
+    & =
+    - \nabla \cdot \left[ (p - p_*) \mathbf{u} \right]
+    - \rho_R w \frac{\partial}{\partial z} \left( \frac{p_* - p_R}{\rho_R} \right)
+    + \rho_R b w
+    \\
+    & =
+    - \nabla \cdot \left[ (p - p_*) \mathbf{u} \right]
+    + \rho_R g \rho_R \left( v(\vartheta, q, p_R(z)) - v_*(z, t) \right) w
+\end{align}
+
+Denote
+\begin{align}
+    C_b^*
+    & =
+    \begin{cases}
+        \rho g \rho_*(z, t) \left( v - v_*(z, t) \right) w
+        \quad& FC
+        \\
+        \rho_R(z) g \rho_R(z) \left( v(\vartheta, q, p_R(z)) - v_*(z, t) \right) w
+        \quad& AN
+    \end{cases}
+    \\
+    C_D^*
+    & =
+    (p - p_*(z, t)) \nabla \cdot \mathbf{u}
+    \\
+    \mathbf{J}_C^*
+    & =
+    (p - p_*(z, t)) \mathbf{u}
+\end{align}
+such that
+\begin{equation}
+    C =
+    \begin{cases}
+    - \nabla\cdot \mathbf{J}_C^* + C_b^* + C_D^*
+    \quad & FC
+    \\
+    - \nabla\cdot \mathbf{J}_C^* + C_b^*
+    \quad & AN
+    \end{cases}
+\end{equation}
+Kinetic energy, relative to the reference state:
+\begin{equation}
+    \partial _t (\rho K)
+    =
+    - \nabla\cdot (
+        \mathbf{J}_K^{rev}
+        + \mathbf{J}_K^{irr}
+        + \mathbf{J}_C^*
+        )
+    + C_b^* + C_D^*
+    - \rho \varepsilon_K
+    + VF
+\end{equation}
+with \(C_D^*\) in the compressible case only.
+
+Split of the buoyancy conversion, \(C_b^* = C_{b,1}^* + C_{b,2}^*\), with
+\begin{equation}
+    C_{b,2}^*
+    =
+    - \rho w
+    \frac{\partial}{\partial z}
+    \Sigma(\vartheta, q, z, p_*(z, t))
+\end{equation}
+Compressible:
+\begin{align}
+    C_{b,1}^*
+    & =
+    \rho g \rho_*(z, t) \left( v - v(\vartheta, q, p_*(z, t)) \right) w
+    \\
+    C_{b,2}^*
+    & =
+    \rho g \rho_*(z, t) \left( v(\vartheta, q, p_*(z, t)) - v_*(z, t) \right) w
+\end{align}
+Anelastic: \(C_{b,1}^* = 0\), \(C_{b,2}^* = C_b^*\).
+
+\(C_{b,1}^*\): buoyancy due to compression from \(p_*(z, t)\) to \(p\). \(C_{b,2}^*\): buoyancy at the reference pressure, relative to the reference state.
+
+\subsection{Material derivatives}
+Using \(z_* = z_*(\vartheta, q, t)\),
+\begin{align}
+    \frac{D \Pi_2}{D t}
+    & =
+    \left[
+        \Sigma_\vartheta(\vartheta, q, z, p_*(z, t))
+        - \Sigma_\vartheta(\vartheta, q, z_*, p_*(z_*, t))
+    \right]
+    \frac{D \vartheta}{D t}
+    \nonumber
+    \\
+    & \quad
+    + \left[
+        \Sigma_q(\vartheta, q, z, p_*(z, t))
+        - \Sigma_q(\vartheta, q, z_*, p_*(z_*, t))
+    \right]
+    \frac{D q}{D t}
+    + w \frac{\partial}{\partial z} \Sigma(\vartheta, q, z, p_*(z, t))
+    \nonumber
+    \\
+    & \quad
+    + \Sigma_p(\vartheta, q, z, p_*(z, t)) \frac{\partial p_*}{\partial t}(z, t)
+    - \Sigma_p(\vartheta, q, z_*, p_*(z_*, t)) \frac{\partial p_*}{\partial t}(z_*, t)
+\end{align}
+Terms in \(\partial z_* / \partial \vartheta\), \(\partial z_* / \partial q\) and \(\partial z_* / \partial t\) multiply \(\partial_z \Sigma(\vartheta, q, z, p_*(z, t))|_{z = z_*} = 0\) (LNB), so the evolution of \(z_*\) does not appear, even locally.
+
+The \(\Sigma_p \, Dp/Dt\) terms cancel, and \(Dp/Dt\) remains only through \(D \Sigma_p / Dt = \Sigma_p \nabla \cdot \mathbf{u}\), so
+\begin{align}
+    \frac{D \Pi_1}{D t}
+    & =
+    \left[
+        \Sigma_\vartheta(\vartheta, q, z, p)
+        - \Sigma_\vartheta(\vartheta, q, z, p_*(z, t))
+    \right]
+    \frac{D \vartheta}{D t}
+    + \left[
+        \Sigma_q(\vartheta, q, z, p)
+        - \Sigma_q(\vartheta, q, z, p_*(z, t))
+    \right]
+    \frac{D q}{D t}
+    \nonumber
+    \\
+    & \quad
+    + \left[
+        \Sigma_z(\vartheta, q, z, p)
+        - \Sigma_z(\vartheta, q, z, p_*(z, t))
+    \right] w
+    \nonumber
+    \\
+    & \quad
+    + \left[
+        \Sigma_p(\vartheta, q, z, p)
+        - \Sigma_p(\vartheta, q, z, p_*(z, t))
+    \right]
+    \frac{D p_*}{D t}
+    - (p - p_*) \Sigma_p \nabla \cdot \mathbf{u}
+\end{align}
+with \(D p_* / D t = \partial_t p_*(z, t) + w \partial_z p_*(z, t)\).
+
+Compressible:
+\begin{align}
+    \rho \frac{D \Pi_1}{D t}
+    & =
+    \rho \left[
+        h_\vartheta(\vartheta, q, p)
+        - h_\vartheta(\vartheta, q, p_*(z, t))
+    \right]
+    \frac{D \vartheta}{D t}
+    + \rho \left[
+        h_q(\vartheta, q, p)
+        - h_q(\vartheta, q, p_*(z, t))
+    \right]
+    \frac{D q}{D t}
+    \nonumber
+    \\
+    & \quad
+    - C_{b,1}^*
+    - C_D^*
+    + \left( 1 - \rho v(\vartheta, q, p_*(z, t)) \right) \frac{\partial p_*}{\partial t}(z, t)
+    \\
+    \rho \frac{D \Pi_2}{D t}
+    & =
+    \rho \left[
+        h_\vartheta(\vartheta, q, p_*(z, t))
+        - h_\vartheta(\vartheta, q, p_*(z_*, t))
+    \right]
+    \frac{D \vartheta}{D t}
+    + \rho \left[
+        h_q(\vartheta, q, p_*(z, t))
+        - h_q(\vartheta, q, p_*(z_*, t))
+    \right]
+    \frac{D q}{D t}
+    \nonumber
+    \\
+    & \quad
+    - C_{b,2}^*
+    + \rho v(\vartheta, q, p_*(z, t)) \frac{\partial p_*}{\partial t}(z, t)
+    - \rho v_*(z_*, t) \frac{\partial p_*}{\partial t}(z_*, t)
+\end{align}
+using \(v(\vartheta, q, p_*(z_*, t)) = v_*(z_*, t)\) (LNB).
+
+Anelastic (\(\Pi_1 = 0\); the terms of the general expression for \(D \Pi_1 / D t\) cancel using \(\nabla \cdot (\rho_R \mathbf{u}) = 0\)):
+\begin{align}
+    \rho_R \frac{D \Pi_2}{D t}
+    & =
+    \rho_R \left[
+        h_\vartheta(\vartheta, q, p_R(z))
+        - h_\vartheta(\vartheta, q, p_R(z_*))
+    \right]
+    \frac{D \vartheta}{D t}
+    + \rho_R \left[
+        h_q(\vartheta, q, p_R(z))
+        - h_q(\vartheta, q, p_R(z_*))
+    \right]
+    \frac{D q}{D t}
+    \nonumber
+    \\
+    & \quad
+    - C_b^*
+    + \frac{\partial p_*}{\partial t}(z, t)
+    - \frac{\rho_R(z)}{\rho_R(z_*)} \frac{\partial p_*}{\partial t}(z_*, t)
+\end{align}
+
+\subsection{Local budgets}
+Heating terms at the intermediate state \((z, p_*(z, t))\):
+\begin{align}
+    \tilde{Q}_\vartheta
+    & =
+    - \mathbf{J}_\vartheta \cdot \nabla \left[ \Sigma_\vartheta(\vartheta, q, z, p_*(z, t)) \right]
+    \\
+    \tilde{Q}_q
+    & =
+    - \mathbf{J}_q \cdot \nabla \left[ \Sigma_q(\vartheta, q, z, p_*(z, t)) \right]
+    \\
+    \tilde{Q}
+    & =
+    \Sigma_\vartheta(\vartheta, q, z, p_*(z, t)) \sigma_\vartheta
+\end{align}
+and at the reference state \((z_*, p_*(z_*, t))\):
+\begin{align}
+    Q_\vartheta^*
+    & =
+    - \mathbf{J}_\vartheta \cdot \nabla \left[ \Sigma_\vartheta(\vartheta, q, z_*, p_*(z_*, t)) \right]
+    \\
+    Q_q^*
+    & =
+    - \mathbf{J}_q \cdot \nabla \left[ \Sigma_q(\vartheta, q, z_*, p_*(z_*, t)) \right]
+    \\
+    Q^*
+    & =
+    \Sigma_\vartheta(\vartheta, q, z_*, p_*(z_*, t)) \sigma_\vartheta
+\end{align}
+Anelastic: \(\Sigma_\vartheta\), \(\Sigma_q\) are independent of \(p\), so \(\tilde{Q}_\vartheta = Q_\vartheta\), \(\tilde{Q}_q = Q_q\), \(\tilde{Q} = Q\).
+
+Fluxes:
+\begin{align}
+    \mathbf{J}_{\Pi_1}^{rev}
+    & =
+    \rho \Pi_1 \mathbf{u}
+    \\
+    \mathbf{J}_{\Pi_2}^{rev}
+    & =
+    \rho \Pi_2 \mathbf{u}
+    \\
+    \mathbf{J}_{\Pi_1}^{irr}
+    & =
+    \mathbf{J}_P^{irr}
+    - \Sigma_\vartheta(\vartheta, q, z, p_*(z, t)) \mathbf{J}_\vartheta
+    - \Sigma_q(\vartheta, q, z, p_*(z, t)) \mathbf{J}_q
+    \\
+    \mathbf{J}_{\Pi_2}^{irr}
+    & =
+    \Sigma_\vartheta(\vartheta, q, z, p_*(z, t)) \mathbf{J}_\vartheta
+    + \Sigma_q(\vartheta, q, z, p_*(z, t)) \mathbf{J}_q
+    \nonumber
+    \\
+    & \quad
+    - \Sigma_\vartheta(\vartheta, q, z_*, p_*(z_*, t)) \mathbf{J}_\vartheta
+    - \Sigma_q(\vartheta, q, z_*, p_*(z_*, t)) \mathbf{J}_q
+\end{align}
+Anelastic: \(\mathbf{J}_{\Pi_1}^{irr} = 0\).
+
+Reference pressure tendency terms:
+\begin{align}
+    R_{\Pi_1}
+    & =
+    \rho
+    \left[
+        \Sigma_p(\vartheta, q, z, p)
+        - \Sigma_p(\vartheta, q, z, p_*(z, t))
+    \right]
+    \frac{\partial p_*}{\partial t}(z, t)
+    \\
+    R_{\Pi_2}
+    & =
+    \rho \Sigma_p(\vartheta, q, z, p_*(z, t)) \frac{\partial p_*}{\partial t}(z, t)
+    - \rho \Sigma_p(\vartheta, q, z_*, p_*(z_*, t)) \frac{\partial p_*}{\partial t}(z_*, t)
+\end{align}
+Compressible:
+\begin{align}
+    R_{\Pi_1}
+    & =
+    \left( 1 - \rho v(\vartheta, q, p_*(z, t)) \right) \frac{\partial p_*}{\partial t}(z, t)
+    \\
+    R_{\Pi_2}
+    & =
+    \rho v(\vartheta, q, p_*(z, t)) \frac{\partial p_*}{\partial t}(z, t)
+    - \rho v_*(z_*, t) \frac{\partial p_*}{\partial t}(z_*, t)
+\end{align}
+Anelastic: \(R_{\Pi_1} = 0\),
+\begin{equation}
+    R_{\Pi_2}
+    =
+    \frac{\partial p_*}{\partial t}(z, t)
+    - \frac{\rho_R(z)}{\rho_R(z_*)} \frac{\partial p_*}{\partial t}(z_*, t)
+\end{equation}
+
+Substituting \(\rho D\vartheta / Dt = \sigma_\vartheta - \nabla \cdot \mathbf{J}_\vartheta\), \(\rho D q / Dt = - \nabla \cdot \mathbf{J}_q\) into the material derivatives,
+\begin{align}
+    \partial_t (\rho \Pi_1)
+    & =
+    - \nabla \cdot (
+        \mathbf{J}_{\Pi_1}^{rev}
+        + \mathbf{J}_{\Pi_1}^{irr}
+        )
+    - C_{b,1}^*
+    - C_D^*
+    - (Q_\vartheta - \tilde{Q}_\vartheta)
+    - (Q_q - \tilde{Q}_q)
+    + Q - \tilde{Q}
+    + R_{\Pi_1}
+    \\
+    \partial_t (\rho \Pi_2)
+    & =
+    - \nabla \cdot (
+        \mathbf{J}_{\Pi_2}^{rev}
+        + \mathbf{J}_{\Pi_2}^{irr}
+        )
+    - C_{b,2}^*
+    - (\tilde{Q}_\vartheta - Q_\vartheta^*)
+    - (\tilde{Q}_q - Q_q^*)
+    + \tilde{Q} - Q^*
+    + R_{\Pi_2}
+\end{align}
+with \(C_D^*\) in the compressible case only.
+The \(\Pi_1\) budget vanishes identically in the anelastic case (\(\mathbf{J}_{\Pi_1}^{irr} = 0\), \(C_{b,1}^* = 0\), \(\tilde{Q}_\vartheta = Q_\vartheta\), \(\tilde{Q}_q = Q_q\), \(\tilde{Q} = Q\), \(R_{\Pi_1} = 0\)).
+Terms evaluated at the intermediate state \((z, p_*(z, t))\) exchange energy between \(\Pi_1\) and \(\Pi_2\), and cancel in the sum.
+
+Available energy, summing the \(\Pi_1\) and \(\Pi_2\) budgets, with fluxes
+\begin{align}
+    \mathbf{J}_A^{rev}
+    & =
+    \mathbf{J}_{\Pi_1}^{rev} + \mathbf{J}_{\Pi_2}^{rev}
+    =
+    \rho A \mathbf{u}
+    \\
+    \mathbf{J}_A^{irr}
+    & =
+    \mathbf{J}_{\Pi_1}^{irr} + \mathbf{J}_{\Pi_2}^{irr}
+    =
+    \mathbf{J}_P^{irr}
+    - \Sigma_\vartheta(\vartheta, q, z_*, p_*(z_*, t)) \mathbf{J}_\vartheta
+    - \Sigma_q(\vartheta, q, z_*, p_*(z_*, t)) \mathbf{J}_q
+\end{align}
+and
+\begin{equation}
+    R_A
+    =
+    R_{\Pi_1} + R_{\Pi_2}
+    =
+    \frac{\partial p_*}{\partial t}(z, t)
+    - \rho \Sigma_p(\vartheta, q, z_*, p_*(z_*, t)) \frac{\partial p_*}{\partial t}(z_*, t)
+\end{equation}
+Then
+\begin{equation}
+    \partial_t (\rho A)
+    =
+    - \nabla \cdot (
+        \mathbf{J}_A^{rev}
+        + \mathbf{J}_A^{irr}
+        )
+    - C_b^* - C_D^*
+    - (Q_\vartheta - Q_\vartheta^*)
+    - (Q_q - Q_q^*)
+    + Q - Q^*
+    + R_A
+\end{equation}
+with \(C_D^*\) in the compressible case only.
+
+Kinetic plus available energy, using closure \(Q = Q_\vartheta + Q_q + \rho \varepsilon_K\):
+\begin{equation}
+    \partial_t \left( \rho (K + A) \right)
+    =
+    - \nabla \cdot (
+        \mathbf{J}_K^{rev}
+        + \mathbf{J}_K^{irr}
+        + \mathbf{J}_C^*
+        + \mathbf{J}_A^{rev}
+        + \mathbf{J}_A^{irr}
+        )
+    + Q_\vartheta^* + Q_q^* - Q^*
+    + R_A
+    + VF
+\end{equation}
+
+\subsection{Global budgets}
+Volume constraint (appendix \ref{app:variational}) with \(f = \partial_t p_*\):
+\begin{equation}
+    \int_V \Sigma_p(\vartheta, q, z_*, p_*(z_*, t)) \frac{\partial p_*}{\partial t}(z_*, t) \, \mathrm{d}m
+    =
+    \int_V \frac{\partial p_*}{\partial t}(z, t) \, \mathrm{d}V
+\end{equation}
+so
+\begin{equation}
+    \int_V R_A \, \mathrm{d}V = 0
+\end{equation}
+consistent with the stationarity of \(\int_V A \, \mathrm{d}m\) with respect to the reference state.
+
+Closed, fixed domain, so \(\frac{\mathrm{d}}{\mathrm{d} t} \int_V X \, \mathrm{d}m = \int_V \partial_t (\rho X) \, \mathrm{d}V\) and the flux divergences integrate to zero:
+\begin{align}
+    \frac{\mathrm{d}}{\mathrm{d} t} \int_V \Pi_1 \, \mathrm{d}m
+    & =
+    \int_V \left(
+        - C_{b,1}^*
+        - C_D^*
+        - Q_\vartheta + \tilde{Q}_\vartheta
+        - Q_q + \tilde{Q}_q
+        + Q - \tilde{Q}
+        + R_{\Pi_1}
+    \right) \mathrm{d}V
+    \\
+    \frac{\mathrm{d}}{\mathrm{d} t} \int_V \Pi_2 \, \mathrm{d}m
+    & =
+    \int_V \left(
+        - C_{b,2}^*
+        - \tilde{Q}_\vartheta + Q_\vartheta^*
+        - \tilde{Q}_q + Q_q^*
+        + \tilde{Q} - Q^*
+        - R_{\Pi_1}
+    \right) \mathrm{d}V
+    \\
+    \frac{\mathrm{d}}{\mathrm{d} t} \int_V A \, \mathrm{d}m
+    & =
+    \int_V \left(
+        - C_b^* - C_D^*
+        - Q_\vartheta + Q_\vartheta^*
+        - Q_q + Q_q^*
+        + Q - Q^*
+    \right) \mathrm{d}V
+    \\
+    \frac{\mathrm{d}}{\mathrm{d} t} \int_V K \, \mathrm{d}m
+    & =
+    \int_V \left(
+        C_b^* + C_D^*
+        - \rho \varepsilon_K
+        + VF
+    \right) \mathrm{d}V
+    \\
+    \frac{\mathrm{d}}{\mathrm{d} t} \int_V (K + A) \, \mathrm{d}m
+    & =
+    \int_V \left(
+        Q_\vartheta^* + Q_q^* - Q^*
+        + VF
+    \right) \mathrm{d}V
+\end{align}
+with \(C_D^*\) in the compressible case only.
+Anelastic: the \(\Pi_1\) budget is trivial, and \(\int_V R_{\Pi_2} \, \mathrm{d}V = 0\).
+In the compressible case the global exchange between \(\Pi_1\) and \(\Pi_2\) is
+\begin{equation}
+    \int_V R_{\Pi_1} \, \mathrm{d}V
+    =
+    \int_V \left( 1 - \rho v(\vartheta, q, p_*(z, t)) \right) \frac{\partial p_*}{\partial t}(z, t) \, \mathrm{d}V
+\end{equation}
+
+\subsection{Diagnosed quantities}
+Beyond the model state, budgets need only the reference fields \(z_*\), \(p_*\), \(v_*\), \(\partial_t p_*\) and equation of state evaluations of \(h\), \(h_\vartheta\), \(h_q\), \(v\) at
+\begin{itemize}
+    \item \((\vartheta, q, p_*(z, t))\) and \((\vartheta, q, p_*(z_*, t))\): compressible
+    \item \((\vartheta, q, p_R(z_*))\): anelastic
+\end{itemize}
+\(\Sigma_\vartheta(\vartheta, q, z, p)\), \(\Sigma_q(\vartheta, q, z, p)\) are the model's \(h_\vartheta\), \(h_q\) (at \(p_R(z)\) in the anelastic case).
+
+% \section{Isopycnal average}
+
+
+
+\appendix
+\section{Variational origin of the reference state conditions}
+\label{app:variational}
+Using \(P = \Sigma - p \Sigma_p\),
+\begin{equation}
+    A
+    =
+    P
+    - \Sigma(\vartheta, q, z_*, p_*(z_*, t))
+    + p_*(z, t) \Sigma_p(\vartheta, q, z, p)
+\end{equation}
+Note \(\Sigma_p \mathrm{d}m = \mathrm{d}V\) in both cases (\(\Sigma_p = 1/\rho\), FC; \(\Sigma_p = 1/\rho_R\), AN), so
+\begin{equation}
+    \int_V A \, \mathrm{d}m
+    =
+    \int_V P \, \mathrm{d}m
+    - \int_V \Sigma(\vartheta, q, z_*, p_*(z_*, t)) \, \mathrm{d}m
+    + \int_V p_*(z, t) \, \mathrm{d}V
+\end{equation}
+Only the last two terms depend on the reference state \((z_*, p_*)\).
+Maximising \(\int_V A \, \mathrm{d}m\) is equivalent to minimising the background energy \(\int_V (P - A) \, \mathrm{d}m\) (Lorenz).
+Variations are taken at fixed \(t\), with \(\vartheta\), \(q\) and \(\mathrm{d}m\) of each parcel fixed (adiabatic, mass conserving rearrangement).
+
+\subsection{Variation of \texorpdfstring{\(p_*\)}{p*}}
+\begin{equation}
+    \delta \int_V A \, \mathrm{d}m
+    =
+    - \int_V \Sigma_p(\vartheta, q, z_*, p_*(z_*, t)) \, \delta p_*(z_*) \, \mathrm{d}m
+    + \int_V \delta p_*(z) \, \mathrm{d}V
+\end{equation}
+\(\Sigma_p(\vartheta, q, z_*, p_*(z_*, t)) \, \mathrm{d}m\) is the volume of the parcel in the reference state (\(v(\vartheta, q, p_*(z_*, t)) \mathrm{d}m\), FC; \(\mathrm{d}m / \rho_R(z_*)\), AN).
+Vanishing for arbitrary \(\delta p_*(z) = f(z)\) gives the volume constraint
+\begin{equation}
+    \int_V f(z_*) \Sigma_p(\vartheta, q, z_*, p_*(z_*, t)) \, \mathrm{d}m
+    =
+    \int_V f(z) \, \mathrm{d}V
+\end{equation}
+for arbitrary \(f\): the volume of fluid with reference position between \(z\) and \(z + \mathrm{d}z\) equals the volume of the domain between \(z\) and \(z + \mathrm{d}z\), i.e.\ the reference state fills the domain.
+So \(p_*\) acts as a Lagrange multiplier for this volume constraint (exactly so for AN, where \(\Sigma\) is linear in \(p\)).
+
+For reference states satisfying the volume constraint (taking \(f = p_*\)),
+\begin{equation}
+    \int_V A \, \mathrm{d}m
+    =
+    \int_V P \, \mathrm{d}m
+    - \int_V
+    \left(
+        \Sigma - p \Sigma_p
+    \right) (\vartheta, q, z_*, p_*(z_*, t)) \, \mathrm{d}m
+\end{equation}
+i.e.\ potential energy minus the potential energy of the rearranged state (Lorenz).
+
+\subsection{Variation of \texorpdfstring{\(z_*\)}{z*}}
+At fixed \(p_*\), each parcel's \(z_*\) may be varied independently:
+\begin{align}
+    \delta \int_V A \, \mathrm{d}m
+    & =
+    - \int_V
+    \left.
+    \frac{\partial}{\partial z}
+    \Sigma(\vartheta, q, z, p_*(z, t))
+    \right|_{z = z_*}
+    \delta z_* \, \mathrm{d}m
+    \nonumber
+    \\
+    & \quad
+    - \frac{1}{2} \int_V
+    \left.
+    \frac{\partial^2}{\partial z^2}
+    \Sigma(\vartheta, q, z, p_*(z, t))
+    \right|_{z = z_*}
+    (\delta z_*)^2 \, \mathrm{d}m
+    + O(\delta z_*^3)
+\end{align}
+First order: vanishing for arbitrary \(\delta z_*\) gives the LNB equation for every parcel.
+Since every parcel then sits at its \(z_*\), \(p_*\) is in hydrostatic balance with the reference state.
+
+Second order: \(\int_V A \, \mathrm{d}m\) is a (strict local) maximum with respect to \(z_*\) if
+\begin{equation}
+    \left.
+    \frac{\partial^2}{\partial z^2}
+    \Sigma(\vartheta, q, z, p_*(z, t))
+    \right|_{z = z_*}
+    = N_*^2
+    > 0
+\end{equation}
+Each parcel's \(A\) is itself maximised with respect to its \(z_*\), since \(A\) depends on \(z_*\) only through \(- \Sigma(\vartheta, q, z_*, p_*(z_*, t))\).
+
+\subsection{Second variation in \texorpdfstring{\(p_*\)}{p*}}
+At fixed \(z_*\),
+\begin{equation}
+    \delta^2 \int_V A \, \mathrm{d}m
+    =
+    - \frac{1}{2} \int_V \Sigma_{pp}(\vartheta, q, z_*, p_*(z_*, t)) \, (\delta p_*(z_*))^2 \, \mathrm{d}m
+\end{equation}
+FC: \(\Sigma_{pp} = v_p < 0\), so for variations that violate the volume constraint the reference state is a minimum with respect to \(p_*\).
+AN: \(\Sigma_{pp} = 0\).
+
+\subsection{Mixed variation in \texorpdfstring{\(z_*\)}{z*} and \texorpdfstring{\(p_*\)}{p*}}
+Varying both, \(z_* \to z_* + \delta z_*\) and \(p_* \to p_* + \delta p_*\), the second order part of \(\Sigma(\vartheta, q, z_* + \delta z_*, (p_* + \delta p_*)(z_* + \delta z_*, t))\) is
+\begin{equation}
+    \frac{1}{2} N_*^2 (\delta z_*)^2
+    + \delta z_*
+    \left.
+    \frac{\partial}{\partial z}
+    \left[
+        \Sigma_p(\vartheta, q, z, p_*(z, t)) \, \delta p_*(z)
+    \right]
+    \right|_{z = z_*}
+    + \frac{1}{2} \Sigma_{pp}(\vartheta, q, z_*, p_*(z_*, t)) \, (\delta p_*(z_*))^2
+\end{equation}
+so the full second variation is
+\begin{align}
+    \delta^2 \int_V A \, \mathrm{d}m
+    & =
+    - \frac{1}{2} \int_V N_*^2 (\delta z_*)^2 \, \mathrm{d}m
+    - \int_V
+    \delta z_*
+    \left.
+    \frac{\partial}{\partial z}
+    \left[
+        \Sigma_p(\vartheta, q, z, p_*(z, t)) \, \delta p_*(z)
+    \right]
+    \right|_{z = z_*}
+    \mathrm{d}m
+    \nonumber
+    \\
+    & \quad
+    - \frac{1}{2} \int_V \Sigma_{pp}(\vartheta, q, z_*, p_*(z_*, t)) \, (\delta p_*(z_*))^2 \, \mathrm{d}m
+\end{align}
+The mixed term contains
+\begin{equation}
+    \frac{\partial}{\partial z}
+    \left[
+        \Sigma_p(\vartheta, q, z, p_*(z, t)) \, \delta p_*(z)
+    \right]
+    =
+    \left(
+        \Sigma_{pz}
+        + \Sigma_{pp} \frac{\partial p_*}{\partial z}
+    \right)
+    \delta p_*
+    + \Sigma_p \frac{\partial \delta p_*}{\partial z}
+\end{equation}
+
+Compressible (using \(v = v_*\) and \(v_* \partial_z p_* = - g\) at \(z_*\)):
+\begin{equation}
+    - \int_V
+    \delta z_*
+    \left[
+        v_*(z_*, t) \frac{\partial \delta p_*}{\partial z}(z_*)
+        - g \rho_*(z_*, t) v_p(\vartheta, q, p_*(z_*, t)) \, \delta p_*(z_*)
+    \right]
+    \mathrm{d}m
+\end{equation}
+Anelastic:
+\begin{equation}
+    - \int_V
+    \delta z_*
+    \frac{\partial}{\partial z}
+    \left(
+        \frac{\delta p_*}{\rho_R}
+    \right) (z_*)
+    \, \mathrm{d}m
+\end{equation}
+
+\subsection{Admissible variations}
+Perturbed reference states must also satisfy the volume constraint.
+Linearising it, for arbitrary \(f(z)\),
+\begin{equation}
+    \int_V
+    \left\{
+        \delta z_*
+        \left.
+        \frac{\partial}{\partial z}
+        \left[
+            f(z) \Sigma_p(\vartheta, q, z, p_*(z, t))
+        \right]
+        \right|_{z = z_*}
+        + f(z_*) \Sigma_{pp}(\vartheta, q, z_*, p_*(z_*, t)) \, \delta p_*(z_*)
+    \right\}
+    \mathrm{d}m
+    = 0
+\end{equation}
+The reference state is a stationary point of \(\int_V A \, \mathrm{d}m\) for unconstrained variations, so along admissible perturbations its second variation is the full second variation above, restricted to \((\delta z_*, \delta p_*)\) satisfying this.
+
+Choosing \(f = \delta p_*\), the mixed term is
+\begin{equation}
+    \int_V
+    \delta z_*
+    \left.
+    \frac{\partial}{\partial z}
+    \left[
+        \Sigma_p(\vartheta, q, z, p_*(z, t)) \, \delta p_*(z)
+    \right]
+    \right|_{z = z_*}
+    \mathrm{d}m
+    =
+    - \int_V \Sigma_{pp}(\vartheta, q, z_*, p_*(z_*, t)) \, (\delta p_*(z_*))^2 \, \mathrm{d}m
+\end{equation}
+so for admissible variations
+\begin{equation}
+    \delta^2 \int_V A \, \mathrm{d}m
+    =
+    - \frac{1}{2} \int_V N_*^2 (\delta z_*)^2 \, \mathrm{d}m
+    + \frac{1}{2} \int_V \Sigma_{pp}(\vartheta, q, z_*, p_*(z_*, t)) \, (\delta p_*(z_*))^2 \, \mathrm{d}m
+\end{equation}
+
+Compressible: \(\Sigma_{pp} = v_p < 0\), so the mixed and \(\delta p_*^2\) terms combine into a negative definite contribution.
+
+Anelastic: \(\Sigma_{pp} = 0\), so the mixed term vanishes on admissible variations, and \(\int_V A \, \mathrm{d}m\) does not depend on \(p_*\) along them (\(p_*\) is a pure Lagrange multiplier).
+
+Hence \(N_*^2 > 0\) is sufficient for a maximum of \(\int_V A \, \mathrm{d}m\) over admissible reference states, and the mixed variation does not change the second order condition.
+Conversely, \(N_*^2 \geq 0\) is necessary: displacing a single parcel, with compensating displacements spread over many others, gives \(\delta^2 \int_V A \, \mathrm{d}m \to - \frac{1}{2} N_*^2 (\delta z_*)^2 \mathrm{d}m\) for that parcel.
+
+\end{document}

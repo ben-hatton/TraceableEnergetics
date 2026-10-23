@@ -15,7 +15,7 @@ equations, using energy-consistent finite-volume discretisations of both models 
 - CFAnelastics, CFCompressible and CFPlanets are ordinary registered dependencies (compat in Project.toml). They are
   developed in their own repositories, not here; while a change is pending, the dependency is the user's fork branch
   `traceable-energetics` through [sources] in Project.toml.
-- experiments/, tools/: the science that uses the packages. Experiment-specific code (I/O, plotting,
+- examples/, tools/: the science that uses the packages. Experiment-specific code (I/O, plotting,
   setups) lives here or in src/, never in the packages.
 - notes/: the specifications. traceable_energetics.tex specifies the models; ape_reference_state.tex specifies the
   algorithms for the reference state of available potential energy and records the decisions taken with the user.
@@ -89,6 +89,10 @@ change in this repository.
   them into the book of `diagnostics(model; ...)`, as the energetics entries are. During a run they are computed at the
   outputs of `loop` (t = 0 and the end of each slice, set by `Nslice` and `slice_size`). Vertical profiles are 1D
   variables (on the z dimension, or a dimension of their own such as reference-state slots), not full cell fields.
+
+## CURRENT WORK
+- The reference state of available potential energy (not started). Start from notes/reference_state_plan.md, which
+  lists what to settle with the user before writing code.
 
 ## WORKING WITH THE USER
 Check in with the user:

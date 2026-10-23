@@ -12,7 +12,7 @@
 #
 # with ∂ₜu = -vortex_x, ∂ₜw = -vortex_z (∇K and the pressure gradient have no curl) and ∂ₜω = δZ ∂ₜu / Δz - δX ∂ₜw / Δx.
 #
-#   julia experiments/vortex_schemes/conservation.jl
+#   julia examples/vortex_schemes/conservation.jl
 include("../../tools/setup.jl")
 
 using CFBoxes

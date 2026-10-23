@@ -1,232 +1,35 @@
-## ENERGETICS DIAGNOSTICS OF EITHER MODEL
+## KERNELS OF THE ENERGETICS DIAGNOSTICS
 #
-# The energy budget of energy.tex as diagnostics of AN2D and FC2D, added to the diagnostics of the model packages
-# (`energetics_diagnostics`, merged into `diagnostics` of diagnostics.jl). K and P are specific energies [J kg⁻¹], the
-# energy densities ρK, ρP [J m⁻³] and every term of the budget are per unit volume [W m⁻³], with ρ = ρ_R for AN2D.
-# Fields on the cells carry no suffix; their components on the x and z faces end in `_x` and `_z`.
+# The energy budget of energy.tex as diagnostics of AN2D and FC2D: the recipes are in diagnostics.jl, the kernels here.
+# K and P are specific energies [J kg⁻¹], the energy densities ρK, ρP [J m⁻³] and every term of the budget are per unit
+# volume [W m⁻³], with ρ = ρ_R for AN2D. Fields on the cells carry no suffix; their components on the x and z faces end
+# in `_x` and `_z`.
 #
 # Every term is built from the model's own operators (`ℑ`, `δ` of the spatial scheme): a face product -mass_flux ·
 # ∇(potential) is averaged to the cells, as the model does for ρε. With the product rule of these operators,
 #     δ(ℑ(a) b) = a δb + ℑ(b δa),
-# the budget of ρP closes at each cell, and that of ρK in the volume integral (`energy_budget`).
+# the budget of ρP closes at each cell, and that of ρK in the volume integral (`integrated_budget_residual`).
+#
+# Cell fields are computed at the interior cells and face fields at the interior faces (both walls of a bounded
+# dimension), then their halo is filled: zero-gradient for cells, periodic for faces (the wall faces are values, not
+# halo). The mass flux, the tracer fluxes and the vortex force are those of the tendencies, so every term has the
+# discretization of the model. The terms on the cells that are built from face products take `faces = (Fx, Fz)`, scratch
+# arrays on the x and z faces that the diagnostics share.
 
 """
-    book = energetics_diagnostics(model; reference = default_reference(model))
+    entry = entry(long_name, units, location, recipe)
 
-`CookBook` of the energetics diagnostics of an AN2D or FC2D `model`, to be merged into its diagnostics (see
-`diagnostics`); the names, long names, units and grid locations are those of `energetics_info`. The geopotential is
-g (z - z0), with z0 the origin `model.space.z0` [m] of the tank. The reference state (`AnelasticReference` with the density ρ_R(z) and the
-hydrostatic pressure p_R(z)) is that of the model for AN2D; FC2D has none, so the diagnostics of the manipulated
-conversion (`pressure_flux`, `buoyancy_conversion`, `pressure_dilatation`, `conversion_residual`) need a `reference`,
-usually that of the matching AN2D, on the same grid.
-
-The book owns the output array of each diagnostic, allocated on its first use, which every session overwrites.
+A diagnostic: its `info = (; long_name, units, location)` and its `recipe` for a `CookBook`.
 """
-function energetics_diagnostics(model::Union{AN2D{F}, FC2D{F}}; reference = default_reference(model)) where F
-    (; mgr, domain) = model
-    info = energetics_info(model)
-    cache = Dict{Symbol, Any}()
-    # output array of the diagnostic `name`, on its grid location, allocated on first use
-    out(name) = get!(() -> alloc(F, mgr, domain, info[name].location), cache, name)::Matrix{F}
-    book = CookBook(;
-        # energies: the specific enthalpy h(ϑ, q, p) at the pressure of the energy (p_R for AN2D), P = h - p/ρ + g (z - z0)
-        specific_enthalpy            = (model, state, scratch) -> specific_enthalpy!(out(:specific_enthalpy), model, energy_pressure(model, state, scratch), scratch.thermo),
-        potential_energy             = (model, specific_enthalpy, state, scratch) -> potential_energy!(out(:potential_energy), model, specific_enthalpy, energy_density(model, state, scratch), energy_pressure(model, state, scratch)),
-        bernoulli_potential          = (model, specific_enthalpy, scratch) -> bernoulli_potential!(out(:bernoulli_potential), model, specific_enthalpy, scratch),
-        ρK                           = (density, kinetic_energy) -> pointwise!(out(:ρK), mgr, *, density, kinetic_energy),
-        ρP                           = (density, potential_energy) -> pointwise!(out(:ρP), mgr, *, density, potential_energy),
-        # reversible and irreversible fluxes of K and P, and their divergences
-        kinetic_flux_rev_xz          = (model, mass_flux_x, mass_flux_z, kinetic_energy) -> advective_flux!(out(:kinetic_flux_rev_x), out(:kinetic_flux_rev_z), model, mass_flux_x, mass_flux_z, kinetic_energy),
-        kinetic_flux_rev_x           = kinetic_flux_rev_xz -> kinetic_flux_rev_xz[1],
-        kinetic_flux_rev_z           = kinetic_flux_rev_xz -> kinetic_flux_rev_xz[2],
-        kinetic_flux_irr_xz          = (model, scratch) -> stress_work_flux!(out(:kinetic_flux_irr_x), out(:kinetic_flux_irr_z), model, scratch.irreversible),
-        kinetic_flux_irr_x           = kinetic_flux_irr_xz -> kinetic_flux_irr_xz[1],
-        kinetic_flux_irr_z           = kinetic_flux_irr_xz -> kinetic_flux_irr_xz[2],
-        potential_flux_rev_xz        = (model, scratch, mass_flux_x, mass_flux_z, bernoulli_potential, conjugate_variable, modified_chemical_potential) ->
-            potential_flux_rev!(out(:potential_flux_rev_x), out(:potential_flux_rev_z), model, scratch.advection, (mass_flux_x, mass_flux_z), bernoulli_potential, conjugate_variable, modified_chemical_potential),
-        potential_flux_rev_x         = potential_flux_rev_xz -> potential_flux_rev_xz[1],
-        potential_flux_rev_z         = potential_flux_rev_xz -> potential_flux_rev_xz[2],
-        potential_flux_irr_xz        = (model, scratch, conjugate_variable, modified_chemical_potential) ->
-            potential_flux_irr!(out(:potential_flux_irr_x), out(:potential_flux_irr_z), model, scratch.irreversible, conjugate_variable, modified_chemical_potential),
-        potential_flux_irr_x         = potential_flux_irr_xz -> potential_flux_irr_xz[1],
-        potential_flux_irr_z         = potential_flux_irr_xz -> potential_flux_irr_xz[2],
-        div_kinetic_flux_rev         = (model, kinetic_flux_rev_x, kinetic_flux_rev_z) -> divergence!(out(:div_kinetic_flux_rev), model, kinetic_flux_rev_x, kinetic_flux_rev_z),
-        div_kinetic_flux_irr         = (model, kinetic_flux_irr_x, kinetic_flux_irr_z) -> divergence!(out(:div_kinetic_flux_irr), model, kinetic_flux_irr_x, kinetic_flux_irr_z),
-        div_potential_flux_rev       = (model, potential_flux_rev_x, potential_flux_rev_z) -> divergence!(out(:div_potential_flux_rev), model, potential_flux_rev_x, potential_flux_rev_z),
-        div_potential_flux_irr       = (model, potential_flux_irr_x, potential_flux_irr_z) -> divergence!(out(:div_potential_flux_irr), model, potential_flux_irr_x, potential_flux_irr_z),
-        # reversible conversions C_ϑ, C_q, C_Σ = -(mass flux of the tracer) · ∇(potential), on the faces and at the cells
-        conversion_consvar_xz        = (model, scratch, conjugate_variable) -> gradient_product!(out(:conversion_consvar_x), out(:conversion_consvar_z), model, tracer_flux(model, scratch.advection, 1), conjugate_variable),
-        conversion_consvar_x         = conversion_consvar_xz -> conversion_consvar_xz[1],
-        conversion_consvar_z         = conversion_consvar_xz -> conversion_consvar_xz[2],
-        conversion_composition_xz    = (model, scratch, modified_chemical_potential) -> gradient_product!(out(:conversion_composition_x), out(:conversion_composition_z), model, tracer_flux(model, scratch.advection, 2), modified_chemical_potential),
-        conversion_composition_x     = conversion_composition_xz -> conversion_composition_xz[1],
-        conversion_composition_z     = conversion_composition_xz -> conversion_composition_xz[2],
-        conversion_bernoulli_xz      = (model, mass_flux_x, mass_flux_z, bernoulli_potential) -> gradient_product!(out(:conversion_bernoulli_x), out(:conversion_bernoulli_z), model, (mass_flux_x, mass_flux_z), bernoulli_potential),
-        conversion_bernoulli_x       = conversion_bernoulli_xz -> conversion_bernoulli_xz[1],
-        conversion_bernoulli_z       = conversion_bernoulli_xz -> conversion_bernoulli_xz[2],
-        conversion_consvar           = (model, conversion_consvar_x, conversion_consvar_z) -> faces_to_cells!(out(:conversion_consvar), model, conversion_consvar_x, conversion_consvar_z),
-        conversion_composition       = (model, conversion_composition_x, conversion_composition_z) -> faces_to_cells!(out(:conversion_composition), model, conversion_composition_x, conversion_composition_z),
-        conversion_bernoulli         = (model, conversion_bernoulli_x, conversion_bernoulli_z) -> faces_to_cells!(out(:conversion_bernoulli), model, conversion_bernoulli_x, conversion_bernoulli_z),
-        conversion                   = (conversion_consvar, conversion_composition, conversion_bernoulli) -> pointwise!(out(:conversion), mgr, +, conversion_consvar, conversion_composition, conversion_bernoulli),
-        # heating: Q_ϑ, Q_q = -(diffusive flux) · ∇(potential), Q = conjvar σ_cons, and the closure Q = Q_ϑ + Q_q + ρε
-        heating_consvar_xz           = (model, scratch, conjugate_variable) -> gradient_product!(out(:heating_consvar_x), out(:heating_consvar_z), model, (scratch.irreversible.consflux_x, scratch.irreversible.consflux_z), conjugate_variable),
-        heating_consvar_x            = heating_consvar_xz -> heating_consvar_xz[1],
-        heating_consvar_z            = heating_consvar_xz -> heating_consvar_xz[2],
-        heating_composition_xz       = (model, scratch, modified_chemical_potential) -> gradient_product!(out(:heating_composition_x), out(:heating_composition_z), model, (scratch.irreversible.qflux_x, scratch.irreversible.qflux_z), modified_chemical_potential),
-        heating_composition_x        = heating_composition_xz -> heating_composition_xz[1],
-        heating_composition_z        = heating_composition_xz -> heating_composition_xz[2],
-        heating_consvar              = (model, heating_consvar_x, heating_consvar_z) -> faces_to_cells!(out(:heating_consvar), model, heating_consvar_x, heating_consvar_z),
-        heating_composition          = (model, heating_composition_x, heating_composition_z) -> faces_to_cells!(out(:heating_composition), model, heating_composition_x, heating_composition_z),
-        heating                      = (conjugate_variable, conservative_variable_production) -> pointwise!(out(:heating), mgr, *, conjugate_variable, conservative_variable_production),
-        heating_residual             = (model, heating, heating_consvar, heating_composition, viscous_dissipation) -> heating_residual!(out(:heating_residual), model, heating, heating_consvar, heating_composition, viscous_dissipation),
-        # vortex force work VF = -ρ u·(ω×u)
-        vortex_work_xz               = (model, scratch, mass_flux_x, mass_flux_z) -> vortex_work!(out(:vortex_work_x), out(:vortex_work_z), model, scratch.advection, mass_flux_x, mass_flux_z),
-        vortex_work_x                = vortex_work_xz -> vortex_work_xz[1],
-        vortex_work_z                = vortex_work_xz -> vortex_work_xz[2],
-        vortex_work                  = (model, vortex_work_x, vortex_work_z) -> faces_to_cells!(out(:vortex_work), model, vortex_work_x, vortex_work_z),
-        # budgets: tendency of ρK, ρP, and the part of it not given by the terms of energy.tex
-        kinetic_budget_residual      = (model, dρK, div_kinetic_flux_rev, div_kinetic_flux_irr, conversion, viscous_dissipation, vortex_work) ->
-            kinetic_budget_residual!(out(:kinetic_budget_residual), model, dρK, div_kinetic_flux_rev, div_kinetic_flux_irr, conversion, viscous_dissipation, vortex_work),
-        potential_budget_residual    = (model, dρP, div_potential_flux_rev, div_potential_flux_irr, conversion, heating_consvar, heating_composition, heating) ->
-            potential_budget_residual!(out(:potential_budget_residual), model, dρP, div_potential_flux_rev, div_potential_flux_irr, conversion, heating_consvar, heating_composition, heating),
-    )
-    merge!(book.recipes, pairs(model_recipes(model, out)), pairs(manipulated_recipes(model, out, reference)))
-    return book
-end
-
-default_reference((; reference)::AN2D) = reference
-default_reference(::FC2D) = nothing
-
-#=
-Model-specific recipes. AN2D has the reference density ρ_R(z) as mass weight (no ∂ₜρ), and its energy of P is evaluated
-at the reference pressure p_R(z); FC2D has the density and pressure of the state.
-=#
-model_recipes(model::AN2D, out) = let (; mgr) = model
-    (;
-        kinetic_energy_rate_xz = (model, u, w, du, dw) -> velocity_work!(out(:kinetic_energy_rate_x), out(:kinetic_energy_rate_z), model, (u, w), (du, dw)),
-        kinetic_energy_rate_x  = kinetic_energy_rate_xz -> kinetic_energy_rate_xz[1],
-        kinetic_energy_rate_z  = kinetic_energy_rate_xz -> kinetic_energy_rate_xz[2],
-        kinetic_energy_rate = (model, kinetic_energy_rate_x, kinetic_energy_rate_z) -> faces_to_cells!(out(:kinetic_energy_rate), model, kinetic_energy_rate_x, kinetic_energy_rate_z),
-        dρK                 = (density, kinetic_energy_rate) -> pointwise!(out(:dρK), mgr, *, density, kinetic_energy_rate),
-        dρP                 = (model, conjugate_variable, modified_chemical_potential, dρconsvar, dρq) -> potential_energy_tendency!(out(:dρP), model, conjugate_variable, modified_chemical_potential, dρconsvar, dρq),
-    )
-end
-model_recipes(model::FC2D, out) = let (; mgr) = model
-    (;
-        kinetic_energy_rate_xz = (model, u, w, du, dw) -> velocity_work!(out(:kinetic_energy_rate_x), out(:kinetic_energy_rate_z), model, (u, w), (du, dw)),
-        kinetic_energy_rate_x  = kinetic_energy_rate_xz -> kinetic_energy_rate_xz[1],
-        kinetic_energy_rate_z  = kinetic_energy_rate_xz -> kinetic_energy_rate_xz[2],
-        kinetic_energy_rate = (model, kinetic_energy_rate_x, kinetic_energy_rate_z) -> faces_to_cells!(out(:kinetic_energy_rate), model, kinetic_energy_rate_x, kinetic_energy_rate_z),
-        dρK                 = (model, density, kinetic_energy, kinetic_energy_rate, dρ) -> kinetic_energy_tendency!(out(:dρK), model, density, kinetic_energy, kinetic_energy_rate, dρ),
-        dρP                 = (model, bernoulli_potential, conjugate_variable, modified_chemical_potential, dρ, dρconsvar, dρq) -> potential_energy_tendency!(out(:dρP), model, bernoulli_potential, conjugate_variable, modified_chemical_potential, dρ, dρconsvar, dρq),
-    )
-end
-
-# Manipulated conversion C = -∇·J_C + C_b + C_D, with J_C = (p - p_R) u, needs the reference state
-manipulated_recipes(model, out, ::Nothing) = (;)
-manipulated_recipes(model, out, reference) = let (; mgr) = model
-    (;
-        pressure_anomaly      = (model, pressure) -> pressure_anomaly!(out(:pressure_anomaly), model, reference, pressure),
-        pressure_flux_xz      = (model, u, w, pressure_anomaly) -> advective_flux!(out(:pressure_flux_x), out(:pressure_flux_z), model, u, w, pressure_anomaly),
-        pressure_flux_x       = pressure_flux_xz -> pressure_flux_xz[1],
-        pressure_flux_z       = pressure_flux_xz -> pressure_flux_xz[2],
-        div_pressure_flux     = (model, pressure_flux_x, pressure_flux_z) -> divergence!(out(:div_pressure_flux), model, pressure_flux_x, pressure_flux_z),
-        reference_buoyancy    = (model, state, scratch) -> reference_buoyancy!(out(:reference_buoyancy), model, reference, state, scratch),
-        buoyancy_conversion_zc = (model, mass_flux_z, reference_buoyancy) -> buoyancy_conversion!(out(:buoyancy_conversion_z), out(:buoyancy_conversion), model, mass_flux_z, reference_buoyancy),
-        buoyancy_conversion_z = buoyancy_conversion_zc -> buoyancy_conversion_zc[1],
-        buoyancy_conversion   = buoyancy_conversion_zc -> buoyancy_conversion_zc[2],
-        pressure_dilatation   = (model, pressure_anomaly, divergence) -> pressure_dilatation!(out(:pressure_dilatation), model, pressure_anomaly, divergence),
-        conversion_residual   = (model, conversion, div_pressure_flux, buoyancy_conversion, pressure_dilatation) -> conversion_residual!(out(:conversion_residual), model, conversion, div_pressure_flux, buoyancy_conversion, pressure_dilatation),
-    )
-end
-
-# density and pressure of the energy P = h(ϑ, q, p) - p/ρ + g (z - z0): the reference profiles (AN2D) or the state (FC2D)
-energy_density((; reference)::AN2D, state, scratch) = reference.ρ_R
-energy_pressure((; reference)::AN2D, state, scratch) = reference.p_R
-energy_density(::FC2D, (; m), scratch) = view(m, :, :, 1)
-energy_pressure(::FC2D, state, scratch) = scratch.thermo.p
-
-# index of the consvar flux (then q) among the advected densities of the state: (ρ_R consvar, ρ_R q) or (ρ, ρ consvar, ρ q)
-consvar_index(::AN2D) = 1
-consvar_index(::FC2D) = 2
-"""
-    mu, mw = tracer_flux(model, advection, k)
-
-Advective flux ρ_R ϑ u, ρ_R ϑ w (k = 1) or ρ_R q u, ρ_R q w (k = 2), or with ρ for FC2D, on the x and z faces, from the
-`advection` scratch of the tendencies.
-"""
-tracer_flux(model, (; mu, mw), k) = (view(mu, :, :, consvar_index(model) + k - 1), view(mw, :, :, consvar_index(model) + k - 1))
+entry(long_name, units, location, recipe) = ((; long_name, units, location), recipe)
 
 """
-    info = energetics_info(model)
+    (mu, mw) = tracer_flux((; mu, mw), k)
 
-Long name, units and grid location of each diagnostic of `energetics_diagnostics`, as a named tuple of
-`(; long_name, units, location)`, in the style of the model packages.
+Advective flux of the k-th advected density (ρ_R ϑ u, ρ_R ϑ w), as views on the x and z faces, from the `advection`
+scratch of the tendencies. The densities are (ρ_R ϑ, ρ_R q) for AN2D and (ρ, ρ ϑ, ρ q) for FC2D.
 """
-energetics_info(::Union{AN2D, FC2D}) = let cells = (Cell(), Cell()), x_faces = (Face(), Cell()), z_faces = (Cell(), Face())
-    (;
-        specific_enthalpy         = (long_name = "specific enthalpy h (at p_R for AN2D)",                         units = "J kg⁻¹",   location = cells),
-        potential_energy          = (long_name = "potential energy P = h - p/ρ + g (z - z0)",                    units = "J kg⁻¹",   location = cells),
-        bernoulli_potential       = (long_name = "Σ - ϑ Σ_ϑ - q Σ_q, B + g (z - z0) (+ φ for AN2D)",             units = "J kg⁻¹",   location = cells),
-        ρK                        = (long_name = "kinetic energy density ρ K",                                    units = "J m⁻³",    location = cells),
-        ρP                        = (long_name = "potential energy density ρ P",                                  units = "J m⁻³",    location = cells),
-        dρK                       = (long_name = "tendency of ρ K",                                               units = "W m⁻³",    location = cells),
-        dρP                       = (long_name = "tendency of ρ P",                                               units = "W m⁻³",    location = cells),
-        kinetic_energy_rate_x     = (long_name = "u ∂ₜu on the x-faces",                                          units = "W kg⁻¹",   location = x_faces),
-        kinetic_energy_rate_z     = (long_name = "w ∂ₜw on the z-faces",                                          units = "W kg⁻¹",   location = z_faces),
-        kinetic_energy_rate       = (long_name = "tendency of K",                                                 units = "W kg⁻¹",   location = cells),
-        kinetic_flux_rev_x        = (long_name = "reversible flux of K along x, ρ K u",                           units = "W m⁻²",    location = x_faces),
-        kinetic_flux_rev_z        = (long_name = "reversible flux of K along z, ρ K w",                           units = "W m⁻²",    location = z_faces),
-        kinetic_flux_irr_x        = (long_name = "irreversible flux of K along x, -(u·τ)_x",                      units = "W m⁻²",    location = x_faces),
-        kinetic_flux_irr_z        = (long_name = "irreversible flux of K along z, -(u·τ)_z",                      units = "W m⁻²",    location = z_faces),
-        potential_flux_rev_x      = (long_name = "reversible flux of P along x, ρ Σ u",                           units = "W m⁻²",    location = x_faces),
-        potential_flux_rev_z      = (long_name = "reversible flux of P along z, ρ Σ w",                           units = "W m⁻²",    location = z_faces),
-        potential_flux_irr_x      = (long_name = "irreversible flux of P along x, Σ_ϑ J_ϑ + Σ_q J_q",            units = "W m⁻²",    location = x_faces),
-        potential_flux_irr_z      = (long_name = "irreversible flux of P along z, Σ_ϑ J_ϑ + Σ_q J_q",            units = "W m⁻²",    location = z_faces),
-        div_kinetic_flux_rev      = (long_name = "divergence of the reversible flux of K",                        units = "W m⁻³",    location = cells),
-        div_kinetic_flux_irr      = (long_name = "divergence of the irreversible flux of K",                      units = "W m⁻³",    location = cells),
-        div_potential_flux_rev    = (long_name = "divergence of the reversible flux of P",                        units = "W m⁻³",    location = cells),
-        div_potential_flux_irr    = (long_name = "divergence of the irreversible flux of P",                      units = "W m⁻³",    location = cells),
-        conversion_consvar_x      = (long_name = "conversion C_ϑ along x, -ρ ϑ u ∂ₓΣ_ϑ",                         units = "W m⁻³",    location = x_faces),
-        conversion_consvar_z      = (long_name = "conversion C_ϑ along z, -ρ ϑ w ∂_zΣ_ϑ",                        units = "W m⁻³",    location = z_faces),
-        conversion_composition_x  = (long_name = "conversion C_q along x, -ρ q u ∂ₓΣ_q",                         units = "W m⁻³",    location = x_faces),
-        conversion_composition_z  = (long_name = "conversion C_q along z, -ρ q w ∂_zΣ_q",                        units = "W m⁻³",    location = z_faces),
-        conversion_bernoulli_x    = (long_name = "conversion C_Σ along x, -ρ u ∂ₓ(Σ - ϑΣ_ϑ - qΣ_q)",             units = "W m⁻³",    location = x_faces),
-        conversion_bernoulli_z    = (long_name = "conversion C_Σ along z, -ρ w ∂_z(Σ - ϑΣ_ϑ - qΣ_q)",            units = "W m⁻³",    location = z_faces),
-        conversion_consvar        = (long_name = "conversion C_ϑ from P to K",                                    units = "W m⁻³",    location = cells),
-        conversion_composition    = (long_name = "conversion C_q from P to K",                                    units = "W m⁻³",    location = cells),
-        conversion_bernoulli      = (long_name = "conversion C_Σ from P to K",                                    units = "W m⁻³",    location = cells),
-        conversion                = (long_name = "conversion C = C_ϑ + C_q + C_Σ from P to K",                    units = "W m⁻³",    location = cells),
-        heating_consvar_x         = (long_name = "heating Q_ϑ along x, -J_ϑ ∂ₓΣ_ϑ",                              units = "W m⁻³",    location = x_faces),
-        heating_consvar_z         = (long_name = "heating Q_ϑ along z, -J_ϑ ∂_zΣ_ϑ",                             units = "W m⁻³",    location = z_faces),
-        heating_composition_x     = (long_name = "heating Q_q along x, -J_q ∂ₓΣ_q",                              units = "W m⁻³",    location = x_faces),
-        heating_composition_z     = (long_name = "heating Q_q along z, -J_q ∂_zΣ_q",                             units = "W m⁻³",    location = z_faces),
-        heating_consvar           = (long_name = "heating Q_ϑ = -J_ϑ·∇Σ_ϑ",                                      units = "W m⁻³",    location = cells),
-        heating_composition       = (long_name = "heating Q_q = -J_q·∇Σ_q",                                      units = "W m⁻³",    location = cells),
-        heating                   = (long_name = "heating Q = Σ_ϑ σ_ϑ",                                          units = "W m⁻³",    location = cells),
-        heating_residual          = (long_name = "closure residual Q - Q_ϑ - Q_q - ρ ε_K",                      units = "W m⁻³",    location = cells),
-        vortex_work_x             = (long_name = "vortex force work along x, -ρ u (ω×u)_x",                       units = "W m⁻³",    location = x_faces),
-        vortex_work_z             = (long_name = "vortex force work along z, -ρ w (ω×u)_z",                       units = "W m⁻³",    location = z_faces),
-        vortex_work               = (long_name = "vortex force work VF = -ρ u·(ω×u)",                             units = "W m⁻³",    location = cells),
-        kinetic_budget_residual   = (long_name = "residual of the budget of ρ K",                                 units = "W m⁻³",    location = cells),
-        potential_budget_residual = (long_name = "residual of the budget of ρ P",                                 units = "W m⁻³",    location = cells),
-        pressure_anomaly          = (long_name = "pressure anomaly p - p_R",                                      units = "Pa",       location = cells),
-        pressure_flux_x           = (long_name = "flux J_C along x, (p - p_R) u",                                 units = "W m⁻²",    location = x_faces),
-        pressure_flux_z           = (long_name = "flux J_C along z, (p - p_R) w",                                 units = "W m⁻²",    location = z_faces),
-        div_pressure_flux         = (long_name = "divergence of J_C",                                             units = "W m⁻³",    location = cells),
-        reference_buoyancy        = (long_name = "buoyancy g (ρ_R v - 1) of the reference state",                 units = "m s⁻²",    location = cells),
-        buoyancy_conversion_z     = (long_name = "buoyancy conversion C_b, ρ b w",                                units = "W m⁻³",    location = z_faces),
-        buoyancy_conversion       = (long_name = "buoyancy conversion C_b = ρ b w",                               units = "W m⁻³",    location = cells),
-        pressure_dilatation       = (long_name = "pressure dilatation C_D = (p - p_R) ∇·u (zero for AN2D)",       units = "W m⁻³",    location = cells),
-        conversion_residual       = (long_name = "residual of C = -∇·J_C + C_b + C_D",                            units = "W m⁻³",    location = cells),
-    )
-end
-
-#=
-Kernels. Cell fields are computed at the interior cells and face fields at the interior faces (both walls of a bounded
-dimension), then their halo is filled: zero-gradient for cells, periodic for faces (the wall faces are values, not halo). The mass flux, the tracer fluxes and the vortex force are
-those of the tendencies, so every term has the discretization of the model.
-=#
+tracer_flux((; mu, mw), k) = (view(mu, :, :, k), view(mw, :, :, k))
 
 """
     out = pointwise!(out, mgr, f, a, b[, c])
@@ -251,6 +54,15 @@ function pointwise!(out, mgr, f::Fun, a, b, c) where Fun
 end
 
 """
+    integral = domain_integral(model, field)
+
+Integral of a cell `field` over the interior cells, per unit length along y: sum(field) Δx Δz.
+"""
+domain_integral(model, field) = sum(interior(model.domain, field)) * model.dx * model.dz
+
+# Energies
+
+"""
     h = specific_enthalpy!(h, model, p, (; consvar, q))
 
 Specific enthalpy h(p, consvar, q) [J kg⁻¹] at the interior cells, at the pressure `p`: an array, or the profile p_R(z).
@@ -270,8 +82,8 @@ end
 """
     P = potential_energy!(P, model, h, ρ, p)
 
-Potential energy P = h - p/ρ + g (z - z0) [J kg⁻¹] at the interior cells (see `energy_density`, `energy_pressure`):
-h - p v + g z, with v = 1/ρ, for FC2D; h(p_R) - p_R/ρ_R + g z for AN2D.
+Potential energy P = h - p/ρ + g (z - z0) [J kg⁻¹] at the interior cells, with the density and pressure of the energy:
+those of the state for FC2D, the profiles ρ_R(z), p_R(z) for AN2D.
 """
 function potential_energy!(P, model, h, ρ, p)
     (; mgr, domain, space, dz, spatial_scheme) = model
@@ -314,13 +126,16 @@ function bernoulli_potential!(Σ_B, model::AN2D, h, (; thermo, φ))
     return fill_halo!(domain, Σ_B, ZeroGradient())
 end
 
-"""
-    Jx, Jz = advective_flux!(Jx, Jz, model, flux_x, flux_z, a)
+# Fluxes of K and P on the faces. Each is a product of a flux of the tendencies and a cell quantity averaged to the face.
 
-Flux of the cell quantity `a` carried by a flux on the faces, J = flux ℑ(a), with `a` averaged to the faces. For the
-mass flux ρu: the reversible flux of K, ρ K u (`a` = K); with the velocity: J_C = (p - p_R) u (`a` = p - p_R).
 """
-function advective_flux!(Jx, Jz, model, flux_x, flux_z, a)
+    Jx = advective_flux_x!(Jx, model, flux_x, a)
+    Jz = advective_flux_z!(Jz, model, flux_z, a)
+
+Flux of the cell quantity `a` carried by a flux on the faces, J = flux ℑ(a). With the mass flux ρu: the reversible flux
+of K, ρ K u (`a` = K); with the velocity: J_C = (p - p_R) u (`a` = p - p_R).
+"""
+function advective_flux_x!(Jx, model, flux_x, a)
     (; mgr, domain, spatial_scheme) = model
     (; ℑ) = operators(spatial_scheme)
     @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
@@ -328,68 +143,80 @@ function advective_flux!(Jx, Jz, model, flux_x, flux_z, a)
             Jx[I, j] = flux_x[I, j] * ℑ(a, (1,), (Face(),), I, j)
         end
     end
+    return periodize!(domain, Jx)
+end
+function advective_flux_z!(Jz, model, flux_z, a)
+    (; mgr, domain, spatial_scheme) = model
+    (; ℑ) = operators(spatial_scheme)
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
         @inbounds @vec for i in irange, J in jrange
             Jz[i, J] = flux_z[i, J] * ℑ(a, (2,), (Face(),), i, J)
         end
     end
-    periodize!(domain, (Jx, Jz))
-    return Jx, Jz
+    return periodize!(domain, Jz)
 end
 
 """
-    Jx, Jz = stress_work_flux!(Jx, Jz, model, (; uτ_x, uτ_z))
+    Jx = stress_work_flux_x!(Jx, model, uτ_x)
+    Jz = stress_work_flux_z!(Jz, model, uτ_z)
 
 Irreversible flux of K on the faces, -u·τ, from the work of the viscous stress of the tendencies.
 """
-function stress_work_flux!(Jx, Jz, model, (; uτ_x, uτ_z))
+function stress_work_flux_x!(Jx, model, uτ_x)
     (; mgr, domain) = model
     @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for I in irange, j in jrange
             Jx[I, j] = - uτ_x[I, j]
         end
     end
+    return periodize!(domain, Jx)
+end
+function stress_work_flux_z!(Jz, model, uτ_z)
+    (; mgr, domain) = model
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
         @inbounds @vec for i in irange, J in jrange
             Jz[i, J] = - uτ_z[i, J]
         end
     end
-    periodize!(domain, (Jx, Jz))
-    return Jx, Jz
+    return periodize!(domain, Jz)
 end
 
 """
-    Jx, Jz = potential_flux_rev!(Jx, Jz, model, advection, (mass_flux_x, mass_flux_z), Σ_B, conjvar, chempot)
+    Jx = potential_flux_rev_x!(Jx, model, mass_flux_x, mu, k, Σ_B, conjvar, chempot)
+    Jz = potential_flux_rev_z!(Jz, model, mass_flux_z, mw, k, Σ_B, conjvar, chempot)
 
 Reversible flux of P on the faces, ρ Σ u = ρu ℑ(Σ_B) + ρϑu ℑ(Σ_ϑ) + ρqu ℑ(Σ_q), from the mass flux and the tracer fluxes
-of the tendencies.
+`mu[:, :, k]` (ϑ) and `mu[:, :, k + 1]` (q) of the tendencies.
 """
-function potential_flux_rev!(Jx, Jz, model, advection, (mass_flux_x, mass_flux_z), Σ_B, conjvar, chempot)
+function potential_flux_rev_x!(Jx, model, mass_flux_x, mu, k, Σ_B, conjvar, chempot)
     (; mgr, domain, spatial_scheme) = model
     (; ℑ) = operators(spatial_scheme)
-    consvar_x, consvar_z = tracer_flux(model, advection, 1)
-    q_x, q_z = tracer_flux(model, advection, 2)
     @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for I in irange, j in jrange
-            Jx[I, j] = mass_flux_x[I, j] * ℑ(Σ_B, (1,), (Face(),), I, j) + consvar_x[I, j] * ℑ(conjvar, (1,), (Face(),), I, j) + q_x[I, j] * ℑ(chempot, (1,), (Face(),), I, j)
+            Jx[I, j] = mass_flux_x[I, j] * ℑ(Σ_B, (1,), (Face(),), I, j) + mu[I, j, k] * ℑ(conjvar, (1,), (Face(),), I, j) + mu[I, j, k+1] * ℑ(chempot, (1,), (Face(),), I, j)
         end
     end
+    return periodize!(domain, Jx)
+end
+function potential_flux_rev_z!(Jz, model, mass_flux_z, mw, k, Σ_B, conjvar, chempot)
+    (; mgr, domain, spatial_scheme) = model
+    (; ℑ) = operators(spatial_scheme)
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
         @inbounds @vec for i in irange, J in jrange
-            Jz[i, J] = mass_flux_z[i, J] * ℑ(Σ_B, (2,), (Face(),), i, J) + consvar_z[i, J] * ℑ(conjvar, (2,), (Face(),), i, J) + q_z[i, J] * ℑ(chempot, (2,), (Face(),), i, J)
+            Jz[i, J] = mass_flux_z[i, J] * ℑ(Σ_B, (2,), (Face(),), i, J) + mw[i, J, k] * ℑ(conjvar, (2,), (Face(),), i, J) + mw[i, J, k+1] * ℑ(chempot, (2,), (Face(),), i, J)
         end
     end
-    periodize!(domain, (Jx, Jz))
-    return Jx, Jz
+    return periodize!(domain, Jz)
 end
 
 """
-    Jx, Jz = potential_flux_irr!(Jx, Jz, model, irreversible, conjvar, chempot)
+    Jx = potential_flux_irr_x!(Jx, model, consflux_x, qflux_x, conjvar, chempot)
+    Jz = potential_flux_irr_z!(Jz, model, consflux_z, qflux_z, conjvar, chempot)
 
 Irreversible flux of P on the faces, Σ_ϑ J_ϑ + Σ_q J_q = ℑ(conjvar) consflux + ℑ(chempot) qflux. On a wall face, ℑ is the
 value of the cell (zero-gradient halo), as for the energy the wall delivers in the tendencies.
 """
-function potential_flux_irr!(Jx, Jz, model, (; consflux_x, consflux_z, qflux_x, qflux_z), conjvar, chempot)
+function potential_flux_irr_x!(Jx, model, consflux_x, qflux_x, conjvar, chempot)
     (; mgr, domain, spatial_scheme) = model
     (; ℑ) = operators(spatial_scheme)
     @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
@@ -397,13 +224,17 @@ function potential_flux_irr!(Jx, Jz, model, (; consflux_x, consflux_z, qflux_x, 
             Jx[I, j] = consflux_x[I, j] * ℑ(conjvar, (1,), (Face(),), I, j) + qflux_x[I, j] * ℑ(chempot, (1,), (Face(),), I, j)
         end
     end
+    return periodize!(domain, Jx)
+end
+function potential_flux_irr_z!(Jz, model, consflux_z, qflux_z, conjvar, chempot)
+    (; mgr, domain, spatial_scheme) = model
+    (; ℑ) = operators(spatial_scheme)
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
         @inbounds @vec for i in irange, J in jrange
             Jz[i, J] = consflux_z[i, J] * ℑ(conjvar, (2,), (Face(),), i, J) + qflux_z[i, J] * ℑ(chempot, (2,), (Face(),), i, J)
         end
     end
-    periodize!(domain, (Jx, Jz))
-    return Jx, Jz
+    return periodize!(domain, Jz)
 end
 
 """
@@ -422,28 +253,7 @@ function divergence!(div, model, Fx, Fz)
     return fill_halo!(domain, div, ZeroGradient())
 end
 
-"""
-    Fx, Fz = gradient_product!(Fx, Fz, model, (flux_x, flux_z), Σ)
-
--flux·∇Σ on the faces, F = -flux δΣ / Δ along each direction, for a flux on the faces and a potential Σ at the cells.
-It is a conversion C (mass or tracer flux of the tendencies, potential Σ_ϑ, Σ_q or Σ_B) or a heating Q (diffusive flux).
-"""
-function gradient_product!(Fx, Fz, model, (flux_x, flux_z), Σ)
-    (; mgr, domain, inv_dx, inv_dz, spatial_scheme) = model
-    (; δ) = operators(spatial_scheme)
-    @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for I in irange, j in jrange
-            Fx[I, j] = - flux_x[I, j] * inv_dx * δ(Σ, (1,), (Face(),), I, j)
-        end
-    end
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
-        @inbounds @vec for i in irange, J in jrange
-            Fz[i, J] = - flux_z[i, J] * inv_dz * δ(Σ, (2,), (Face(),), i, J)
-        end
-    end
-    periodize!(domain, (Fx, Fz))
-    return Fx, Fz
-end
+# Terms on the cells built from face products
 
 """
     C = faces_to_cells!(C, model, Fx, Fz)
@@ -462,12 +272,36 @@ function faces_to_cells!(C, model, Fx, Fz)
 end
 
 """
-    Fx, Fz = vortex_work!(Fx, Fz, model, advection, mass_flux_x, mass_flux_z)
+    C = gradient_product!(C, model, faces, (flux_x, flux_z), Σ)
 
-Work of the vortex force on the faces, -ρu·(ω×u): minus the mass flux times the vortex force (vortex_x, vortex_z) of the
-tendencies.
+-flux·∇Σ [W m⁻³] at the interior cells: the face product F = -flux δΣ / Δ along each direction, for a flux on the faces
+and a potential Σ at the cells, averaged to the cells. It is a conversion C_ϑ, C_q, C_Σ (mass or tracer flux of the
+tendencies, potential Σ_ϑ, Σ_q or Σ_B) or a heating Q_ϑ, Q_q (diffusive flux).
 """
-function vortex_work!(Fx, Fz, model, (; vortex_x, vortex_z), mass_flux_x, mass_flux_z)
+function gradient_product!(C, model, (Fx, Fz), (flux_x, flux_z), Σ)
+    (; mgr, domain, inv_dx, inv_dz, spatial_scheme) = model
+    (; δ) = operators(spatial_scheme)
+    @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
+        @inbounds @vec for I in irange, j in jrange
+            Fx[I, j] = - flux_x[I, j] * inv_dx * δ(Σ, (1,), (Face(),), I, j)
+        end
+    end
+    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
+        @inbounds @vec for i in irange, J in jrange
+            Fz[i, J] = - flux_z[i, J] * inv_dz * δ(Σ, (2,), (Face(),), i, J)
+        end
+    end
+    periodize!(domain, (Fx, Fz))
+    return faces_to_cells!(C, model, Fx, Fz)
+end
+
+"""
+    VF = vortex_work!(VF, model, faces, (; vortex_x, vortex_z), mass_flux_x, mass_flux_z)
+
+Work of the vortex force, VF = -ρu·(ω×u) [W m⁻³] at the interior cells: minus the mass flux times the vortex force
+(vortex_x, vortex_z) of the tendencies, on the faces, averaged to the cells.
+"""
+function vortex_work!(VF, model, (Fx, Fz), (; vortex_x, vortex_z), mass_flux_x, mass_flux_z)
     (; mgr, domain) = model
     @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for I in irange, j in jrange
@@ -480,17 +314,16 @@ function vortex_work!(Fx, Fz, model, (; vortex_x, vortex_z), mass_flux_x, mass_f
         end
     end
     periodize!(domain, (Fx, Fz))
-    return Fx, Fz
+    return faces_to_cells!(VF, model, Fx, Fz)
 end
 
 """
-    Fx, Fz = velocity_work!(Fx, Fz, model, (u, w), (du, dw))
+    dK = kinetic_energy_rate!(dK, model, faces, (u, w), (du, dw))
 
-u ∂ₜu and w ∂ₜw [W kg⁻¹] on the faces (both walls of a bounded dimension); their average to the cells (`faces_to_cells!`)
-is the tendency of K = (ℑx(u²) + ℑz(w²))/2. The tendencies du, dw have no halo faces in a periodic dimension, so the
-product is periodized rather than read there.
+Tendency of K = (ℑx(u²) + ℑz(w²))/2, ℑx(u ∂ₜu) + ℑz(w ∂ₜw) [W kg⁻¹] at the interior cells. The tendencies du, dw have no
+halo faces in a periodic dimension, so the products on the faces are periodized rather than read there.
 """
-function velocity_work!(Fx, Fz, model, (u, w), (du, dw))
+function kinetic_energy_rate!(dK, model, (Fx, Fz), (u, w), (du, dw))
     (; mgr, domain) = model
     @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for I in irange, j in jrange
@@ -503,8 +336,10 @@ function velocity_work!(Fx, Fz, model, (u, w), (du, dw))
         end
     end
     periodize!(domain, (Fx, Fz))
-    return Fx, Fz
+    return faces_to_cells!(dK, model, Fx, Fz)
 end
+
+# Tendencies of ρK and ρP
 
 """
     dρK = kinetic_energy_tendency!(dρK, model::FC2D, ρ, K, dK, dρ)
@@ -547,6 +382,8 @@ function potential_energy_tendency!(dρP, model::FC2D, Σ_B, conjvar, chempot, d
     return fill_halo!(domain, dρP, ZeroGradient())
 end
 
+# Residuals
+
 """
     res = heating_residual!(res, model, Q, Q_ϑ, Q_q, ρε)
 
@@ -566,7 +403,7 @@ end
     res = kinetic_budget_residual!(res, model, dρK, ∇J_rev, ∇J_irr, C, ρε, VF)
 
 ∂ₜ(ρK) + ∇·(J_K^rev + J_K^irr) - C + ρ ε_K - VF [W m⁻³] at the interior cells: not zero at a cell, but its sum over the
-box is (see `energy_budget`).
+box is (see `integrated_budget_residual`).
 """
 function kinetic_budget_residual!(res, model, dρK, ∇J_rev, ∇J_irr, C, ρε, VF)
     (; mgr, domain) = model
@@ -594,9 +431,11 @@ function potential_budget_residual!(res, model, dρP, ∇J_rev, ∇J_irr, C, Q_�
     return fill_halo!(domain, res, ZeroGradient())
 end
 
-#=
-Manipulated conversion, C = -∇·J_C + C_b + C_D, which is exact in the continuous equations only
-=#
+# Manipulated conversion, C = -∇·J_C + C_b + C_D, which is exact in the continuous equations only
+
+# the reference state is needed for the manipulated conversion; FC2D has none of its own
+require_reference(::Nothing) = error("the manipulated conversion needs a reference state: pass `reference` (e.g. that of the matching AN2D) to `diagnostics`")
+require_reference(reference) = reference
 
 """
     pa = pressure_anomaly!(pa, model, reference, pressure)
@@ -611,6 +450,17 @@ function pressure_anomaly!(pa, model, (; p_R), pressure)
         end
     end
     return fill_halo!(domain, pa, ZeroGradient())
+end
+
+"""
+    div = pressure_flux_divergence!(div, model, faces, u, w, pa)
+
+∇·J_C [W m⁻³] at the interior cells, with J_C = (p - p_R) u = pa ℑ(u) on the faces (`advective_flux_x!`).
+"""
+function pressure_flux_divergence!(div, model, (Fx, Fz), u, w, pa)
+    advective_flux_x!(Fx, model, u, pa)
+    advective_flux_z!(Fz, model, w, pa)
+    return divergence!(div, model, Fx, Fz)
 end
 
 """
@@ -642,26 +492,26 @@ function reference_buoyancy!(b, model::FC2D, (; ρ_R), (; m), scratch)
 end
 
 """
-    Cb_z, Cb = buoyancy_conversion!(Cb_z, Cb, model, mass_flux_z, b)
+    Cb = buoyancy_conversion!(Cb, model, (Fx, Fz), mass_flux_z, b)
 
-C_b = ρ b w: the mass flux times the buoyancy averaged to the w-faces, and its average to the interior cells.
+C_b = ρ b w [W m⁻³] at the interior cells: the mass flux times the buoyancy averaged to the w-faces (`Fz`), averaged to
+the cells.
 """
-function buoyancy_conversion!(Cb_z, Cb, model, mass_flux_z, b)
+function buoyancy_conversion!(Cb, model, (Fx, Fz), mass_flux_z, b)
     (; mgr, domain, spatial_scheme) = model
     (; ℑ) = operators(spatial_scheme)
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
         @inbounds @vec for i in irange, J in jrange
-            Cb_z[i, J] = mass_flux_z[i, J] * ℑ(b, (2,), (Face(),), i, J)
+            Fz[i, J] = mass_flux_z[i, J] * ℑ(b, (2,), (Face(),), i, J)
         end
     end
-    periodize!(domain, Cb_z)
+    periodize!(domain, Fz)
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
-            Cb[i, j] = ℑ(Cb_z, (2,), (Cell(),), i, j)
+            Cb[i, j] = ℑ(Fz, (2,), (Cell(),), i, j)
         end
     end
-    fill_halo!(domain, Cb, ZeroGradient())
-    return Cb_z, Cb
+    return fill_halo!(domain, Cb, ZeroGradient())
 end
 
 """
@@ -686,26 +536,4 @@ function conversion_residual!(res, model, C, ∇J_C, C_b, C_D)
         end
     end
     return fill_halo!(domain, res, ZeroGradient())
-end
-
-"""
-    budget = energy_budget(session)
-
-Volume integrals of the energy budget of an open diagnostics session, from the energetics diagnostics (see
-`energetics_diagnostics`), over the interior cells (per unit length along y) as a named tuple:
-- `kinetic`, `potential`: ∫ρK dV and ∫ρP dV [J m⁻¹],
-- `tendency`: ∫(∂ₜ(ρK) + ∂ₜ(ρP)) dV [W m⁻¹],
-- `boundary_flux`: ∮(J_K^rev + J_K^irr + J_P^rev + J_P^irr)·dS, the sum of the divergences of the fluxes (it telescopes
-  to the fluxes through the boundary) [W m⁻¹],
-- `vortex_work`: ∫VF dV [W m⁻¹],
-- `residual`: tendency + boundary_flux - vortex_work, zero to round-off for the energy-consistent schemes.
-"""
-function energy_budget(session)
-    (; domain, dx, dz) = session.model
-    integral(name) = sum(interior(domain, CookBooks.get(session, name))) * dx * dz
-    kinetic, potential = integral(:ρK), integral(:ρP)
-    tendency = integral(:dρK) + integral(:dρP)
-    boundary_flux = integral(:div_kinetic_flux_rev) + integral(:div_kinetic_flux_irr) + integral(:div_potential_flux_rev) + integral(:div_potential_flux_irr)
-    vortex_work = integral(:vortex_work)
-    return (; kinetic, potential, tendency, boundary_flux, vortex_work, residual = tendency + boundary_flux - vortex_work)
 end

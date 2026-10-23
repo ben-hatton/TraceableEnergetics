@@ -11,7 +11,7 @@
 # falls as the difference step ε grows (as ε^(-1/2)). Each case is computed with two steps; a genuine growth rate is
 # the same with both.
 #
-#   julia -t 4 experiments/vortex_schemes/linear.jl
+#   julia -t 4 examples/vortex_schemes/linear.jl
 #
 # Output: a table on screen and in output/linear.txt, and the eigenvalues of the stratified case in output/linear.png.
 include("../../tools/setup.jl")

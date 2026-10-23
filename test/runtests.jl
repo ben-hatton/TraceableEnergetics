@@ -64,6 +64,7 @@ include(joinpath(TESTS, "..", "tools", "scales.jl"))
         # FC2D has no reference state: the one of the matching AN2D (same density profile) serves for the manipulated conversion
         session = open(diagnostics(model; reference = test_reference(model)); state, dstate, scratch, model)
         for name in keys(diagnostic_info(model))
+            isempty(diagnostic_info(model)[name].location) && continue     # a number, not a field
             x, z = diagnostic_coordinates(model, name)
             @test size(interior_diagnostic(session, name)) == (length(x), length(z))
             @test all(isfinite, CookBooks.get(session, name))
@@ -85,10 +86,10 @@ include(joinpath(TESTS, "..", "tools", "scales.jl"))
         @test largest(:potential_budget_residual) < 1e-10 * largest(:dρP)
         @test largest(:heating_residual) < 1e-10 * largest(:heating)
         @test largest(:conversion_residual) < 1e-2 * largest(:conversion)
-        budget = energy_budget(session)
-        @test abs(budget.residual) < 1e-12 * budget.potential
-        @test abs(budget.vortex_work) < 1e-12 * budget.potential     # in the integral only: VF is not zero at a cell
-        label == "forced" || @test abs(budget.tendency) < 1e-12 * budget.potential    # no energy enters
+        potential = CookBooks.get(session, :integrated_potential_energy)
+        @test abs(CookBooks.get(session, :integrated_budget_residual)) < 1e-12 * potential
+        @test abs(CookBooks.get(session, :integrated_vortex_work)) < 1e-12 * potential     # in the integral only: VF is not zero at a cell
+        label == "forced" || @test abs(CookBooks.get(session, :integrated_energy_tendency)) < 1e-12 * potential    # no energy enters
         # the kernels allocate nothing on a serial manager (the arrays belong to the book)
         divergence_args = (CookBooks.get(session, :kinetic_flux_rev_x), CookBooks.get(session, :kinetic_flux_rev_z))
         out = copy(CookBooks.get(session, :div_kinetic_flux_rev))
@@ -118,7 +119,7 @@ include(joinpath(TESTS, "..", "tools", "scales.jl"))
             dstate, scratch = T.evaluate(T.tend!, model, state)
             session = open(diagnostics(model); state, dstate, scratch, model)
             get(name) = copy(interior_diagnostic(session, name))
-            (; model, dstate = map(copy, dstate), get = get, budget = energy_budget(session))
+            (; model, dstate = map(copy, dstate), get = get, scalar = name -> CookBooks.get(session, name))
         end
         (zero_gauge, shifted) = results
         # differences are round-off: the tendencies subtract ε c/Δ from δφ, the budget terms are noise of about 1e-11 of the
@@ -139,17 +140,19 @@ include(joinpath(TESTS, "..", "tools", "scales.jl"))
         @test zero_gauge.get(:kinematic_pressure_anomaly) .+ c ≈ shifted.get(:kinematic_pressure_anomaly)
         @test zero_gauge.get(:pressure) .+ c .* ρ_R ≈ shifted.get(:pressure)
         @test zero_gauge.get(:pressure_anomaly) .+ c .* ρ_R ≈ shifted.get(:pressure_anomaly)
-        for key in (:kinetic, :potential, :tendency, :boundary_flux, :vortex_work, :residual)
-            @test getproperty(shifted.budget, key) ≈ getproperty(zero_gauge.budget, key) atol = 1e-11 * zero_gauge.budget.potential
+        for name in (:integrated_kinetic_energy, :integrated_potential_energy, :integrated_energy_tendency, :integrated_boundary_flux,
+                     :integrated_vortex_work, :integrated_budget_residual)
+            @test shifted.scalar(name) ≈ zero_gauge.scalar(name) atol = 1e-11 * zero_gauge.scalar(:integrated_potential_energy)
         end
     end
-    # for either model, data files read back the full diagnostics, with halo, at each time, in either format, and
-    # videos hold their interior
+    # for either model, data files read back the full diagnostics, with halo, and the numbers, at each time, in either
+    # format, and videos hold their interior
     @testset "outputs, $M" for (M, T) in (("AN2D", AnelasticTests), ("FC2D", CompressibleTests))
         model = T.make_model(boundary = (Bounded, Bounded), walls = T.forced_box)
         state = T.make_state(model)
         dstate, scratch = T.evaluate(T.tend!, model, state)
-        names, book, dir = (:u, :w, :conservative_variable, :vorticity), diagnostics(model), mktempdir()
+        names = (:u, :w, :conservative_variable, :vorticity, :integrated_kinetic_energy)
+        book, dir = diagnostics(model), mktempdir()
         outputs = Outputs(DataFile(joinpath(dir, "out.nc"), model, names), DataFile(joinpath(dir, "out.jld2"), model, names),
                           DiagnosticVideo(model, :vorticity))
         foreach(t -> outputs(model, state, dstate, scratch, book, t), (0.0, 0.5))
@@ -158,7 +161,12 @@ include(joinpath(TESTS, "..", "tools", "scales.jl"))
         for path in readdir(dir; join = true), name in names
             field, t = read_diagnostic(path, name)
             @test t == [0.0, 0.5]
-            @test field[:, :, 1] == field[:, :, 2] == CookBooks.get(session, name)
+            expected = CookBooks.get(session, name)
+            if expected isa Number
+                @test field == [expected, expected]     # a vector over t
+            else
+                @test field[:, :, 1] == field[:, :, 2] == expected
+            end
         end
         @test outputs[3].frames == [interior_diagnostic(session, :vorticity), interior_diagnostic(session, :vorticity)]
         close(session)

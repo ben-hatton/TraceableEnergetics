@@ -2,9 +2,9 @@
 # models from the same model-independent initial fields, and shown as a video of a chosen diagnostic, the two models
 # side by side. Shows every piece needed to build and run a model.
 #
-#   julia -t 4 experiments/kelvin_helmholtz/run.jl
+#   julia -t 4 examples/kelvin_helmholtz/run.jl
 #
-# The video is saved to experiments/kelvin_helmholtz/output/kelvin_helmholtz.mp4.
+# The video is saved to examples/kelvin_helmholtz/output/kelvin_helmholtz.mp4.
 include("../../tools/setup.jl")
 
 using TraceableEnergetics, CFAnelastics, CFCompressible
@@ -88,7 +88,7 @@ params = (; Nslice = 120, slice_size = 0.25, dt_max = 0.05, cfl = 0.9)
 # initial states; FC2D also needs the pressure at the top, to build its balanced initial density
 states = (an = initialize(an, fields), fc = initialize(fc, fields; pref = 1e5))
 
-# run each model, recording a frame of the diagnostic at t = 0 and at each time slice (see experiments/recording for
+# run each model, recording a frame of the diagnostic at t = 0 and at each time slice (see examples/recording for
 # the other outputs: NetCDF and JLD2 data files)
 an_outputs = Outputs(DiagnosticVideo(an, diagnostic))
 CFAnelastics.loop(states.an, an, CFTimeSchemes.RungeKutta4(an), params; outputs = an_outputs)

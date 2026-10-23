@@ -27,7 +27,7 @@ Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
-CFAnelastics = "0.1.2"
+CFAnelastics = "0.1.3"
 CFBoxes = "0.0.5"
-CFCompressible = "0.1.3"
+CFCompressible = "0.1.4"
 CFPlanets = "0.1.5"

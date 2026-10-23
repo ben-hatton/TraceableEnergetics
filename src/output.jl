@@ -55,10 +55,11 @@ halo, one per time slice, for post-processing; the format is chosen from the ext
   `(Face(), Cell())`, with its `long_name`, `units` and `location` ("Xz"), the coordinates (x, X, z, Z) [m] of every
   point, halo included, the times `t` [s], and the grid (Mx, Mz, Hx, Hz, Lx, Lz, dx, dz) as global attributes;
 - `.jld2`: JLD2, the same contents, with the diagnostic at slice n under `"name/n"` and its time under `"t/n"`.
-An existing file is overwritten. `loop` closes it when the run ends (otherwise, `close(file)`).
+A number (location `()`, e.g. `integrated_kinetic_energy`) is a variable on `t` alone, with the location "none" in
+NetCDF. An existing file is overwritten. `loop` closes it when the run ends (otherwise, `close(file)`).
 
-`read_diagnostic` reads back the diagnostic `name` from either format: an (x, z, t) array, with halo, and the times
-[s].
+`read_diagnostic` reads back the diagnostic `name` from either format: an (x, z, t) array, with halo, for a field, a
+vector over t for a number, and the times [s].
 """
 struct DataFile{Handle, Names}
     handle::Handle              # NCDataset or JLD2 file
@@ -101,10 +102,11 @@ function create_file(::Val{:nc}, path, model, info)
     defDim(ds, "t", Inf)
     defVar(ds, "t", typeof(model.dx), ("t",); attrib = ["units" => "s"])
     # a variable per diagnostic, on the dimensions of its grid location, e.g. (Face(), Cell()) ↦ ("X", "z", "t")
+    # and a number, of location (), on ("t",) alone, with the location "none"
     for (name, (; long_name, units, location)) in pairs(info)
         dims = map(dimname, location, (1, 2))
         defVar(ds, string(name), typeof(model.dx), (dims..., "t");
-               attrib = ["long_name" => long_name, "units" => units, "location" => join(dims)])
+               attrib = ["long_name" => long_name, "units" => units, "location" => isempty(dims) ? "none" : join(dims)])
     end
     return ds
 end
@@ -118,7 +120,9 @@ function record!(file::DataFile{<:NCDataset}, session, t)
     ds = file.handle
     ds["t"][n] = t
     for name in file.names
-        ds[string(name)][:, :, n] = CookBooks.get(session, name)
+        value = CookBooks.get(session, name)
+        # slice n of the variable: [:, :, n] for a field, [n] for a number (ndims of a number is 0)
+        ds[string(name)][ntuple(_ -> Colon(), ndims(value))..., n] = value
     end
     return file
 end

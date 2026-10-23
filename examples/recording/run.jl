@@ -5,9 +5,9 @@
 #     post-processing; `read_diagnostic` reads either format back to the same array;
 #   - videos, with the interior of one diagnostic, for viewing.
 #
-#   julia -t 4 experiments/recording/run.jl
+#   julia -t 4 examples/recording/run.jl
 #
-# The outputs are saved to experiments/recording/output/.
+# The outputs are saved to examples/recording/output/.
 include("../../tools/setup.jl")
 
 using TraceableEnergetics, CFAnelastics
@@ -15,7 +15,7 @@ using CFBoxes, CFDiffusionSchemes, ClimFluids, CFTimeSchemes
 using CFPlanets: Tank2D
 
 #####
-##### Model: a small anelastic box (see experiments/kelvin_helmholtz for each choice)
+##### Model: a small anelastic box (see examples/kelvin_helmholtz for each choice)
 #####
 
 space = Tank2D(Lx = 1.0, Lz = 0.5, g = 10.0)

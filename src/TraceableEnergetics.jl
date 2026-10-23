@@ -18,7 +18,6 @@ export linear_profile, tanh_profile, shear, jet, couette, mode, noise, consvar_f
 export setup, kelvin_helmholtz, rayleigh_benard, rising_bubble, lock_exchange
 export initialize
 export diagnostics, diagnostic_info, interior_diagnostic, diagnostic_coordinates
-export energetics_diagnostics, energetics_info, energy_budget
 export Outputs, record!, DataFile, read_diagnostic, DiagnosticVideo
 
 include("setups.jl")

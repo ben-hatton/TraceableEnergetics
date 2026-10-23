@@ -7,18 +7,27 @@ compressible equations, using models built in the [ClimFlows](https://github.com
 
 ```
 src/               the TraceableEnergetics package: model-independent setups (initial conditions) and their
-                   lowering to each model's initialize
-experiments/       simulations that use the packages (e.g. shear/: Kelvin-Helmholtz)
-tools/             helpers shared by scripts (setup.jl, output, NetCDF)
-test/              setups tests, canonical setups and diagnostics on both models; cross-model tests
+                   lowering to each model's initialize, the diagnostics of either model with the energy budget,
+                   and their output during a run (NetCDF or JLD2 data files, videos)
+examples/          scripts that run the models, each writing to its own output/ (untracked):
+  kelvin_helmholtz/  a shear layer in both models, side by side
+  recording/         the outputs of a run: data files and videos, and reading them back
+  energy_budget/     local and global energy budgets of a rising bubble in both models
+  vortex_schemes/    energy conservation and nonlinear behaviour of the vortex-force schemes
+tools/             helpers shared by scripts (setup.jl, scales, stratification)
+notes/             the specifications of the models, the energy budget and the APE reference state
+test/              setups tests, canonical setups, diagnostics and outputs on both models; cross-model tests
 ```
 
-The models are ordinary dependencies, developed in their own repositories:
-[CFAnelastics](https://github.com/ben-hatton/CFAnelastics.jl) (AN2D) and
-[CFCompressible](https://github.com/ben-hatton/CFCompressible.jl) (FC2D), both forks of
-[ClimFlows](https://github.com/ClimFlows) packages, on the branch `traceable-energetics`. `Project.toml` installs them
-from there through `[sources]` (Julia ≥ 1.11). Their own test suites (conservation, walls, allocations) run in their
-repositories.
+The models are ordinary registered dependencies, developed in their own repositories:
+[CFAnelastics](https://github.com/ClimFlows/CFAnelastics.jl) (AN2D) and
+[CFCompressible](https://github.com/ClimFlows/CFCompressible.jl) (FC2D), with compat entries in `Project.toml`. Their
+own test suites (conservation, walls, allocations) run in their repositories.
+
+To record the energy budget during a run, pass the book of `TraceableEnergetics.diagnostics` to `loop`, which
+otherwise hands its outputs the diagnostics of the model package:
+`loop(state, model, time_scheme, params; outputs, book = diagnostics(model))`
+(see examples/energy_budget/run.jl).
 
 ## Getting started
 
@@ -33,7 +42,7 @@ Scripts start with `include("<path to>/tools/setup.jl")`, which activates this e
 
 ## Updating or changing the models
 
-`Manifest.toml` is untracked, so the models follow the tip of `traceable-energetics`: to pick up new commits run
-`Pkg.update("CFAnelastics", "CFCompressible")`. To change a model, work in a clone of its fork (e.g. with
-`Pkg.develop(path = "<clone>")` in a scratch environment), push the branch to the fork, then update here.
-Changes to ClimFlows packages go upstream by pull request from the fork.
+`Manifest.toml` is untracked: to pick up new releases of the models run `Pkg.update(["CFAnelastics", "CFCompressible"])`,
+and raise their compat entries when this repository needs a new feature. To change a model, develop it from a clone
+of your fork (`Pkg.develop(path = "<clone>")`, which changes only the Manifest), push the branch to the fork and open a
+pull request upstream; once it is released, `Pkg.free` the package and raise its compat entry here.

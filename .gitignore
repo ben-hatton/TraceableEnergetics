@@ -31,6 +31,13 @@ JuliaLocalPreferences.toml
 # Conda environment and metadata created in the project directory by the CondaPkg package
 .CondaPkg/
 
+# LaTeX build files of the notes (the .tex sources and the PDFs are tracked)
+notes/*.aux
+notes/*.log
+notes/*.toc
+notes/*.fls
+notes/*.fdb_latexmk
+
 # Experiment output (videos, data)
-experiments/*/output/
+examples/*/output/
 TraceableEnergetics.code-workspace
