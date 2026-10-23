@@ -17,6 +17,8 @@ equations, using energy-consistent finite-volume discretisations of both models 
   `traceable-energetics` through [sources] in Project.toml.
 - experiments/, tools/: the science that uses the packages. Experiment-specific code (I/O, plotting,
   setups) lives here or in src/, never in the packages.
+- notes/: the specifications. traceable_energetics.tex specifies the models; ape_reference_state.tex specifies the
+  algorithms for the reference state of available potential energy and records the decisions taken with the user.
 
 ## MANAGING THE PACKAGES
 - CFAnelastics and CFCompressible are ClimFlows packages like the others: the rules for upstream ClimFlows packages
@@ -48,6 +50,9 @@ change in this repository.
 - AN/FC parity, as above.
 - Tendencies never read uninitialised memory or depend on halo values that boundary conditions don't define,
   and never modify the interior of the state.
+- Tests of a new method cover its limiting cases and extreme cases, in more than one float type, and find where it
+  breaks: e.g. the parameter at which an approximation fails, or the precision below which a result loses meaning. The
+  suite uses small grids; larger studies go in scripts.
 
 ## CODE CONVENTIONS
 - ClimFlows idioms: ManagedLoops `@with mgr, let ... @vec for ...`; CFBoxes `alloc!(scratch_, F, mgr, domain, location)`
@@ -60,6 +65,30 @@ change in this repository.
   faces, `i, j` centres.
 - Each kernel's comment states the continuous equation and its discrete form and staggering.
 - Every exported type and function gets a docstring with units and sign conventions.
+- Comments and docstrings describe what the code does and write out in full the equations it represents. Don't refer to
+  the notes (file names, section or equation numbers) in place of an equation. Most of this code is nontrivial: comment
+  individual lines so that it is clear what each one does.
+- Names are descriptive, in code and notes: name methods and quantities by what they do (e.g. "from the diabatic
+  tendencies", not "method B"). Avoid words with another meaning in a fluid model (e.g. "transport", which means
+  advection; the reference state is a "rearrangement" of the parcels, with a "placement" of their mass).
+- Precision: all code is generic in the float type `F` of the model, which the user chooses freely (Float32, Float64,
+  Float128, BigFloat). Nothing is fixed to Float64: no Float64 literals in kernels (use `F(...)` or `oftype`),
+  tolerances scale with `eps(F)`, and no step that determines a result may use a library that only works in Float64.
+  ClimFluids promotes to the type of the fluid's parameters, so the fluid must be built with parameters of type `F`.
+- Performance: optimise for the CPU. Use the model's manager (`@with mgr`, `@vec`) for threads and SIMD wherever a loop
+  allows it.
+- Allocations: allocate as little as possible and reuse storage. Workspaces are allocated once and kept (e.g. closed
+  over by the recipes of a CookBook); never allocate state-sized arrays per call. If allocations become a problem,
+  report it to the user rather than working around it.
+- Dependencies: take routines from existing packages, unless writing our own removes a bottleneck or the package
+  breaks the precision rule above.
+- Thermodynamics: take the specific volume and its derivatives from ClimFluids, e.g.
+  `fluid(:p, :consvar, :q).volume_functions(p, consvar, q)` returns (v, ∂v/∂p, ∂v/∂consvar, ∂v/∂q); don't rebuild them
+  by finite differences or automatic differentiation.
+- Diagnostics: define new diagnostics as `entry(long_name, units, location, recipe)` in their own function and merge
+  them into the book of `diagnostics(model; ...)`, as the energetics entries are. During a run they are computed at the
+  outputs of `loop` (t = 0 and the end of each slice, set by `Nslice` and `slice_size`). Vertical profiles are 1D
+  variables (on the z dimension, or a dimension of their own such as reference-state slots), not full cell fields.
 
 ## WORKING WITH THE USER
 Check in with the user:
