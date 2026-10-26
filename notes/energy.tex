@@ -345,7 +345,7 @@ Reference pressure \(p_*(z, t)\), parcel reference position \(z_*(\vartheta, q, 
 
 Available energy (AE):
 \begin{equation}
-    A
+    \Pi
     =
     \Sigma(\vartheta, q, z, p)
     - \Sigma(\vartheta, q, z_*, p_*(z_*, t))
@@ -353,7 +353,7 @@ Available energy (AE):
 \end{equation}
 Decomposed as
 \begin{equation}
-     A = \Pi_1 + \Pi_2
+     \Pi = \Pi_1 + \Pi_2
 \end{equation}
 with
 \begin{align}
@@ -934,13 +934,13 @@ Terms evaluated at the intermediate state \((z, p_*(z, t))\) exchange energy bet
 
 Available energy, summing the \(\Pi_1\) and \(\Pi_2\) budgets, with fluxes
 \begin{align}
-    \mathbf{J}_A^{rev}
+    \mathbf{J}_\Pi^{rev}
     & =
     \mathbf{J}_{\Pi_1}^{rev} + \mathbf{J}_{\Pi_2}^{rev}
     =
-    \rho A \mathbf{u}
+    \rho \Pi \mathbf{u}
     \\
-    \mathbf{J}_A^{irr}
+    \mathbf{J}_\Pi^{irr}
     & =
     \mathbf{J}_{\Pi_1}^{irr} + \mathbf{J}_{\Pi_2}^{irr}
     =
@@ -950,7 +950,7 @@ Available energy, summing the \(\Pi_1\) and \(\Pi_2\) budgets, with fluxes
 \end{align}
 and
 \begin{equation}
-    R_A
+    R_\Pi
     =
     R_{\Pi_1} + R_{\Pi_2}
     =
@@ -959,33 +959,33 @@ and
 \end{equation}
 Then
 \begin{equation}
-    \partial_t (\rho A)
+    \partial_t (\rho \Pi)
     =
     - \nabla \cdot (
-        \mathbf{J}_A^{rev}
-        + \mathbf{J}_A^{irr}
+        \mathbf{J}_\Pi^{rev}
+        + \mathbf{J}_\Pi^{irr}
         )
     - C_b^* - C_D^*
     - (Q_\vartheta - Q_\vartheta^*)
     - (Q_q - Q_q^*)
     + Q - Q^*
-    + R_A
+    + R_\Pi
 \end{equation}
 with \(C_D^*\) in the compressible case only.
 
 Kinetic plus available energy, using closure \(Q = Q_\vartheta + Q_q + \rho \varepsilon_K\):
 \begin{equation}
-    \partial_t \left( \rho (K + A) \right)
+    \partial_t \left( \rho (K + \Pi) \right)
     =
     - \nabla \cdot (
         \mathbf{J}_K^{rev}
         + \mathbf{J}_K^{irr}
         + \mathbf{J}_C^*
-        + \mathbf{J}_A^{rev}
-        + \mathbf{J}_A^{irr}
+        + \mathbf{J}_\Pi^{rev}
+        + \mathbf{J}_\Pi^{irr}
         )
     + Q_\vartheta^* + Q_q^* - Q^*
-    + R_A
+    + R_\Pi
     + VF
 \end{equation}
 
@@ -998,9 +998,9 @@ Volume constraint (appendix \ref{app:variational}) with \(f = \partial_t p_*\):
 \end{equation}
 so
 \begin{equation}
-    \int_V R_A \, \mathrm{d}V = 0
+    \int_V R_\Pi \, \mathrm{d}V = 0
 \end{equation}
-consistent with the stationarity of \(\int_V A \, \mathrm{d}m\) with respect to the reference state.
+consistent with the stationarity of \(\int_V \Pi \, \mathrm{d}m\) with respect to the reference state.
 
 Closed, fixed domain, so \(\frac{\mathrm{d}}{\mathrm{d} t} \int_V X \, \mathrm{d}m = \int_V \partial_t (\rho X) \, \mathrm{d}V\) and the flux divergences integrate to zero:
 \begin{align}
@@ -1025,7 +1025,7 @@ Closed, fixed domain, so \(\frac{\mathrm{d}}{\mathrm{d} t} \int_V X \, \mathrm{d
         - R_{\Pi_1}
     \right) \mathrm{d}V
     \\
-    \frac{\mathrm{d}}{\mathrm{d} t} \int_V A \, \mathrm{d}m
+    \frac{\mathrm{d}}{\mathrm{d} t} \int_V \Pi \, \mathrm{d}m
     & =
     \int_V \left(
         - C_b^* - C_D^*
@@ -1042,7 +1042,7 @@ Closed, fixed domain, so \(\frac{\mathrm{d}}{\mathrm{d} t} \int_V X \, \mathrm{d
         + VF
     \right) \mathrm{d}V
     \\
-    \frac{\mathrm{d}}{\mathrm{d} t} \int_V (K + A) \, \mathrm{d}m
+    \frac{\mathrm{d}}{\mathrm{d} t} \int_V (K + \Pi) \, \mathrm{d}m
     & =
     \int_V \left(
         Q_\vartheta^* + Q_q^* - Q^*
@@ -1075,7 +1075,7 @@ Beyond the model state, budgets need only the reference fields \(z_*\), \(p_*\),
 \label{app:variational}
 Using \(P = \Sigma - p \Sigma_p\),
 \begin{equation}
-    A
+    \Pi
     =
     P
     - \Sigma(\vartheta, q, z_*, p_*(z_*, t))
@@ -1083,19 +1083,19 @@ Using \(P = \Sigma - p \Sigma_p\),
 \end{equation}
 Note \(\Sigma_p \mathrm{d}m = \mathrm{d}V\) in both cases (\(\Sigma_p = 1/\rho\), FC; \(\Sigma_p = 1/\rho_R\), AN), so
 \begin{equation}
-    \int_V A \, \mathrm{d}m
+    \int_V \Pi \, \mathrm{d}m
     =
     \int_V P \, \mathrm{d}m
     - \int_V \Sigma(\vartheta, q, z_*, p_*(z_*, t)) \, \mathrm{d}m
     + \int_V p_*(z, t) \, \mathrm{d}V
 \end{equation}
 Only the last two terms depend on the reference state \((z_*, p_*)\).
-Maximising \(\int_V A \, \mathrm{d}m\) is equivalent to minimising the background energy \(\int_V (P - A) \, \mathrm{d}m\) (Lorenz).
+Maximising \(\int_V \Pi \, \mathrm{d}m\) is equivalent to minimising the background energy \(\int_V (P - \Pi) \, \mathrm{d}m\) (Lorenz).
 Variations are taken at fixed \(t\), with \(\vartheta\), \(q\) and \(\mathrm{d}m\) of each parcel fixed (adiabatic, mass conserving rearrangement).
 
 \subsection{Variation of \texorpdfstring{\(p_*\)}{p*}}
 \begin{equation}
-    \delta \int_V A \, \mathrm{d}m
+    \delta \int_V \Pi \, \mathrm{d}m
     =
     - \int_V \Sigma_p(\vartheta, q, z_*, p_*(z_*, t)) \, \delta p_*(z_*) \, \mathrm{d}m
     + \int_V \delta p_*(z) \, \mathrm{d}V
@@ -1112,7 +1112,7 @@ So \(p_*\) acts as a Lagrange multiplier for this volume constraint (exactly so 
 
 For reference states satisfying the volume constraint (taking \(f = p_*\)),
 \begin{equation}
-    \int_V A \, \mathrm{d}m
+    \int_V \Pi \, \mathrm{d}m
     =
     \int_V P \, \mathrm{d}m
     - \int_V
@@ -1125,7 +1125,7 @@ i.e.\ potential energy minus the potential energy of the rearranged state (Loren
 \subsection{Variation of \texorpdfstring{\(z_*\)}{z*}}
 At fixed \(p_*\), each parcel's \(z_*\) may be varied independently:
 \begin{align}
-    \delta \int_V A \, \mathrm{d}m
+    \delta \int_V \Pi \, \mathrm{d}m
     & =
     - \int_V
     \left.
@@ -1147,7 +1147,7 @@ At fixed \(p_*\), each parcel's \(z_*\) may be varied independently:
 First order: vanishing for arbitrary \(\delta z_*\) gives the LNB equation for every parcel.
 Since every parcel then sits at its \(z_*\), \(p_*\) is in hydrostatic balance with the reference state.
 
-Second order: \(\int_V A \, \mathrm{d}m\) is a (strict local) maximum with respect to \(z_*\) if
+Second order: \(\int_V \Pi \, \mathrm{d}m\) is a (strict local) maximum with respect to \(z_*\) if
 \begin{equation}
     \left.
     \frac{\partial^2}{\partial z^2}
@@ -1156,12 +1156,12 @@ Second order: \(\int_V A \, \mathrm{d}m\) is a (strict local) maximum with respe
     = N_*^2
     > 0
 \end{equation}
-Each parcel's \(A\) is itself maximised with respect to its \(z_*\), since \(A\) depends on \(z_*\) only through \(- \Sigma(\vartheta, q, z_*, p_*(z_*, t))\).
+Each parcel's \(\Pi\) is itself maximised with respect to its \(z_*\), since \(\Pi\) depends on \(z_*\) only through \(- \Sigma(\vartheta, q, z_*, p_*(z_*, t))\).
 
 \subsection{Second variation in \texorpdfstring{\(p_*\)}{p*}}
 At fixed \(z_*\),
 \begin{equation}
-    \delta^2 \int_V A \, \mathrm{d}m
+    \delta^2 \int_V \Pi \, \mathrm{d}m
     =
     - \frac{1}{2} \int_V \Sigma_{pp}(\vartheta, q, z_*, p_*(z_*, t)) \, (\delta p_*(z_*))^2 \, \mathrm{d}m
 \end{equation}
@@ -1183,7 +1183,7 @@ Varying both, \(z_* \to z_* + \delta z_*\) and \(p_* \to p_* + \delta p_*\), the
 \end{equation}
 so the full second variation is
 \begin{align}
-    \delta^2 \int_V A \, \mathrm{d}m
+    \delta^2 \int_V \Pi \, \mathrm{d}m
     & =
     - \frac{1}{2} \int_V N_*^2 (\delta z_*)^2 \, \mathrm{d}m
     - \int_V
@@ -1254,7 +1254,7 @@ Linearising it, for arbitrary \(f(z)\),
     \mathrm{d}m
     = 0
 \end{equation}
-The reference state is a stationary point of \(\int_V A \, \mathrm{d}m\) for unconstrained variations, so along admissible perturbations its second variation is the full second variation above, restricted to \((\delta z_*, \delta p_*)\) satisfying this.
+The reference state is a stationary point of \(\int_V \Pi \, \mathrm{d}m\) for unconstrained variations, so along admissible perturbations its second variation is the full second variation above, restricted to \((\delta z_*, \delta p_*)\) satisfying this.
 
 Choosing \(f = \delta p_*\), the mixed term is
 \begin{equation}
@@ -1272,7 +1272,7 @@ Choosing \(f = \delta p_*\), the mixed term is
 \end{equation}
 so for admissible variations
 \begin{equation}
-    \delta^2 \int_V A \, \mathrm{d}m
+    \delta^2 \int_V \Pi \, \mathrm{d}m
     =
     - \frac{1}{2} \int_V N_*^2 (\delta z_*)^2 \, \mathrm{d}m
     + \frac{1}{2} \int_V \Sigma_{pp}(\vartheta, q, z_*, p_*(z_*, t)) \, (\delta p_*(z_*))^2 \, \mathrm{d}m
@@ -1280,9 +1280,9 @@ so for admissible variations
 
 Compressible: \(\Sigma_{pp} = v_p < 0\), so the mixed and \(\delta p_*^2\) terms combine into a negative definite contribution.
 
-Anelastic: \(\Sigma_{pp} = 0\), so the mixed term vanishes on admissible variations, and \(\int_V A \, \mathrm{d}m\) does not depend on \(p_*\) along them (\(p_*\) is a pure Lagrange multiplier).
+Anelastic: \(\Sigma_{pp} = 0\), so the mixed term vanishes on admissible variations, and \(\int_V \Pi \, \mathrm{d}m\) does not depend on \(p_*\) along them (\(p_*\) is a pure Lagrange multiplier).
 
-Hence \(N_*^2 > 0\) is sufficient for a maximum of \(\int_V A \, \mathrm{d}m\) over admissible reference states, and the mixed variation does not change the second order condition.
-Conversely, \(N_*^2 \geq 0\) is necessary: displacing a single parcel, with compensating displacements spread over many others, gives \(\delta^2 \int_V A \, \mathrm{d}m \to - \frac{1}{2} N_*^2 (\delta z_*)^2 \mathrm{d}m\) for that parcel.
+Hence \(N_*^2 > 0\) is sufficient for a maximum of \(\int_V \Pi \, \mathrm{d}m\) over admissible reference states, and the mixed variation does not change the second order condition.
+Conversely, \(N_*^2 \geq 0\) is necessary: displacing a single parcel, with compensating displacements spread over many others, gives \(\delta^2 \int_V \Pi \, \mathrm{d}m \to - \frac{1}{2} N_*^2 (\delta z_*)^2 \mathrm{d}m\) for that parcel.
 
 \end{document}

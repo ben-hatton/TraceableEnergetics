@@ -46,7 +46,7 @@ function record! end
 #####
 
 """
-    file = DataFile(path, model, names)
+    file = DataFile(path, model, names; reference_state = nothing)
     field, t = read_diagnostic(path, name)
 
 File of the diagnostics `names` (a tuple of symbols, see `diagnostic_info(model)`) of `model`, as full arrays with
@@ -56,22 +56,24 @@ halo, one per time slice, for post-processing; the format is chosen from the ext
   point, halo included, the times `t` [s], and the grid (Mx, Mz, Hx, Hz, Lx, Lz, dx, dz) as global attributes;
 - `.jld2`: JLD2, the same contents, with the diagnostic at slice n under `"name/n"` and its time under `"t/n"`.
 A number (location `()`, e.g. `integrated_kinetic_energy`) is a variable on `t` alone, with the location "none" in
-NetCDF. An existing file is overwritten. `loop` closes it when the run ends (otherwise, `close(file)`).
+NetCDF. A profile on the z axis (location `(nothing, Cell())`, e.g. `p_star`) is a variable on (z, t). The diagnostics
+of a reference state need it as the keyword `reference_state`, as for `diagnostics`. An existing file is overwritten.
+`loop` closes it when the run ends (otherwise, `close(file)`).
 
 `read_diagnostic` reads back the diagnostic `name` from either format: an (x, z, t) array, with halo, for a field, a
 vector over t for a number, and the times [s].
 """
-struct DataFile{Handle, Names}
-    handle::Handle              # NCDataset or JLD2 file
-    names::Names                # tuple of the recorded diagnostics
-    slices::Base.RefValue{Int}  # number of slices recorded so far
+mutable struct DataFile{Handle, Names}
+    const handle::Handle        # NCDataset or JLD2 file
+    const names::Names          # tuple of the recorded diagnostics
+    slices::Int                 # number of slices recorded so far
 end
 
-function DataFile(path::AbstractString, model, names::Tuple)
+function DataFile(path::AbstractString, model, names::Tuple; reference_state = nothing)
     mkpath(dirname(abspath(path)))
-    info = NamedTuple{names}(diagnostic_info(model))
+    info = NamedTuple{names}(diagnostic_info(model; reference_state))
     handle = create_file(Val(Symbol(extension(path))), path, model, info)
-    return DataFile(handle, names, Ref(0))
+    return DataFile(handle, names, 0)
 end
 
 Base.close(file::DataFile) = close(file.handle)
@@ -82,10 +84,20 @@ extension(path) = lstrip(splitext(path)[2], '.')
 create_file(::Val{E}, path, model, info) where E = throw(ArgumentError("unknown data file format .$E, use .nc or .jld2"))
 read_diagnostic(::Val{E}, path, name) where E = throw(ArgumentError("unknown data file format .$E, use .nc or .jld2"))
 
-# grid of the model, and the coordinates [m] of each grid location, halo included
+"""
+    grid = grid(model)
+
+The grid of `model`: the numbers of cells (Mx, Mz) and of halo cells (Hx, Hz), the size of the box (Lx, Lz) [m] and
+the cell sizes (dx, dz) [m].
+"""
 grid((; domain, space, dx, dz)) = let (Mx, Mz) = dims(domain), (Hx, Hz) = halo_size(domain)
     (; Mx, Mz, Hx, Hz, space.Lx, space.Lz, dx, dz)
 end
+"""
+    coordinates = grid_coordinates(model)
+
+The coordinates [m] of each grid location of `model`, halo included: x and z of the cell centres, X and Z of the faces.
+"""
 grid_coordinates((; domain, dx, dz)) =
     (; x = cellgrid(domain, dx, 1), X = facegrid(domain, dx, 1), z = cellgrid(domain, dz, 2), Z = facegrid(domain, dz, 2))
 
@@ -101,22 +113,27 @@ function create_file(::Val{:nc}, path, model, info)
     end
     defDim(ds, "t", Inf)
     defVar(ds, "t", typeof(model.dx), ("t",); attrib = ["units" => "s"])
-    # a variable per diagnostic, on the dimensions of its grid location, e.g. (Face(), Cell()) ↦ ("X", "z", "t")
-    # and a number, of location (), on ("t",) alone, with the location "none"
+    # a variable per diagnostic, on the dimensions of its grid location, e.g. (Face(), Cell()) ↦ ("X", "z", "t"),
+    # (nothing, Cell()) ↦ ("z", "t"), and a number, of location (), on ("t",) alone, with the location "none"
     for (name, (; long_name, units, location)) in pairs(info)
-        dims = map(dimname, location, (1, 2))
+        dims = Tuple(dimname(where, d) for (d, where) in enumerate(location) if !isnothing(where))
         defVar(ds, string(name), typeof(model.dx), (dims..., "t");
                attrib = ["long_name" => long_name, "units" => units, "location" => isempty(dims) ? "none" : join(dims)])
     end
     return ds
 end
 
-# NetCDF dimension name along dimension d (1 = x, 2 = z) of a grid location: lower case cells, upper case faces
+"""
+    name = dimname(location, d)
+
+The NetCDF dimension name along dimension d (1 = x, 2 = z) of a grid location: lower case for cells, upper case for
+faces.
+"""
 dimname(::Cell, d) = ("x", "z")[d]
 dimname(::Face, d) = ("X", "Z")[d]
 
 function record!(file::DataFile{<:NCDataset}, session, t)
-    n = file.slices[] += 1
+    n = file.slices += 1
     ds = file.handle
     ds["t"][n] = t
     for name in file.names
@@ -142,7 +159,7 @@ function create_file(::Val{:jld2}, path, model, info)
 end
 
 function record!(file::DataFile{<:JLD2.JLDFile}, session, t)
-    n = file.slices[] += 1
+    n = file.slices += 1
     file.handle["t/$n"] = t
     for name in file.names
         file.handle["$name/$n"] = CookBooks.get(session, name)

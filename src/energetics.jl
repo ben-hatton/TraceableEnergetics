@@ -17,13 +17,6 @@
 # arrays on the x and z faces that the diagnostics share.
 
 """
-    entry = entry(long_name, units, location, recipe)
-
-A diagnostic: its `info = (; long_name, units, location)` and its `recipe` for a `CookBook`.
-"""
-entry(long_name, units, location, recipe) = ((; long_name, units, location), recipe)
-
-"""
     (mu, mw) = tracer_flux((; mu, mw), k)
 
 Advective flux of the k-th advected density (ρ_R ϑ u, ρ_R ϑ w), as views on the x and z faces, from the `advection`
@@ -433,7 +426,12 @@ end
 
 # Manipulated conversion, C = -∇·J_C + C_b + C_D, which is exact in the continuous equations only
 
-# the reference state is needed for the manipulated conversion; FC2D has none of its own
+"""
+    reference = require_reference(reference)
+
+The reference state (`AnelasticReference`) needed for the manipulated conversion, or an error if it is `nothing`: FC2D
+has none of its own.
+"""
 require_reference(::Nothing) = error("the manipulated conversion needs a reference state: pass `reference` (e.g. that of the matching AN2D) to `diagnostics`")
 require_reference(reference) = reference
 

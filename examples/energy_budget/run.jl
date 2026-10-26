@@ -12,6 +12,25 @@
 #     d/dt ∫ρ(K + P) dV = -∮(J_K^rev + J_K^irr + J_P^rev + J_P^irr)·dS + ∫VF dV,
 # zero for the closed walls here, and its residual is zero to round-off for the energy-consistent schemes.
 #
+# The available energy is relative to the Lorenz reference state, the rearrangement of the parcels (the cells, each
+# keeping its mass, ϑ and q) of least potential energy, computed at each output: its pressure P_*(z) and the reference
+# height z_* of each parcel, the minimiser of the parcel's static energy along P_*. The available energy (AE) of a parcel
+# at height z and pressure p is
+#     Π = Σ(z, p) - Σ(z_*, P_*(z_*)) - (p - P_*(z)) Σ_p(z, p) = Π₁ + Π₂,
+# the sum of the available compressible energy (ACE) Π₁ = Σ(z, p) - Σ(z, P_*(z)) - (p - P_*(z)) Σ_p(z, p), the
+# compression from P_*(z) to p at fixed z (h(p) - h(P_*(z)) - (p - P_*(z)) v for FC2D, zero for AN2D, where Σ is linear in
+# p), and the available potential energy (APE) Π₂ = Σ(z, P_*(z)) - Σ(z_*, P_*(z_*)), the displacement from z_* to z
+# through the reference state. Each is computed parcel by parcel and integrated over the box, ∫ρΠ dV = Σ_n m_n Π_n, and
+# the background potential energy is ∫ρ(P - Π) dV. With closed walls, the integral of the divergence in
+# C = -∇·[(p - P_*)u] + C_b^* + C_D^* vanishes, so ∫C dV is the conversion from available energy to K, and the global
+# budgets are
+#     d/dt ∫ρΠ dV = -∫C dV + G,    d/dt ∫ρ(P - Π) dV = ∫(Q - Q_ϑ - Q_q) dV - G,
+# with G = ∫(-Q_ϑ + Q_ϑ^* - Q_q + Q_q^* + Q - Q^*) dV the diabatic generation of available energy. Its terms at the
+# reference state are not diagnosed yet: G is inferred as d/dt ∫ρΠ dV + ∫C dV, with the time derivative from differences
+# of successive outputs and the rates averaged between them (both second order in the output interval; the same estimate
+# for ∫ρK, against its exact tendency, measures the error of the differences). The available energy of the neutral state
+# at rest (the same state without the bubble), zero for an exact reference state, is printed for comparison.
+#
 #   julia -t 4 examples/energy_budget/run.jl
 #
 # The data files and figures are saved to examples/energy_budget/output/.
@@ -20,6 +39,8 @@ include("../../tools/setup.jl")
 using TraceableEnergetics, CFAnelastics, CFCompressible
 using CFBoxes, CFDiffusionSchemes, ClimFluids, CFTimeSchemes
 using CFPlanets: Tank2D
+using CookBooks: CookBooks
+using MutatingOrNot: void
 using CairoMakie
 
 #####
@@ -52,6 +73,8 @@ states = (an = initialize(an, fields), fc = initialize(fc, fields; pref = 1e5))
 
 # the manipulated conversion needs a reference state ρ_R(z), p_R(z): AN2D has its own, FC2D takes that of AN2D (same grid)
 references = (an = an.reference, fc = an.reference)
+# the Lorenz reference state of available energy of each model, computed at each output by sorting the parcels
+lorenz = (an = AnelasticLorenzReference(an), fc = CompressibleLorenzReference(fc))
 loops = (an = CFAnelastics.loop, fc = CFCompressible.loop)
 
 #####
@@ -67,7 +90,14 @@ conversion_terms = (:div_pressure_flux, :buoyancy_conversion, :pressure_dilatati
 # global budget: integrals over the box, per unit length along y [J m⁻¹ or W m⁻¹]
 integrals = (:integrated_kinetic_energy, :integrated_potential_energy, :integrated_energy_tendency, :integrated_boundary_flux,
              :integrated_vortex_work, :integrated_budget_residual)
-names = (kinetic_terms..., potential_terms..., conversion_terms..., integrals...)
+# available energy: AE = Π, ACE = Π₁ and APE = Π₂ on the cells [J kg⁻¹], the reference profiles P_*, v_* on z, the
+# integrals ∫ρΠ dV, ∫ρΠ₁ dV, ∫ρΠ₂ dV and the background potential energy ∫ρ(P - Π) dV [J m⁻¹], and the checks of the
+# reference state: the parcels whose placement fails the certificate of optimality, those whose reference height is at
+# a wall, and for FC2D the top pressure of the reference column and its excess height
+available_terms = (:AE, :ACE, :APE, :p_star, :v_star, :integrated_AE, :integrated_ACE, :integrated_APE,
+                   :background_potential_energy, :certificate_violations, :wall_minima)
+names = map(key -> (kinetic_terms..., potential_terms..., conversion_terms..., integrals..., available_terms...,
+                     (key == :fc ? (:p_top, :volume_residual) : ())...), NamedTuple{keys(models)}(keys(models)))
 
 params = (; Nslice = 40, slice_size = 0.5, dt_max = 0.1, cfl = 0.9)
 dir = mkpath(joinpath(@__DIR__, "output"))
@@ -78,14 +108,14 @@ paths = map(label -> joinpath(dir, "energy_budget_$label.nc"), (an = "an", fc = 
 ##### Runs
 #####
 
-# the outputs are recorded from the book of `TraceableEnergetics.diagnostics`, which adds the energy budget to the
-# diagnostics of the model package (the default book of `loop`)
+# the outputs are recorded from the book of `TraceableEnergetics.diagnostics`, which adds the energy budget and the
+# Lorenz reference state to the diagnostics of the model package (the default book of `loop`)
 for key in keys(models)
     model = models[key]
     println("\n", nameof(typeof(model)))
-    book = diagnostics(model; reference = references[key])
+    book = diagnostics(model; reference = references[key], reference_state = lorenz[key])
     # a data file, and a video of the conversion from P to K
-    outputs = Outputs(DataFile(paths[key], model, names),
+    outputs = Outputs(DataFile(paths[key], model, names[key]; reference_state = lorenz[key]),
                       DiagnosticVideo(model, :conversion; file = joinpath(dir, "conversion_$key.mp4"), colormap = :balance))
     loops[key](states[key], model, CFTimeSchemes.RungeKutta4(model), params; outputs, book)
 end
@@ -95,7 +125,7 @@ end
 #####
 
 # every recorded diagnostic of each model: a (x, z, t) array with halo for a field, a vector over t for a number
-data = map(paths) do path
+data = map(paths, names) do path, names
     NamedTuple{names}(map(name -> first(read_diagnostic(path, name)), names))
 end
 times = last(read_diagnostic(paths.an, :dρK))
@@ -193,6 +223,101 @@ local_files = map(keys(models)) do key
 end
 
 #####
+##### Available energy at rest: the same neutral state without the bubble
+#####
+
+# ∫ρΠ dV, ∫ρΠ₁ dV and ∫ρΠ₂ dV of the state at rest, zero for an exact reference state: what the discretisation of the
+# reference state leaves is the level below which the available energy has no meaning
+resting_fields = rising_bubble(an; θ₀ = T0, Δθ = 0.0, q₀ = q0)
+resting_states = (an = initialize(an, resting_fields), fc = initialize(fc, resting_fields; pref = 1e5))
+at_rest = map(models, resting_states, references, lorenz) do model, state, reference, ref
+    dstate, scratch = CFTimeSchemes.tendencies!(void, void, model, state, 0.0)
+    session = open(diagnostics(model; reference, reference_state = ref); state, dstate, scratch, model)
+    integrated = (:integrated_AE, :integrated_ACE, :integrated_APE)
+    energies = NamedTuple{integrated}(map(name -> CookBooks.get(session, name), integrated))
+    close(session)
+    energies
+end
+
+#####
+##### Global budget of the available energy: one column per model
+#####
+
+# rates between successive outputs, at the midpoints of the intervals: the differences of a series y, and the average
+# of a rate r (the trapezoidal rule), both second order in the output interval
+midpoints = (times[1:end-1] .+ times[2:end]) ./ 2
+difference(y) = diff(y) ./ diff(times)
+average(r) = (r[1:end-1] .+ r[2:end]) ./ 2
+
+figure = Figure(size = (1100, 1200))
+for (column, key) in enumerate(keys(models))
+    d = data[key]
+    label = nameof(typeof(models[key]))
+    # energies, as changes from t = 0: K, the available energy ∫ρΠ and its APE part ∫ρΠ₂, and the background ∫ρ(P - Π)
+    ax = Axis(figure[1, column]; title = "$label: energy change from t = 0", ylabel = "J m⁻¹")
+    change(y) = y .- y[1]
+    lines!(ax, times, change(d.integrated_kinetic_energy); label = "∫ρK")
+    lines!(ax, times, change(d.integrated_AE); label = "∫ρΠ (AE)")
+    lines!(ax, times, change(d.integrated_APE); label = "∫ρΠ₂ (APE)", linestyle = :dot)
+    lines!(ax, times, change(d.background_potential_energy); label = "∫ρ(P - Π)")
+    lines!(ax, times, change(d.integrated_kinetic_energy .+ d.integrated_AE); label = "∫ρ(K + Π)", linestyle = :dash,
+           color = :black)
+    axislegend(ax; position = :lt)
+    # budget of the available energy: d/dt ∫ρΠ = -∫C + G, with the generation G inferred from the other two
+    conversion = average(integral(key, :conversion))
+    generation = difference(d.integrated_AE) .+ conversion
+    # the same differences for ∫ρK, against the average of its exact tendency: their error
+    error = difference(d.integrated_kinetic_energy) .- average(integral(key, :dρK))
+    ax = Axis(figure[2, column]; title = "$label: budget of ∫ρΠ (AE)", ylabel = "W m⁻¹")
+    lines!(ax, midpoints, difference(d.integrated_AE); label = "d/dt ∫ρΠ", color = :black)
+    lines!(ax, midpoints, difference(d.integrated_APE); label = "d/dt ∫ρΠ₂", color = :black, linestyle = :dot)
+    lines!(ax, midpoints, -conversion; label = "-∫C")
+    lines!(ax, midpoints, generation; label = "G = d/dt ∫ρΠ + ∫C")
+    lines!(ax, midpoints, error; label = "error of d/dt (from ∫ρK)", color = :gray)
+    axislegend(ax; position = :rt)
+    # budget of the background: d/dt ∫ρ(P - Π) = ∫(Q - Q_ϑ - Q_q) - G, the diabatic source of ∫ρP less the generation of
+    # available energy
+    diabatic = average(integral(key, :heating) .- integral(key, :heating_consvar) .- integral(key, :heating_composition))
+    ax = Axis(figure[3, column]; title = "$label: budget of ∫ρ(P - Π)", ylabel = "W m⁻¹")
+    lines!(ax, midpoints, difference(d.background_potential_energy); label = "d/dt ∫ρ(P - Π)", color = :black)
+    lines!(ax, midpoints, diabatic; label = "∫(Q - Q_ϑ - Q_q)")
+    lines!(ax, midpoints, -generation; label = "-G")
+    axislegend(ax; position = :rt)
+    # the available compressible energy, zero for AN2D, and far smaller than the APE for FC2D
+    ax = Axis(figure[4, column]; title = "$label: ∫ρΠ₁ (ACE)", xlabel = "t [s]", ylabel = "J m⁻¹")
+    lines!(ax, times, d.integrated_ACE; color = :black)
+end
+available_file = joinpath(dir, "available_energy_budget.png")
+save(available_file, figure)
+
+#####
+##### Available energy of the parcels: maps of AE, ACE and APE at the start, middle and end of the run
+#####
+
+# a row per model and term, each on its own colour range, as Π₁ is far smaller than Π₂ (and zero for AN2D)
+figure = Figure(size = (1500, 1500))
+slices = (1, cld(lastindex(times), 2), lastindex(times))
+terms = ((:AE, "Π (AE)"), (:ACE, "Π₁ (ACE)"), (:APE, "Π₂ (APE)"))
+for (k, key) in enumerate(keys(models)), (l, (name, symbol)) in enumerate(terms)
+    model = models[key]
+    row = 3(k - 1) + l
+    # the terms are on the cells, and nonnegative; a field that is zero (ACE for AN2D) is shown on the range (0, 1)
+    x, z = CFBoxes.coordinates(model.domain, (model.dx, model.dz), (CFBoxes.Cell(), CFBoxes.Cell()))
+    largest = maximum(n -> maximum(field(key, name, n)), slices)
+    limit = iszero(largest) ? one(largest) : largest
+    Label(figure[row, 1], "$(nameof(typeof(model))): $symbol$(iszero(largest) ? " = 0" : "")"; rotation = π / 2,
+          tellheight = false)
+    for (c, n) in enumerate(slices)
+        ax = Axis(figure[row, c + 1]; title = "t = $(times[n]) s", aspect = DataAspect())
+        heatmap!(ax, x, z, field(key, name, n); colormap = :viridis, colorrange = (0, limit))
+        hidedecorations!(ax)
+    end
+    Colorbar(figure[row, length(slices) + 2]; colormap = :viridis, limits = (0, limit), label = "$symbol [J kg⁻¹]")
+end
+parcels_file = joinpath(dir, "available_energy.png")
+save(parcels_file, figure)
+
+#####
 ##### Summary
 #####
 
@@ -202,5 +327,11 @@ for key in keys(models)
     scale = maximum(abs, integral(key, :conversion))
     println("$(nameof(typeof(models[key]))): max |global residual| = $(maximum(abs, d.integrated_budget_residual)) W m⁻¹, ",
             "max |∫C| = $scale W m⁻¹, max |∫VF| = $(maximum(abs, d.integrated_vortex_work)) W m⁻¹")
+    for (name, symbol) in ((:integrated_AE, "∫ρΠ (AE)"), (:integrated_ACE, "∫ρΠ₁ (ACE)"), (:integrated_APE, "∫ρΠ₂ (APE)"))
+        println("    $symbol = $(d[name][1]) J m⁻¹ at t = 0, $(d[name][end]) J m⁻¹ at the end ",
+                "($(at_rest[key][name]) J m⁻¹ at rest)")
+    end
+    println("    largest number of parcels failing the certificate: $(Int(maximum(d.certificate_violations))), ",
+            "at a wall: $(Int(maximum(d.wall_minima))) (of $(length(field(key, :AE, 1))))")
 end
-println("figures saved to $global_file, $(join(local_files, ", "))")
+println("figures saved to $global_file, $(join(local_files, ", ")), $available_file, $parcels_file")

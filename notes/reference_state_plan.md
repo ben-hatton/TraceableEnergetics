@@ -10,40 +10,27 @@ This is a handoff for a new session in this repository. Nothing in it has been i
 
 ## 1. Goal
 
-Implement in `src/` the computation of the reference state for available potential energy (APE), for both models:
+Implement in `src/` the computation of the Lorenz reference state of available energy, for both models:
 AN2D (CFAnelastics) and FC2D (CFCompressible).
 
-- **Two reference states:**
-  - the **Lorenz reference state**: the rearrangement of the mass of the cells, each keeping its (ϑ, q), that has the
-    least potential energy;
-  - the **horizontal-mean reference state**.
+- **The Lorenz reference state**: the rearrangement of the mass of the cells, each keeping its (ϑ, q), that has the least
+  potential energy. (A horizontal-mean reference state was implemented in milestone 1 and removed with the user on
+  2026-10-26: it is not a goal of the project.)
 - **What is computed:**
   - per cell: the reference height z_*, the static energy Σ at z_*, and N_*²;
   - profiles: the reference pressure p_*(z, t) and the reference specific volume v_*(z, t);
   - the time derivative ∂_t p_*;
-  - later, the available-energy budget diagnostics: A = Π₁ + Π₂ and its budget terms.
+  - later, the available-energy budget diagnostics: Π = Π₁ + Π₂ and its budget terms.
 
 The budget these quantities feed is defined in `~/Documents/latex/projects/energy_budgets/energy.tex`. That file is
 outside this repository: read it, never edit it.
 
 ## 2. Settle these before writing code
 
-1. **Uncommitted base.**
-   - `src/diagnostics.jl`, `src/energetics.jl` and `test/runtests.jl` had uncommitted changes (the energy-budget
-     diagnostics) on 2026-10-23.
-   - They are the base for this work, but the user wanted to verify them first.
-   - Run `git status`. If they are still uncommitted, ask the user whether they are verified.
-2. **Exact solver (open).**
-   - The note still describes HiGHS, in "Solver 3: exact rearrangement" and in "Decisions".
-   - The user requires any float type F, with Float128 benchmarks planned. HiGHS only works in Float64.
-   - Recommended to the user but not yet confirmed: a pure-Julia exact rearrangement, generic in F (a transportation
-     simplex). It works like this:
-     - Start from the sorted placement, which is a feasible basis: a tree of at most N+K−1 positive entries.
-     - Compute the duals by solving u_n + ψ_k = c_nk along the tree.
-     - Bring in a parcel–slot pair whose reduced cost is negative, and shift mass around the cycle that pair closes in
-       the tree.
-     - Repeat until no pair has a negative reduced cost.
-   - Ask the user to confirm. Then update the two places in the note.
+1. **Uncommitted base (resolved).** The energy-budget diagnostics were committed (6e4ffae, f4d630b).
+2. **Exact solver (decided by the user on 2026-10-23).** A pure-Julia transportation simplex, generic in F, warm-started
+   from the sorted placement and from the previous snapshot. The note ("Solver 3: exact rearrangement", "Decisions") is
+   updated. The design at §5 and a `slot` dimension in `DataFile` were confirmed, and Roots.jl was added.
 3. **Recording during `loop` (decided by the user: a `book` keyword on `loop`; done).**
    - `CFAnelastics.loop` (0.1.3) and `CFCompressible.loop` (0.1.4) take `book = diagnostics(model)`, the book handed to
      `outputs`. Pass the book of `TraceableEnergetics.diagnostics`, which adds the energy budget to the diagnostics of
@@ -52,6 +39,49 @@ outside this repository: read it, never edit it.
      its older workaround, an output, `Record`, that holds its own book.
    - New reference-state diagnostics merged into the book of `TraceableEnergetics.diagnostics` are therefore recorded
      during a run with no further change.
+
+## 2a. Status (2026-10-23): milestone 1 implemented, awaiting the user's review
+
+- Code: the numerical methods in `src/numerics/` (`interpolation.jl`: Hermite interpolant and monotone slopes;
+  `quadrature.jl`: Gauss–Legendre; `minimisation.jl`: global minimum of a function of one variable; `placement.jl`:
+  north-west corner rule and staircase duals), the physics in `src/reference_state.jl` (the reference profile, the
+  placement and its certificate, P_* and v_*: `reference_state!`, whose results are held by the `LorenzReference`) and
+  `src/available_energy.jl` (static energy, LNB residual, N_*², and the kernels of the diagnostics z_*, Π, Σ m Π, E_P
+  - E_* and E_*, which are not held by the reference state: as for the energetics, those on the cells write into arrays
+  allocated by the book), for both models; the diagnostics entries in `src/diagnostics.jl`; `diagnostics`,
+  `diagnostic_info` and `DataFile` take `reference_state`; locations `(nothing, Cell())` (z profiles) and `(Slot(),)`
+  (slot profiles); the flags are two diagnostics, `placement_flags` and `height_flags`. Tests: `test/reference_state.jl`.
+- Simplified with the user (2026-10-26): outputs are z_*, Π and the flags on the cells, P_*, v_* on z, the slot
+  profiles, Σ m Π, E_*, E_P - E_*, the count of certificate violations, and P_top and the volume residual (FC2D). Σ_*,
+  N_*², the placement height and the other counts are no longer outputs (N_*² is still computed by `stratification`).
+  The parcel's own height is a candidate for z_* but no longer counts as a second minimum (it flagged most parcels of a
+  resting state with `MULTIPLE_MINIMA`). π_* is no longer an output: it is (P_* - P_R)/ρ_R, and stays the AN2D
+  profile (interpolated directly, as the duals give it), with nodes at the walls (below).
+- Choices made in the implementation, to confirm:
+  - differences of h are integrals of v by 3-point Gauss–Legendre (exact for NonlinearBinaryFluid), pressures are
+    interpolated as anomalies from an anchor, so that Float32 keeps the 1e-4 J/kg differences;
+  - at a degenerate boundary of the staircase the step of ψ is the middle of its allowed interval;
+  - π_* node slopes (AN2D Lorenz) are g (ρ_R v_*,k - 1) with the slot-mean v at P_R(z_k);
+  - P_* (FC2D Lorenz) is PCHIP through the slot edges, with second-order (three-point) end slopes;
+  - root finding by Roots.A42 (Alefeld–Potra–Shi), because Brent's method stalls in BigFloat.
+- Open questions for the user:
+  - AN2D extension beyond the end nodes, as nodes of π_* at the walls rather than an extension at each evaluation, so
+    that the nodes span the box as those of P_* in FC2D: v_* follows the compressibility of the end slot's own parcels,
+    v_* = v_e + b_e (P_R - P_e) (decided with the user, 2026-10-26). The constant v_* chosen first gave every parcel of
+    a neutral fluid a spurious Π = O(Δz²) at a wall (10 % of the available energy of examples/energy_budget); now a
+    neutral or resting fluid has Π at round-off for a uniform ρ_R, O(Δz⁴) otherwise;
+  - FC2D resting mismatch: O(Δz²) from the model grid and O(1/K²) from the slots, which nearly cancel at K = M_z,
+    leaving about 1e-7 M g L_z that behaves like O(Δz).
+  - FC2D reference heights in an exactly neutral layer (accepted by the user, 2026-10-26, no change): identical parcels
+    with N_*² = 0 have a static energy along P_* that is flat up to the wiggles of the monotone cubic (node slopes only
+    second-order accurate), about 1e-10 J/kg at M_z = 32. The coarse search sees ties at the slot edges and takes the
+    lowest, the bottom wall, so at t = 0 of examples/energy_budget 1484 of 2048 parcels have z_* = 0. Their Π₂ is about
+    6e-10 J/kg (2e-7 J/m in all, against 1.4e-2 J/m for the bubble), and the ties vanish after the first time step. The
+    same wiggles give ∫ρΠ at rest of 2e-5, 2.5e-6, 9e-9 and 6e-10 J/m at M_z = 8, 16, 32 and 64.
+- Upstream limitations found (not fixed, no permission): ClimFluids NonlinearBinaryFluid returns Float64 for Float32
+  parameters (Float64 literals); CFAnelastics `AnelasticReference` computes p_R in Float64 on a Float32 grid
+  (`cellpoint`'s 0.5), and AN2D cannot be built in BigFloat (FFT Poisson solver); CFCompressible `balanced_density`
+  fails in BigFloat (broadcast into an `undef` array).
 
 ## 3. Decisions already taken with the user
 
@@ -71,10 +101,9 @@ All of these are recorded in the note's "Decisions" section.
   means.
 - The reference height used in the budgets is the LNB z_*: the global minimiser of Σ(ϑ, q, z, p_*(z, t)) over
   [0, L_z]. It is neither Tailleux (2013)'s nearest root nor the placement height ẑ.
-- In the horizontal mean, p_* is hydrostatic with the row-mean density in FC2D, or the row-mean v at p_R in AN2D.
 - ∂_t p_* is computed by default from the diabatic tendencies: an N_*⁻²-weighted mean of the parcels at each level,
   valid for any equation of state. Differences of successive snapshots serve as a check.
-- FC2D's equal-mass slots give an O(Δz²) APE mismatch for a resting state. This is accepted, but must be reported
+- FC2D's equal-mass slots give an O(Δz²) mismatch of E_P - E_* for a resting state. This is accepted, but must be reported
   wherever FC2D results appear.
 
 **Inputs from the user**
@@ -86,7 +115,7 @@ All of these are recorded in the note's "Decisions" section.
 
 **Names**
 - Quantities: `p_star`, `z_star`, `v_star`, `N2_star`, `pi_star` (= (p_* − p_R)/ρ_R, AN2D) and `p_top` (FC2D).
-- Types: `LorenzReference` and `MeanReference`. Solver types: `SortedRearrangement` and `ExactRearrangement`.
+- Types: `LorenzReference`. Solver types: `SortedRearrangement` and `ExactRearrangement`.
 - Words: "rearrangement", "placement" and "placement height". Never "transport", which means advection in a fluid model.
 
 **Dependencies**
@@ -145,7 +174,7 @@ All of these are recorded in the note's "Decisions" section.
 - h is about 10⁴ J/kg. The cost differences that decide the ordering are about 10⁻⁴ J/kg, below Float32 resolution.
 - So measure each parcel's costs relative to its own level, c_nk − c_n,own. Adding a constant per parcel doesn't change
   the optimum.
-- Sum the APE parcel by parcel, Σ_n m_n (c_n,own − u_n), not as E_P − E_*.
+- Sum E_P − E_* parcel by parcel, Σ_n m_n (c_n,own − u_n), not as a difference of E_P and E_*.
 
 **Verified numerically** with the Python prototypes in `notes/prototypes/`. They are reference results for the Julia
 tests.
@@ -153,7 +182,7 @@ tests.
   - In AN2D, π_* = −ψ: the duals of the slot constraints are the reduced reference pressure, up to a constant.
   - With z_* restricted to the row centres, Σ_n m_n A_n = E_P − E_* (to 2×10⁻¹¹).
   - For a parcel split between rows k and k′, π_k − π_k′ = c_nk′ − c_nk exactly.
-  - The horizontal-mean profile gives a larger Σ m A, as weak duality requires.
+  - The horizontal-mean profile gives a larger Σ m Π, as weak duality requires.
   - In FC2D, ψ_k ≈ −Φ(z_k) to O(Δz).
 - `dtpstar.py`: the FC2D formula for ∂_t p_* matches finite differences of the full construction to 5×10⁻⁶. The formula
   covers ∂_t p_top, the slot tendencies ∂_t v_*, and the motion of the slot edges.
@@ -177,9 +206,8 @@ tests.
   - the global minimum of Σ along the profile: a coarse pass over the slot centres, then refinement with Brent's method;
   - N_*².
 - `src/reference_state.jl`:
-  - `LorenzReference`, `MeanReference` and their constructors;
+  - `LorenzReference` and its constructors;
   - `reference_state!`, with the AN2D and FC2D specifics;
-  - the horizontal mean;
   - `reference_state_entries` and `add_reference_state!`.
 - `src/reference_tendency.jl` (milestone 3).
 - `test/reference_state.jl`, included from `test/runtests.jl`.
@@ -190,7 +218,6 @@ tests.
 ```julia
 ref = LorenzReference(model, SortedRearrangement(); slots_per_row = 1)      # AN2D (required keyword)
 ref = LorenzReference(model, ExactRearrangement(; band = 2); slots = 128)   # FC2D (required keyword)
-ref = MeanReference(model)
 reference_state!(ref, model, state)                                         # in place; returns ref
 reference_tendency!(ref, model, state, ϑdot, qdot)                          # ∂ₜp_star from the material rates
 book = diagnostics(model; reference, reference_state = ref)                 # merges the new entries
@@ -240,14 +267,14 @@ formulas, their discrete form, the lid term and the motion of the nodes.
 
 ## 6. Milestones (check in with the user after each)
 
-1. Sorted rearrangement with its certificate, the LNB and the horizontal mean, for AN2D and FC2D. Includes CookBook
+1. Sorted rearrangement with its certificate and the LNB, for AN2D and FC2D. Includes CookBook
    entries, `DataFile` support for profiles, and the tests of §7.
 2. Exact rearrangement, generic in F, warm-started from the sorted placement and from the previous snapshot.
 3. ∂_t p_*: from the diabatic tendencies, plus an offline check by differences of snapshots, reading `p_star` from a
    `DataFile`.
 4. The available-energy budget entries from `energy.tex` (sections "Available energy" and "Available energy budgets"),
    with residuals reported. They are:
-   - A, Π₁, Π₂;
+   - Π, Π₁, Π₂;
    - the fluxes;
    - the heating terms at the intermediate state and at the reference state;
    - the R terms.
@@ -259,10 +286,10 @@ formulas, their discrete form, the lid term and the motion of the nodes.
 **Milestone 1**
 - **Resting state**, horizontally uniform and stably stratified:
   - the placement is the identity, ẑ = z and E_* = E_P;
-  - A = 0, with the dual profile and z_* on the row centres;
+  - Π = 0, with the dual profile and z_* on the row centres;
   - to round-off in AN2D with s = 1, and to O(Δz²) in FC2D and in AN2D with s > 1, shown converging.
-- **Fully mixed fluid**, all parcels equal: ties, degenerate duals, N_*² = 0, and A = 0.
-- **Analytic cases:** an inverted column and a two-layer step, which have analytic Lorenz APE.
+- **Fully mixed fluid**, all parcels equal: ties, degenerate duals, N_*² = 0, and Π = 0.
+- **Analytic cases:** an inverted column and a two-layer step, which have an analytic E_P − E_*.
 - **Separable EOS** (γ = 0): the certificate holds, and E_* matches a brute-force LP solution on a small N.
 - **Strong thermobaricity:** strong enough that the certificate fails; it must be detected and reported. The exact
   solver comes in milestone 2.
@@ -271,10 +298,10 @@ formulas, their discrete form, the lid term and the motion of the nodes.
   - a permutation of the parcels (a periodic shift in x);
   - a change of z0;
   - a constant added to π_*.
-- **Weak duality:** any profile gives Σ m A ≥ E_P − E_*, with equality for the optimal duals (AN2D, s = 1).
+- **Weak duality:** any profile gives Σ m Π ≥ E_P − E_*, with equality for the optimal duals (AN2D, s = 1).
 - **LNB:**
-  - r(z_*) = 0 at interior minima, N_*² ≥ 0 and A ≥ 0;
-  - wall minima are flagged (horizontal mean).
+  - r(z_*) = 0 at interior minima, N_*² ≥ 0 and Π ≥ 0;
+  - wall minima are flagged, with r of the outward sign.
 - **Precision:** Float32, Float64, and BigFloat at small sizes. Find the stratification below which Float32 fails.
 - **Allocations:** check `reference_state!` after its first call. Allocations must be bounded, with nothing state-sized.
 

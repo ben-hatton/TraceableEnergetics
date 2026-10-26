@@ -19,7 +19,11 @@ function initialize(model::FC2D, (; consvar, q, u, ψ)::NamedTuple; pref)
     return CFCompressible.initialize(model; density, consvar, q, velocity)
 end
 
-# face arrays (u, w) of a mean flow u(z): u(z) on the u-faces, zero on the w-faces
+"""
+    (u, w) = mean_flow(model, u)
+
+Face arrays (u, w) [m s⁻¹] of a mean flow u(z): u(z) on the u-faces, zero on the w-faces.
+"""
 function mean_flow((; domain, dz), u)
     ū = [u(cellpoint(domain, dz, 2, j)) for I in 1:nfaces(domain, 1), j in 1:ncells(domain, 2)]
     return ū, zeros(typeof(dz), ncells(domain, 1), nfaces(domain, 2))

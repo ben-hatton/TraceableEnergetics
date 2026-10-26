@@ -1,5 +1,6 @@
 # Run from the TraceableEnergetics folder with:  julia -t 4 --project=. test/runtests.jl
-# Runs the setups tests, the canonical setups on both models, and the diagnostics and outputs on both models. The model
+# Runs the setups tests, the canonical setups on both models, the reference state of available potential energy, and the
+# diagnostics and outputs on both models. The model
 # suites of CFAnelastics and CFCompressible are run from their own repositories. Cross-model (traceability) tests will
 # live here.
 using Test
@@ -48,6 +49,11 @@ include(joinpath(TESTS, "..", "tools", "scales.jl"))
             test_canonical((m, fields) -> TraceableEnergetics.initialize(m, fields; pref = 1e5), tend!,
                            make_model(mgr = VectorizedCPU()), make_model(boundary = (Bounded, Bounded), walls = forced_box))
         end
+    end
+    # the Lorenz reference state of available potential energy, for either model
+    @eval module ReferenceStateTests
+        include(joinpath($TESTS, "config.jl"))
+        include(joinpath($TESTS, "reference_state.jl"))
     end
     # AN2D and FC2D share their diagnostic names, apart from the model-specific ones
     @testset "shared diagnostic names" begin
