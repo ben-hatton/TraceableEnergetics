@@ -339,7 +339,7 @@ the earlier \code{FCSCEnergetics.jl}.
 it from the top, in $O(N+K)$; where no parcel is split across a slot boundary, complete the staircase with a zero entry. Then
 check \eqref{eq:dual} for all $NK$ parcel--slot pairs (an $O(NK)$ pass). If it holds, the sorted placement is the exact optimum, not only
 2-optimal, and $\psi$ is the reference profile of \S\ref{sec:dual}. If it fails, the violating pairs show where to repair
-(\S\ref{sec:repair}) or which pairs to add to the banded linear programme (\S\ref{sec:exact}).
+(\S\ref{sec:repair}) or which pairs enter the transportation simplex (\S\ref{sec:exact}).
 
 \paragraph{Pros.} Fast and simple, with no dependency. It is the baseline against which every other solver is tested:
 with $\gamma=0$ all solvers must agree with it to round-off.
@@ -392,31 +392,58 @@ computed on different grids (\S\ref{sec:decisions}), so allow a tolerance set by
 \section{Solver 3: exact rearrangement}\label{sec:exact}
 Solves \eqref{eq:tp} exactly for any equation of state. Its outputs are the placement $x$ and the dual potentials
 $(u_n,\psi_k)$, which certify optimality by \eqref{eq:dual} and give the reference profile (\S\ref{sec:dual}).
-\subsection{Banded linear programme with a dual certificate (recommended)}
-The full problem has $NK\approx4\times10^6$ parcel--slot pairs at $256\times128$. Because parcels move only a few slots away from their
-sorted position, solve it on a band and certify the result:
-\begin{enumerate}
-  \item Compute the sort (\S\ref{sec:sort}); let $k_n$ be the slot of parcel $n$ in the sorted placement.
-  \item Solve the restricted problem with the pairs $|k-k_n|\le B$ only (start with $B=2$), as a linear programme or a min-cost
-        flow, and read the duals $(u_n,\psi_k)$ from the solver.
-  \item Check \eqref{eq:dual} for \emph{all} $NK$ pairs (an $O(NK)$ pass over $c_{nk}$, cheap). If every reduced cost is
-        nonnegative, the placement is the exact optimum of the full problem. Otherwise add the violating pairs (or double $B$) and
-        resolve.
-\end{enumerate}
+\subsection{Transportation simplex with a dual certificate (implemented)}
 \textbf{Solver}: a transportation simplex written in Julia, generic in the floating-point type $F$ (external LP solvers such as
-HiGHS work in Float64 only, which the precision requirement of \S\ref{sec:decisions} excludes). It starts from the sorted
-placement, which is a feasible basis: a tree of at most $N+K-1$ positive entries (the staircase, completed by zero entries where
-it is degenerate). Each iteration
+HiGHS work in Float64 only, which the precision requirement of \S\ref{sec:decisions} excludes). Its network has $N+K$ nodes, the
+parcels and the slots, with an arc from each parcel to each slot that carries $x_{nk}$; a basis is a spanning tree of $N+K-1$ arcs.
 \begin{enumerate}
-  \item computes the duals by solving $u_n+\psi_k=c_{nk}$ along the tree;
-  \item brings into the basis a parcel--slot pair whose reduced cost $c_{nk}-u_n-\psi_k$ is negative (from the band first, then
-        from the certificate pass over all pairs);
-  \item shifts mass around the cycle that this pair closes in the tree, by the largest amount that keeps the placement
-        nonnegative, and removes from the basis the entry that this empties.
+  \item \textbf{Start}: the sorted placement (\S\ref{sec:sort}), whose entries form a staircase, completed into a tree: at a
+        degenerate boundary between slots $k$ and $k+1$ (no parcel split across it), the first parcel $b$ of slot $k+1$ gets an
+        entry of zero mass in slot $k$.
+  \item \textbf{Duals}: $\psi_1=0$ and $u_n+\psi_k=c_{nk}$ along the tree, by a breadth-first walk from the first slot, in
+        $O(N+K)$ with the cost of each tree arc kept.
+  \item \textbf{Pricing}: a pass over all $NK$ pairs (the certificate pass, threaded and vectorised) gives the least reduced cost
+        of each parcel and its slot. Each parcel with a negative one is a candidate; the candidates are taken most negative
+        first, priced again with the current duals (one cost each), and enter the tree if still negative. The pass repeats
+        until it finds no negative reduced cost: the last pass is the certificate.
+  \item \textbf{Pivot}: the entering pair closes a cycle in the tree, around which a mass $\theta$ moves ($+\theta$ on the arcs
+        oriented as the entering one, $-\theta$ on the others), the least mass of the arcs that lose it; one of these leaves.
 \end{enumerate}
-It stops when no pair has a negative reduced cost, which is the certificate. Each snapshot is warm-started from the sorted
-placement or from the previous snapshot's placement. For equal-mass parcels and $K=N$ the problem is the linear assignment
-problem (Hungarian or Jonker--Volgenant), but that is $O(N^3)$ and not needed here. Su \& Ingersoll (2016) report min-cost flow
+The tree is rooted at the first slot and kept \emph{strongly feasible} (Cunningham 1976): every arc of zero mass goes from a
+parcel up to its parent slot, which the completed staircase satisfies. The leaving arc is the last arc that blocks $\theta$
+met going round the cycle from its apex in the direction of the entering arc; with this rule a pivot that moves no mass
+($\theta=0$, frequent from the degenerate staircase) still makes progress, and the method cannot cycle. The tree and the duals
+are rebuilt after each pivot, in $O(N+K)$. The pivots give the decrease of the cost exactly, $-\sum\theta\,(c_{nk}-u_n-\psi_k)$:
+the amount by which the sort underestimates $E_P-E_*$.
+
+\textbf{FC2D}: the costs depend on $\Ptop$, so the two steps of \S\ref{sec:fc-slots} alternate from the sorted placement: $\Ptop$
+at fixed placement (Newton), then the simplex at fixed $\Ptop$ from the previous tree, until a solve moves no mass.
+
+\textbf{Cost}: the number of passes grows with how far the sort is from the optimum: a few where the sort fails for a few
+parcels, about $K$ where every parcel is misplaced (two density-compensated families mixed in every row): each pass moves a
+misplaced parcel about one slot nearer its level. Each pass is $NK$ evaluations of the cost, which dominate. The method cannot
+cycle, so the cap on the passes, $10K$ by default (decided with the user, 2026-10-27), only guards against round-off; it
+scales with the slots as the passes do, rather than with the parcels, which would make a failure take $N/K$ times longer to
+report.
+
+\textbf{Measured} (2026-10-27, \code{tools/exact\_rearrangement\_study.jl}):
+\begin{itemize}
+  \item thermohaline lock exchange ($\gamma=10^{-7}$\,Pa$^{-1}$): the sort fails the certificate for at most 3 nearly tied
+        parcels, which 2 or 3 pivots fix; the exact rearrangement changes $E_P-E_*$ by at most $9\times10^{-10}$ of it and $P_*$
+        by at most $2\times10^{-8}$\,Pa, with the same roughness in time: the sort is the Lorenz state to round-off there.
+        Cost: that of the sort when it has no violation (one pass), $2.6$ to $3.5$ times with a few;
+  \item two density-compensated families mixed in every row ($\gamma=1.3\times10^{-4}$\,Pa$^{-1}$): every parcel is
+        misplaced by the sort; 315, 1114 and 7405 pivots in 21, 38 and 104 passes at $K=20$, 40, 80 ($0.46$\,s at $N=1600$);
+  \item Float32 sees no reordering on the active state of the tests for $\gamma$ up to $10^{-3}$\,Pa$^{-1}$, where Float64
+        makes 95 pivots that move mass: the reduced costs are below its tolerance $16(K+1)\,\epsilon\,gL_z$. The exact
+        rearrangement needs Float64.
+\end{itemize}
+
+\textbf{Not done} (decided with the user, 2026-10-27, to be tried if they prove the fastest): a warm start from the previous
+snapshot's placement (the parcels are the model cells, so after advection the previous placement has no direct relation to
+the new state), pricing on a band $|k-k_n|\le B$ around the sorted slot before the full pass, and incremental updates of the
+tree (thread indices) in place of the rebuild. For equal-mass parcels and $K=N$ the problem is the linear assignment problem
+(Hungarian or Jonker--Volgenant), but that is $O(N^3)$ and not needed here. Su \& Ingersoll (2016) report min-cost flow
 $10^3$--$10^5$ times faster than linear assignment on the same problem, by exploiting $K\ll N$, which is the structure used
 here.
 
@@ -741,9 +768,11 @@ $\gamma\neq0$; then greedy+repair and the histogram only if the exact solver is 
 \begin{itemize}
   \item \textbf{Horizontal-mean profile}: hydrostatic with the row mean of the density (FC2D) or of the specific volume at
         $P_R$ (AN2D), \S\ref{sec:mean-profiles}.
-  \item \textbf{Exact solver}: a transportation simplex written in Julia, generic in the floating-point type, warm-started
-        from the sorted placement and from the previous snapshot (\S\ref{sec:exact}). External LP solvers (HiGHS) are
-        excluded because they work in Float64 only.
+  \item \textbf{Exact solver}: a transportation simplex written in Julia, generic in the floating-point type, started from
+        the sorted placement at each snapshot (\S\ref{sec:exact}). External LP solvers (HiGHS) are excluded because they work
+        in Float64 only. Implemented (2026-10-27) with pricing by full passes over the pairs and a strongly feasible tree; the
+        sort and the exact rearrangement stay separate methods, to be compared, and the examples use the exact one. The
+        warm start from the previous snapshot, banded pricing and incremental tree updates are deferred.
   \item \textbf{Slot resolution} $K$: an input set by the user (\S\ref{sec:an-slots}, \S\ref{sec:fc-slots}).
   \item \textbf{Precision}: any floating-point type $F$, chosen by the user (Float128 benchmarks are planned), so no step of
         the computation may be fixed to Float64.
@@ -767,6 +796,9 @@ $\gamma\neq0$; then greedy+repair and the histogram only if the exact solver is 
         2026-10-27.
   \item \textbf{Test of the weights under thermobaricity} (test~\ref{test:weights}b) is done with the exact rearrangement
         (milestone~2): the sorted placement reorders the parcels by its sort key, not by their level of neutral buoyancy.
+        Done (2026-10-27): with two density-compensated families mixed in every row, of which one is heated, the
+        $N_*^{-2}$-weighted mean is $26\%$, $8.5\%$ and $5.7\%$ from the differences of the exact rearrangement at $K=20$, 40,
+        80, and the plain mean $35\%$.
 \end{itemize}
 
 \paragraph{Accepted limitation: the FC2D reference grid.} In AN2D the reference column is built on the model's own rows (one slot per row),
@@ -825,6 +857,7 @@ of the user). It is present in every FC2D result: the energy check of \S\ref{sec
 % =====================================================================================
 \section*{References}
 \begin{itemize}\small
+  \item Cunningham (1976), A network simplex method, Math.\ Programming 11, 105--116.
   \item Egan, Methven, Bourne \& Cullen (2025), A definition of the background state of the atmosphere using optimal
         transport, arXiv:2504.11141.
   \item Harris \& Tailleux (2018), Assessment of algorithms for computing moist available potential energy, QJRMS 144, 1501--1510.

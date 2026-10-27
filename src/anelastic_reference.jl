@@ -28,11 +28,16 @@ After `reference_state!`, it holds:
   between the end rows and the walls;
 - the profiles P_R(z) and π_*(z) (`pressure`, `potential`);
 - P_* [Pa] and v_* [m³ kg⁻¹] at the cell centres of the z axis (`p_star`, `v_star`);
-- the smallest reduced cost of each parcel, min_k (c_nk - u_n - ψ_k) [J kg⁻¹] (`reduced_cost`), and the number of
-  parcels for which it is negative (`certificate_violations`): zero if the placement is optimal.
+- the smallest reduced cost of each parcel, min_k (c_nk - u_n - ψ_k) [J kg⁻¹] (`reduced_cost`), the slot where it is
+  least (`best_slot`, as a float, exact up to 2^24 slots in Float32), and the number of parcels for which it is
+  negative (`certificate_violations`): zero if the placement is optimal;
+- for `ExactRearrangement`, the number of pivots of the simplex and of passes over the pairs (`pivots`,
+  `pricing_passes`), and the decrease of the cost Σ_nk x_nk c_nk from the sorted placement, by which the sort
+  underestimates E_P - E_* [J m⁻¹] (`sorted_energy_excess`); no pivots, one pass and zero for `SortedRearrangement`.
 """
-mutable struct AnelasticLorenzReference{F, M <: AbstractRearrangement}
+mutable struct AnelasticLorenzReference{F, M <: AbstractRearrangement, W}
     const method::M
+    const workspace::W                  # the workspace of the method (`rearrangement_workspace`)
     # the parcels, one per interior cell, numbered by `parcel_index`
     const mass::Vector{F}               # m_n = ρ_R Δx Δz [kg m⁻¹]
     const consvar::Vector{F}            # ϑ_n
@@ -45,6 +50,7 @@ mutable struct AnelasticLorenzReference{F, M <: AbstractRearrangement}
     const placement::Placement{F}       # the masses x_nk
     const u::Vector{F}                  # parcel duals u_n [J kg⁻¹]
     const reduced_cost::Vector{F}       # min_k (c_nk - u_n - ψ_k) of each parcel [J kg⁻¹]
+    const best_slot::Vector{F}          # the slot k of the least reduced cost of each parcel, as a float (vectorised)
     # the slots, the model rows from the top
     const slot_height::Vector{F}        # z_k, the row centre [m]
     const slot_pressure::Vector{F}      # P_R(z_k) [Pa]
@@ -67,6 +73,9 @@ mutable struct AnelasticLorenzReference{F, M <: AbstractRearrangement}
     const p_star_tendency::Vector{F}    # ∂ₜP_* at the cell centres of the z axis [Pa s⁻¹]
     certificate_violations::Int
     plain_weight_slots::Int             # slots whose means have plain weights, as N² ≤ 0 for one of their parcels
+    pivots::Int                         # pivots of the transportation simplex
+    pricing_passes::Int                 # passes over the parcel-slot pairs
+    sorted_energy_excess::F             # Σ_nk x_nk c_nk of the sorted placement less that of the placement [J m⁻¹]
 end
 
 function AnelasticLorenzReference(model::AN2D{F}, method::AbstractRearrangement = SortedRearrangement()) where F
@@ -78,11 +87,11 @@ function AnelasticLorenzReference(model::AN2D{F}, method::AbstractRearrangement 
     N, K = Mx * Mz, Mz
     nz = ncells(domain, 2)
     vector() = zeros(F, N)
-    ref = AnelasticLorenzReference(method, vector(), vector(), vector(), zeros(Int, N),
-                                   vector(), collect(1:N), zeros(Int, N), Placement(F, N, K), vector(), vector(),
+    ref = AnelasticLorenzReference(method, rearrangement_workspace(method, F, N, K), vector(), vector(), vector(), zeros(Int, N),
+                                   vector(), collect(1:N), zeros(Int, N), Placement(F, N, K), vector(), vector(), vector(),
                                    zeros(F, K), zeros(F, K), zeros(F, K), zeros(F, K), zeros(F, K), zeros(F, K),
                                    HermiteProfile(F, nz), HermiteProfile(F, K + 2), zeros(F, K + 2), zeros(F, nz), zeros(F, nz),
-                                   vector(), vector(), SlotMeans(F, K), zeros(F, K), HermiteProfile(F, K + 2), zeros(F, nz), 0, 0)
+                                   vector(), vector(), SlotMeans(F, K), zeros(F, K), HermiteProfile(F, K + 2), zeros(F, nz), 0, 0, 0, 0, zero(F))
     # P_R through the cell centres of the whole z axis, with the slopes ∂_z P_R = -g ρ_R
     for j in 1:nz
         ref.pressure.z[j] = cellpoint(domain, dz, 2, j)
@@ -213,39 +222,20 @@ function reference_state!(ref::AnelasticLorenzReference{F}, model::AN2D, state) 
         ref.v_star[j] = (∂π / g + 1) / ρ_R[j]
     end
 
-    # 6. The certificate: the smallest reduced cost c_nk - u_n - ψ_k of each parcel over the slots, with
-    # c_nk = h(P_R(z_k), ϑ_n, q_n) - h(P_R(z_o), ϑ_n, q_n) + g (z_k - z_o) from its own row o, by the model's manager
-    # (vectorised over the parcels of a row)
-    (; consvar, q, u, slot_pressure, slot_height, slot_dual, reduced_cost) = ref
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            n = parcel_index(domain, i, j)
-            ϑ_n, q_n, u_n = consvar[n], q[n], u[n]
-            o = Hz + K + 1 - j                                      # the slot of the parcel's own row
-            P_own, z_own = slot_pressure[o], slot_height[o]
-            reduced = enthalpy_difference(fluid, P_own, slot_pressure[1] - P_own, ϑ_n, q_n) + g * (slot_height[1] - z_own) - u_n - slot_dual[1]
-            for k in 2:K
-                c = enthalpy_difference(fluid, P_own, slot_pressure[k] - P_own, ϑ_n, q_n) + g * (slot_height[k] - z_own)
-                reduced = min(reduced, c - u_n - slot_dual[k])
-            end
-            reduced_cost[n] = reduced
-        end
-    end
-    # the parcels with a negative reduced cost, beyond the round-off of the duals, which accumulate K differences of
-    # costs of size up to g L_z
-    tolerance = 16 * (K + 1) * eps(F) * g * space.Lz
-    ref.certificate_violations = count(n -> reduced_cost[n] < -tolerance, eachindex(reduced_cost))
+    # 6. The certificate: the parcels whose smallest reduced cost c_nk - u_n - ψ_k over the slots, from the last pass of
+    # the rearrangement (`reduced_costs!`), is negative beyond the round-off of the duals
+    tolerance = certificate_tolerance(F, K, g, space.Lz)
+    ref.certificate_violations = count(r -> r < -tolerance, ref.reduced_cost)
     return ref
 end
 
 """
-    ref = rearrange!(ref::AnelasticLorenzReference{<:Any, SortedRearrangement}, model::AN2D)
+    ref = sort_parcels!(ref::AnelasticLorenzReference, model::AN2D)
 
-The sorted rearrangement of AN2D: the parcels, sorted by their specific volume v(P_R(L_z/2), ϑ_n, q_n) at mid-depth
-[m³ kg⁻¹], lightest first, fill the rows from the top (`sorted_placement!`), and the duals ψ_k and u_n [J kg⁻¹] follow
-along the staircase of the placement (`staircase_duals!`).
+The parcels, sorted by their specific volume v(P_R(L_z/2), ϑ_n, q_n) at mid-depth [m³ kg⁻¹], lightest first, fill the
+rows from the top (`sorted_placement!`): the placement of `SortedRearrangement`, and the start of `ExactRearrangement`.
 """
-function rearrange!(ref::AnelasticLorenzReference{<:Any, SortedRearrangement}, model::AN2D)
+function sort_parcels!(ref::AnelasticLorenzReference, model::AN2D)
     (; mgr, domain, fluid) = model
     (; key, consvar, q) = ref
     # the sort key, by the model's manager
@@ -258,7 +248,76 @@ function rearrange!(ref::AnelasticLorenzReference{<:Any, SortedRearrangement}, m
     end
     sortperm!(ref.order, ref.key; rev = true, scratch = ref.scratch)
     sorted_placement!(ref.placement, ref.order, ref.mass, ref.slot_mass)
+    return ref
+end
+
+"""
+    ref = rearrange!(ref::AnelasticLorenzReference{<:Any, SortedRearrangement}, model::AN2D)
+
+The sorted rearrangement of AN2D (`sort_parcels!`); the duals ψ_k and u_n [J kg⁻¹] follow along the staircase of the
+placement (`staircase_duals!`), and the reduced costs from one pass over the pairs (`reduced_costs!`).
+"""
+function rearrange!(ref::AnelasticLorenzReference{<:Any, SortedRearrangement}, model::AN2D)
+    sort_parcels!(ref, model)
     staircase_duals!(ref.slot_dual, ref.u, ref.placement, ref.order, (n, k) -> anelastic_cost(model, ref, n, k))
+    reduced_costs!(ref, model)
+    ref.pivots, ref.pricing_passes, ref.sorted_energy_excess = 0, 1, 0
+    return ref
+end
+
+"""
+    ref = rearrange!(ref::AnelasticLorenzReference{<:Any, ExactRearrangement}, model::AN2D)
+
+The exact rearrangement of AN2D: the least-cost placement by the transportation simplex (`optimal_placement!`), from the
+sorted placement (`sort_parcels!`) completed into a tree (`complete_staircase!`), with the costs `anelastic_cost` and
+the passes over the pairs `reduced_costs!`. The masses of the parcels and of the rows do not depend on the state's
+motion, so every tree of the simplex is a feasible placement.
+"""
+function rearrange!(ref::AnelasticLorenzReference{F, ExactRearrangement}, model::AN2D) where F
+    sort_parcels!(ref, model)
+    complete_staircase!(ref.placement, ref.order)
+    cost(n, k) = anelastic_cost(model, ref, n, k)
+    price!() = reduced_costs!(ref, model)
+    tolerance = certificate_tolerance(F, length(ref.slot_mass), model.space.g, model.space.Lz)
+    ref.pricing_passes, ref.sorted_energy_excess =
+        optimal_placement!(ref.placement, ref.workspace, ref.slot_dual, ref.u, ref.reduced_cost, ref.best_slot, cost, price!,
+                           tolerance, ref.method.passes_per_slot * length(ref.slot_mass))
+    ref.pivots = ref.workspace.pivots
+    return ref
+end
+
+"""
+    ref = reduced_costs!(ref::AnelasticLorenzReference, model::AN2D)
+
+The smallest reduced cost c_nk - u_n - ψ_k of each parcel over the slots (`ref.reduced_cost`) [J kg⁻¹], and the slot
+where it is least (`ref.best_slot`), with the duals `ref.u` and `ref.slot_dual` and the costs from the parcel's own row o,
+c_nk = h(P_R(z_k), ϑ_n, q_n) - h(P_R(z_o), ϑ_n, q_n) + g (z_k - z_o), by the model's manager (vectorised over the
+parcels of a row). All N K pairs: the certificate of the placement, and the pricing of the transportation simplex.
+"""
+function reduced_costs!(ref::AnelasticLorenzReference{F}, model::AN2D) where F
+    (; mgr, domain, fluid, space) = model
+    (; consvar, q, u, slot_pressure, slot_height, slot_dual, reduced_cost, best_slot) = ref
+    g = space.g
+    K = length(slot_pressure)
+    Hz = halo_size(domain)[2]
+    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
+        @inbounds @vec for i in irange, j in jrange
+            n = parcel_index(domain, i, j)
+            ϑ_n, q_n, u_n = consvar[n], q[n], u[n]
+            o = Hz + K + 1 - j                                      # the slot of the parcel's own row
+            P_own, z_own = slot_pressure[o], slot_height[o]
+            reduced = enthalpy_difference(fluid, P_own, slot_pressure[1] - P_own, ϑ_n, q_n) + g * (slot_height[1] - z_own) - u_n - slot_dual[1]
+            best = zero(reduced) + 1                                # a float, as `reduced`, so that it is vectorised
+            for k in 2:K
+                c = enthalpy_difference(fluid, P_own, slot_pressure[k] - P_own, ϑ_n, q_n) + g * (slot_height[k] - z_own)
+                r = c - u_n - slot_dual[k]
+                best = ifelse(r < reduced, F(k), best)              # ifelse, not ? :, so that it is vectorised
+                reduced = min(reduced, r)
+            end
+            reduced_cost[n] = reduced
+            best_slot[n] = best
+        end
+    end
     return ref
 end
 

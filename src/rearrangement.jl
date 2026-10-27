@@ -26,6 +26,44 @@ staircase (`staircase_duals!`), nonnegative for an optimal placement, report whe
 struct SortedRearrangement <: AbstractRearrangement end
 
 """
+    ExactRearrangement(; passes_per_slot = 10, max_top_iterations = 20)
+
+Method of the Lorenz reference state (`AbstractRearrangement`): the least-cost placement for any equation of state, by
+the transportation simplex (`optimal_placement!`), from the sorted placement of `SortedRearrangement`. Its tree is the
+staircase of the sorted placement completed by entries of zero mass (`complete_staircase!`); the pairs that enter it are
+found by passes over all the parcel-slot pairs, the last of which is the certificate of the placement. The simplex ends
+(its tree is kept strongly feasible), after a number of passes that grows with how far the sort is from the optimum:
+a few where the sort fails for a few parcels, about K (1.0 to 1.3 K for K = 20 to 80) where every parcel is misplaced
+(two density-compensated families mixed in every row): each pass moves a misplaced parcel about one slot nearer its
+level. The passes per placement are at most `passes_per_slot` K, which only guards against round-off, and scales with
+the resolution as the passes do; a placement cut short by it fails its certificate. In FC2D, the costs depend on the top pressure P_top, which depends on the placement: the placement at
+fixed P_top and P_top at fixed placement (`top_pressure!`) alternate, from the sorted placement, until the placement no
+longer changes, at most `max_top_iterations` times.
+"""
+Base.@kwdef struct ExactRearrangement <: AbstractRearrangement
+    passes_per_slot::Int = 10
+    max_top_iterations::Int = 20
+end
+
+"""
+    workspace = rearrangement_workspace(method, F, N, K)
+
+The workspace of the rearrangement `method` for N parcels and K slots, allocated once with the reference state:
+`nothing` for a method without one (`SortedRearrangement`), the tree of the transportation simplex
+(`TransportationTree`) for `ExactRearrangement`.
+"""
+rearrangement_workspace(::AbstractRearrangement, F, N, K) = nothing
+rearrangement_workspace(::ExactRearrangement, F, N, K) = TransportationTree(F, N, K)
+
+"""
+    tolerance = certificate_tolerance(F, K, g, Lz)
+
+The tolerance [J kg⁻¹] below which a negative reduced cost c_nk - u_n - ψ_k is round-off, for K slots in a box of height
+L_z [m] under gravity g [m s⁻²]: the duals accumulate K differences of costs of size up to g L_z, 16 (K + 1) eps g L_z.
+"""
+certificate_tolerance(F, K, g, Lz) = 16 * (K + 1) * eps(F) * g * Lz
+
+"""
     ref = rearrange!(ref, model)
 
 The step of the reference state `ref` of `model` that depends on its method `ref.method` (an `AbstractRearrangement`):
@@ -96,6 +134,7 @@ function slot_means!(means::SlotMeans{F}, placement, slot_mass, slot_pressure, f
     fill!(unstable, false)
     for e in 1:placement.count
         n, k, x = placement.parcel[e], placement.slot[e], placement.mass[e]
+        x > 0 || continue                                           # an entry of zero mass of the exact placement
         _, ∂v_∂p, ∂v_∂ϑ, ∂v_∂q = fluid(:p, :consvar, :q).volume_functions(slot_pressure[k], consvar[n], q[n])
         v̇ = ∂v_∂ϑ * consvar_rate[n] + ∂v_∂q * q_rate[n]                # at fixed pressure
         N² = g * density[k] * (volume_gradient[k] + g * density[k] * ∂v_∂p)

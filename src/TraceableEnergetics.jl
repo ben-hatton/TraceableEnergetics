@@ -22,15 +22,17 @@ export setup, kelvin_helmholtz, rayleigh_benard, rising_bubble, lock_exchange
 export initialize
 export diagnostics, diagnostic_info, interior_diagnostic, diagnostic_coordinates
 export Outputs, record!, DataFile, read_diagnostic, DiagnosticVideo
-export AbstractRearrangement, SortedRearrangement, AnelasticLorenzReference, CompressibleLorenzReference, reference_state!
+export AbstractRearrangement, SortedRearrangement, ExactRearrangement, AnelasticLorenzReference, CompressibleLorenzReference, reference_state!
 
 include("setups.jl")
 include("initialize.jl")
 include("energetics.jl")
-# numerical methods of the reference state: interpolation, minimisation, placement of masses, quadrature
+# numerical methods of the reference state: interpolation, minimisation, placement of masses, the transportation
+# simplex, quadrature
 include("numerics/interpolation.jl")
 include("numerics/minimisation.jl")
 include("numerics/placement.jl")
+include("numerics/transportation.jl")
 include("numerics/quadrature.jl")
 # the Lorenz reference state of each model, and the available energy of its parcels
 include("rearrangement.jl")

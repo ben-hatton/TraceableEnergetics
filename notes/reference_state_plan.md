@@ -273,6 +273,29 @@ formulas, their discrete form, the lid term and the motion of the nodes.
 1. Sorted rearrangement with its certificate and the LNB, for AN2D and FC2D. Includes CookBook
    entries, `DataFile` support for profiles, and the tests of §7.
 2. Exact rearrangement, generic in F, warm-started from the sorted placement and from the previous snapshot.
+
+   Status (2026-10-27): done. `ExactRearrangement()` (src/rearrangement.jl), a transportation simplex in
+   src/numerics/transportation.jl (`TransportationTree`, `complete_staircase!`, `tree_duals!`, `pivot!`,
+   `optimal_placement!`), with the passes over the pairs `reduced_costs!` of each model, which are also the certificate;
+   FC2D alternates P_top (Newton) and the placement. Diagnostics `pivots`, `pricing_passes`, `sorted_energy_excess`, and
+   `top_pressure_iterations` (FC2D). Tests in test/transportation.jl (cost matrices, Float32/Float64/BigFloat) and
+   test/exact_rearrangement.jl (including test (b) of the weights); study in tools/exact_rearrangement_study.jl; both
+   examples use it. Decided with the user:
+   - the sort and the exact rearrangement stay separate methods, to compare; the sort stays the default, the examples
+     use the exact one; each snapshot starts from the sort;
+   - pricing by full passes over the N K pairs; a strongly feasible tree (Cunningham), rebuilt after each pivot;
+   - at most 10 K passes per placement (`passes_per_slot = 10`): the passes scale with K, about K in the worst case;
+   - deferred, to try if they prove the fastest: a warm start from the previous snapshot (the parcels are cells, so
+     after advection the previous placement is unrelated to the new state), banded pricing, incremental tree updates.
+   Found:
+   - in the lock exchange (γ = 1e-7 Pa⁻¹) the sort fails for at most 3 nearly tied parcels, and is the Lorenz state to
+     round-off: the exact one changes E_P - E_* by at most 9e-10 of it and P_* by at most 2e-8 Pa, with the same
+     roughness in time; it costs the same as the sort with no violation, 2.6 to 3.5 times with a few;
+   - test (b): with two density-compensated families mixed in every row, the N_*⁻²-weighted mean is 26 %, 8.5 % and 5.7 %
+     from the differences of the exact rearrangement at K = 20, 40, 80, the plain mean 35 %; there every parcel is
+     misplaced by the sort and the simplex needs about K passes (0.46 s at K = 80, N = 1600);
+   - Float32 sees no thermobaric reordering up to γ = 1e-3 Pa⁻¹ (its certificate tolerance, 16 (K + 1) eps g L_z, is
+     above the reduced costs): the exact rearrangement needs Float64.
 3. ∂_t p_*: from the diabatic tendencies, plus an offline check by differences of snapshots, reading `p_star` from a
    `DataFile`.
 

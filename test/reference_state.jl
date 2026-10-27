@@ -108,10 +108,10 @@ function at_reference_height(f, ref, model, energy)
     return map(n -> f(ref, model.fluid, model.space.g, ref.consvar[n], ref.q[n], z_star[n]), eachindex(ref.mass))
 end
 
-# whether each parcel is placed, unsplit, in the slot of its own row
-in_own_rows(ref) = all(enumerate(ref.order)) do (r, n)
-    e = ref.placement.first[r]
-    ref.placement.first[r+1] == e + 1 && ref.placement.slot[e] == ref.row[n]
+# whether each parcel is placed, unsplit, in the slot of its own row: every entry of the placement with a mass is
+# there (the entries of a parcel add up to its mass), for a sorted or an exact placement
+in_own_rows(ref) = all(1:ref.placement.count) do e
+    ref.placement.mass[e] == 0 || ref.placement.slot[e] == ref.row[ref.placement.parcel[e]]
 end
 
 ## Tests of AN2D

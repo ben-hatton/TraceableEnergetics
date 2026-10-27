@@ -11,7 +11,9 @@
 
 A placement of N parcels into K slots, as the list of its positive entries (parcel n, slot k, mass x_nk), at most
 N + K - 1 of them (`count`), in the order in which the parcels were placed: the entries of the parcel of rank r are
-`first[r]:first[r+1]-1`. Never an N × K matrix.
+`first[r]:first[r+1]-1`. Never an N × K matrix. Only a placement filled in order (`sorted_placement!`) is ordered so:
+once completed into a tree (`complete_staircase!`) and changed by the transportation simplex (`pivot!`), its entries,
+N + K - 1 of them, some of zero mass, are in no particular order, and `first` is no longer meaningful.
 """
 mutable struct Placement{F}
     const parcel::Vector{Int}       # parcel n of each entry

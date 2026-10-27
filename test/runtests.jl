@@ -56,6 +56,8 @@ include(joinpath(TESTS, "..", "tools", "scales.jl"))
         include(joinpath($TESTS, "reference_state.jl"))
         include(joinpath($TESTS, "available_energy_budget.jl"))
         include(joinpath($TESTS, "reference_tendency.jl"))
+        include(joinpath($TESTS, "transportation.jl"))
+        include(joinpath($TESTS, "exact_rearrangement.jl"))
     end
     # AN2D and FC2D share their diagnostic names, apart from the model-specific ones
     @testset "shared diagnostic names" begin

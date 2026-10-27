@@ -91,13 +91,14 @@ change in this repository.
   variables (on the z dimension, or a dimension of their own such as reference-state slots), not full cell fields.
 
 ## CURRENT WORK
-- The Lorenz reference state of available energy. Milestones 1 (the sorted rearrangement with its certificate, the
-  reference heights, the available energy Π = Π₁ + Π₂: AE, ACE = Π₁, APE = Π₂, notation of the energy notes), 3 (∂ₜP_*
-  from the diabatic tendencies, src/reference_tendency.jl) and 4 (the budgets of ACE and APE, with the R terms in ∂ₜP_*)
-  are done, for both models, and plotted by tools/budget_figures.jl in examples/energy_budget (rising bubble) and
-  examples/thermohaline_lock_exchange (ACE, heat and salt all significant). Next: milestone 2 (exact rearrangement; the
-  sorted one fails the certificate for up to 9 parcels in the lock exchange), with the test of the N_*⁻² weights under
-  strong thermobaricity deferred to it. Start from notes/reference_state_plan.md.
+- The Lorenz reference state of available energy: all four milestones are done, for both models, and plotted by
+  tools/budget_figures.jl in examples/energy_budget (rising bubble) and examples/thermohaline_lock_exchange (ACE, heat
+  and salt all significant): 1, the sorted rearrangement with its certificate, the reference heights, the available
+  energy Π = Π₁ + Π₂ (AE, ACE = Π₁, APE = Π₂, notation of the energy notes); 2, the exact rearrangement
+  (`ExactRearrangement`, a transportation simplex, src/numerics/transportation.jl), used by the examples; 3, ∂ₜP_* from
+  the diabatic tendencies (src/reference_tendency.jl); 4, the budgets of ACE and APE, with the R terms in ∂ₜP_*.
+  Deferred speedups (sort warm start, Hermite interval hint, previous-snapshot warm start of the simplex, banded pricing,
+  incremental tree updates) are to be offered to the user with fresh timings. See notes/reference_state_plan.md.
 
 ## WORKING WITH THE USER
 Check in with the user:

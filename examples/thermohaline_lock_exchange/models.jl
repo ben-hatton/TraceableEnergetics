@@ -68,8 +68,9 @@ states = (an = state_an, fc = state_fc)
 
 # the manipulated conversion needs a reference state ρ_R(z), p_R(z): AN2D has its own, FC2D takes that of AN2D (same grid)
 references = (an = an.reference, fc = an.reference)
-# the Lorenz reference state of available energy of each model, computed at each output by sorting the parcels
-lorenz = (an = AnelasticLorenzReference(an), fc = CompressibleLorenzReference(fc))
+# the Lorenz reference state of available energy of each model, computed at each output by the exact rearrangement
+# of the parcels (the transportation simplex, from their sorted placement)
+lorenz = (an = AnelasticLorenzReference(an, ExactRearrangement()), fc = CompressibleLorenzReference(fc, ExactRearrangement()))
 loops = (an = CFAnelastics.loop, fc = CFCompressible.loop)
 
 #####

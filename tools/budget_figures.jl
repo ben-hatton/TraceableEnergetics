@@ -104,7 +104,8 @@ function budget_names(model)
     integrals = (:integrated_kinetic_energy, :integrated_potential_energy, :integrated_energy_tendency,
                  :integrated_boundary_flux, :integrated_vortex_work, :integrated_budget_residual)
     available = (:AE, :ACE, :APE, :p_star, :v_star, :integrated_AE, :integrated_ACE, :integrated_APE,
-                 :background_potential_energy, :certificate_violations, :wall_minima)
+                 :background_potential_energy, :certificate_violations, :wall_minima, :pivots, :pricing_passes,
+                 :sorted_energy_excess)
     available_budget = (:div_ACE_flux_rev, :div_ACE_flux_irr, :div_APE_flux_rev, :div_APE_flux_irr, :conversion_ACE,
                         :conversion_APE, :background_conversion, :heating_consvar_at_p_star, :heating_composition_at_p_star,
                         :heating_at_p_star, :heating_consvar_at_z_star, :heating_composition_at_z_star, :heating_at_z_star,
@@ -112,7 +113,7 @@ function budget_names(model)
                         :div_pressure_flux_star, :ACE_conversion_residual, :APE_conversion_residual)
     reference_tendency = (:p_star_tendency, :plain_weight_slots, :reference_pressure_term_ACE, :reference_pressure_term_APE,
                           :dρACE, :dρAPE, :ACE_budget_residual, :APE_budget_residual)
-    column = model isa FC2D ? (:p_top, :volume_residual, :p_top_tendency) : ()
+    column = model isa FC2D ? (:p_top, :volume_residual, :p_top_tendency, :top_pressure_iterations) : ()
     return (kinetic..., potential..., conversion..., integrals..., available..., available_budget..., reference_tendency..., column...)
 end
 
@@ -541,6 +542,11 @@ function print_summary(results; at_rest = nothing)
         println("    largest number of parcels failing the certificate: $(Int(maximum(I(key, :certificate_violations)))), ",
                 "at a wall: $(Int(maximum(I(key, :wall_minima)))) (of $(length(field(results, key, :AE, 1)))); ",
                 "of slots with plain weights: $(Int(maximum(I(key, :plain_weight_slots))))")
+        top = models[key] isa FC2D ? ", alternations with P_top: $(Int(maximum(I(key, :top_pressure_iterations))))" : ""
+        println("    largest number of pivots: $(Int(maximum(I(key, :pivots)))), of passes over the pairs: ",
+                "$(Int(maximum(I(key, :pricing_passes))))$top; underestimate of E_P - E_* by the sort: ",
+                "$(maximum(I(key, :sorted_energy_excess))) J m⁻¹ at most, ",
+                "$(maximum(I(key, :sorted_energy_excess) ./ I(key, :integrated_AE))) of ∫ρΠ at most")
         R = I(key, :reference_pressure_term_ACE) .+ I(key, :reference_pressure_term_APE)
         println("    max |∫R_Π| = $(maximum(abs, R)) W m⁻¹, max |∫R_Π₂| = $(maximum(abs, I(key, :reference_pressure_term_APE))) W m⁻¹")
     end

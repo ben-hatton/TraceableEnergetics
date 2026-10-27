@@ -410,6 +410,13 @@ function reference_state_entries(model::AN2D{F}, ref, out) where F
             (integrated_potential_energy, integrated_AE) -> integrated_potential_energy - integrated_AE),
         certificate_violations = entry("number of parcels with a negative reduced cost", "1", (),
             reference_state -> F(reference_state.certificate_violations)),
+        # the transportation simplex of ExactRearrangement (no pivots and one pass for SortedRearrangement)
+        pivots = entry("number of pivots of the transportation simplex", "1", (), reference_state -> F(reference_state.pivots)),
+        pricing_passes = entry("number of passes over the parcel-slot pairs", "1", (),
+            reference_state -> F(reference_state.pricing_passes)),
+        # Σ_nk x_nk c_nk of the sorted placement less that of the placement, zero for SortedRearrangement
+        sorted_energy_excess = entry("underestimate of E_P - E_* by the sorted placement", "J m⁻¹", (),
+            reference_state -> reference_state.sorted_energy_excess),
     )
 end
 function reference_state_entries(model::FC2D{F}, ref, out) where F
@@ -443,6 +450,15 @@ function reference_state_entries(model::FC2D{F}, ref, out) where F
             (integrated_potential_energy, integrated_AE) -> integrated_potential_energy - integrated_AE),
         certificate_violations = entry("number of parcels with a negative reduced cost", "1", (),
             reference_state -> F(reference_state.certificate_violations)),
+        # the transportation simplex of ExactRearrangement (no pivots and one pass for SortedRearrangement)
+        pivots = entry("number of pivots of the transportation simplex", "1", (), reference_state -> F(reference_state.pivots)),
+        pricing_passes = entry("number of passes over the parcel-slot pairs", "1", (),
+            reference_state -> F(reference_state.pricing_passes)),
+        top_pressure_iterations = entry("number of placements alternating with the top pressure", "1", (),
+            reference_state -> F(reference_state.top_pressure_iterations)),
+        # G = Σ_nk x_nk c_nk - P_top L_x L_z of the sorted placement less that of the placement, zero for SortedRearrangement
+        sorted_energy_excess = entry("underestimate of E_P - E_* by the sorted placement", "J m⁻¹", (),
+            reference_state -> reference_state.sorted_energy_excess),
     )
 end
 
