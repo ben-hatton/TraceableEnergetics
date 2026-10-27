@@ -58,3 +58,60 @@ function parcel_integral(model, ref, X)
     end
     return total
 end
+
+"""
+    means = SlotMeans(F, K)
+
+Workspace of the means over the parcels of each of K slots that give the tendency of the reference state
+(`slot_means!`): the slot density ρ_k [kg m⁻³] and the gradient ∂_z v_*(z_k) [m² kg⁻¹] of the reference specific
+volume at the slot, set before the means, and the means ⟨v̇⟩_k [m³ kg⁻¹ s⁻¹] and ⟨∂v/∂p⟩_k [m³ kg⁻¹ Pa⁻¹], with the
+sums of their weights and whether the slot holds a parcel with N² ≤ 0.
+"""
+struct SlotMeans{F}
+    density::Vector{F}              # ρ_k [kg m⁻³]
+    volume_gradient::Vector{F}      # ∂_z v_*(z_k) [m² kg⁻¹]
+    weight::Vector{F}               # Σ_n x_nk/N²_nk [kg m⁻¹ s²]
+    volume_rate::Vector{F}          # ⟨v̇⟩_k [m³ kg⁻¹ s⁻¹]
+    compressibility::Vector{F}      # ⟨∂v/∂p⟩_k [m³ kg⁻¹ Pa⁻¹]
+    plain_volume_rate::Vector{F}    # Σ_n x_nk v̇_nk [m⁴ s⁻¹], then the plain mean
+    plain_compressibility::Vector{F}    # Σ_n x_nk ∂v/∂p_nk, then the plain mean
+    unstable::Vector{Bool}          # N²_nk ≤ 0 for a parcel of the slot
+end
+SlotMeans(F::Type, K) = SlotMeans(zeros(F, K), zeros(F, K), zeros(F, K), zeros(F, K), zeros(F, K), zeros(F, K), zeros(F, K), zeros(Bool, K))
+
+"""
+    count = slot_means!(means::SlotMeans, placement, slot_mass, slot_pressure, fluid, g, consvar, q, consvar_rate, q_rate)
+
+The means over the parcels of each slot k, weighted by the inverse of their stratification at the slot,
+    ⟨a⟩_k = Σ_n w_nk a_nk / Σ_n w_nk,   w_nk = x_nk/N²_nk,   N²_nk = g ρ_k (∂_z v_*(z_k) + g ρ_k ∂v/∂p_nk),
+of the rate of change of the specific volume at the slot pressure P_k, v̇_nk = ∂v/∂ϑ ϑ̇_n + ∂v/∂q q̇_n [m³ kg⁻¹ s⁻¹], and of
+the compressibility ∂v/∂p_nk [m³ kg⁻¹ Pa⁻¹], with v and its derivatives at (P_k, ϑ_n, q_n), the parcel rates ϑ̇_n, q̇_n
+(`consvar_rate`, `q_rate`), and ρ_k and ∂_z v_*(z_k) from `means`. A parcel that is weakly stratified at its level moves
+further for a given change of its volume, and displaces more of the others. Where N²_nk ≤ 0 for a parcel of the slot,
+the weights are undefined and the slot takes the plain means, w_nk = x_nk. Returns the number of such slots.
+"""
+function slot_means!(means::SlotMeans{F}, placement, slot_mass, slot_pressure, fluid, g, consvar, q, consvar_rate, q_rate) where F
+    (; density, volume_gradient, weight, volume_rate, compressibility, plain_volume_rate, plain_compressibility, unstable) = means
+    foreach(a -> fill!(a, 0), (weight, volume_rate, compressibility, plain_volume_rate, plain_compressibility))
+    fill!(unstable, false)
+    for e in 1:placement.count
+        n, k, x = placement.parcel[e], placement.slot[e], placement.mass[e]
+        _, ∂v_∂p, ∂v_∂ϑ, ∂v_∂q = fluid(:p, :consvar, :q).volume_functions(slot_pressure[k], consvar[n], q[n])
+        v̇ = ∂v_∂ϑ * consvar_rate[n] + ∂v_∂q * q_rate[n]                # at fixed pressure
+        N² = g * density[k] * (volume_gradient[k] + g * density[k] * ∂v_∂p)
+        unstable[k] |= N² <= 0
+        w = x / N²
+        weight[k] += w
+        volume_rate[k] += w * v̇
+        compressibility[k] += w * ∂v_∂p
+        plain_volume_rate[k] += x * v̇
+        plain_compressibility[k] += x * ∂v_∂p
+    end
+    for k in eachindex(weight)
+        plain_volume_rate[k] /= slot_mass[k]
+        plain_compressibility[k] /= slot_mass[k]
+        volume_rate[k] = unstable[k] ? plain_volume_rate[k] : volume_rate[k] / weight[k]
+        compressibility[k] = unstable[k] ? plain_compressibility[k] : compressibility[k] / weight[k]
+    end
+    return count(unstable)
+end

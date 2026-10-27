@@ -91,3 +91,15 @@ the next one (h₂, s₂).
     sign(s₁) != sign(s₂) && abs(d) > 3abs(s₁) && return 3s₁
     return d
 end
+
+## DUAL NUMBERS: THE CHANGE OF THE INTERPOLANT AT A FIXED HEIGHT AS ITS NODES MOVE
+
+"""
+    ReferenceTendencyTag
+
+Tag of the dual numbers (ForwardDiff) whose partial is the time derivative of a quantity of the reference state. A
+`HermiteProfile` of these, with the heights, values and secants of its nodes as value + ε × tendency and its slopes from
+`monotone_slopes!`, gives at a fixed height ζ the interpolant as the value of `hermite` and its rate of change, as the
+nodes move, as the partial: the derivative of every formula of the interpolant, on the same branch.
+"""
+struct ReferenceTendencyTag end

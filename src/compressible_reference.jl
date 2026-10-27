@@ -66,9 +66,20 @@ mutable struct CompressibleLorenzReference{F, M <: AbstractRearrangement}
     const level_pressure::Vector{F}     # P_* at the levels [Pa]
     const p_star::Vector{F}             # P_* at the cell centres of the z axis [Pa]
     const v_star::Vector{F}             # v_* at the cell centres of the z axis [m³ kg⁻¹]
+    # the tendency of the reference state from the diabatic tendencies (`reference_tendency!`)
+    const consvar_rate::Vector{F}       # Dϑ/Dt of each parcel [consvar s⁻¹]
+    const q_rate::Vector{F}             # Dq/Dt of each parcel [s⁻¹]
+    const slot_means::SlotMeans{F}      # the N_*⁻²-weighted means of the parcels of each slot
+    const slot_volume_tendency::Vector{F}   # ∂ₜv_*,k at fixed mass coordinate [m³ kg⁻¹ s⁻¹]
+    const edge_height_tendency::Vector{F}   # ∂ₜz_e of the slot edges, from the bottom [m s⁻¹]
+    const dual_pressure::HermiteProfile{Dual{ReferenceTendencyTag, F, 1}}  # P_*(z), with ∂ₜP_* at fixed z as the partial
+    const dual_secant::Vector{Dual{ReferenceTendencyTag, F, 1}}            # the secants of P_*, with their tendencies
+    const p_star_tendency::Vector{F}    # ∂ₜP_* at the cell centres of the z axis [Pa s⁻¹]
     p_top::F                            # P_top [Pa]
     volume_residual::F                  # (Σ_k V_k/L_x - L_z)/L_z
+    p_top_tendency::F                   # ∂ₜP_top [Pa s⁻¹]
     certificate_violations::Int
+    plain_weight_slots::Int             # slots whose means have plain weights, as N² ≤ 0 for one of their parcels
 end
 
 function CompressibleLorenzReference(model::FC2D{F}, method::AbstractRearrangement = SortedRearrangement()) where F
@@ -82,7 +93,9 @@ function CompressibleLorenzReference(model::FC2D{F}, method::AbstractRearrangeme
                                       vector(), collect(1:N), zeros(Int, N), Placement(F, N, K), vector(), vector(),
                                       zeros(F, K), zeros(F, K), zeros(F, K), zeros(F, K), zeros(F, K),
                                       HermiteProfile(F, K + 1), zeros(F, K), zeros(F, K + 1), zeros(F, K + 1),
-                                      zeros(F, nz), zeros(F, nz), zero(F), zero(F), 0)
+                                      zeros(F, nz), zeros(F, nz), vector(), vector(), SlotMeans(F, K), zeros(F, K),
+                                      zeros(F, K + 1), HermiteProfile(Dual{ReferenceTendencyTag, F, 1}, K + 1),
+                                      zeros(Dual{ReferenceTendencyTag, F, 1}, K), zeros(F, nz), zero(F), zero(F), zero(F), 0, 0)
     # the parcels' own heights and rows: slot k is the row of cell index j = Hz + Mz + 1 - k
     for j in interior_cells(domain, 2), i in interior_cells(domain, 1)
         n = parcel_index(domain, i, j)

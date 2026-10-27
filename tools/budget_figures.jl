@@ -91,8 +91,9 @@ Base.close(thinned::Thinned) = close(thinned.output)
 The diagnostics of `model` recorded for the figures: the local budgets of ρK and ρP and the manipulated conversion at the
 cells [W m⁻³], their integrals [J m⁻¹ or W m⁻¹], the available energies AE = Π, ACE = Π₁, APE = Π₂ [J kg⁻¹] with their
 integrals, the reference profiles P_*, v_*, the background potential energy ∫ρ(P - Π) dV and the checks of the reference
-state, and the terms of the budgets of ACE and APE at the cells [W m⁻³]; for FC2D, the top pressure of the reference
-column and its excess height.
+state, the terms of the budgets of ACE and APE at the cells [W m⁻³], with their tendencies and the terms in ∂ₜP_*, and
+the tendency ∂ₜP_* of the reference pressure from the diabatic tendencies; for FC2D, the top pressure of the reference
+column, its excess height and its tendency.
 """
 function budget_names(model)
     kinetic = (:dρK, :div_kinetic_flux_rev, :div_kinetic_flux_irr, :conversion, :viscous_dissipation, :vortex_work,
@@ -109,8 +110,10 @@ function budget_names(model)
                         :heating_at_p_star, :heating_consvar_at_z_star, :heating_composition_at_z_star, :heating_at_z_star,
                         :buoyancy_conversion_ACE, :buoyancy_conversion_APE, :pressure_dilatation_star,
                         :div_pressure_flux_star, :ACE_conversion_residual, :APE_conversion_residual)
-    column = model isa FC2D ? (:p_top, :volume_residual) : ()
-    return (kinetic..., potential..., conversion..., integrals..., available..., available_budget..., column...)
+    reference_tendency = (:p_star_tendency, :plain_weight_slots, :reference_pressure_term_ACE, :reference_pressure_term_APE,
+                          :dρACE, :dρAPE, :ACE_budget_residual, :APE_budget_residual)
+    column = model isa FC2D ? (:p_top, :volume_residual, :p_top_tendency) : ()
+    return (kinetic..., potential..., conversion..., integrals..., available..., available_budget..., reference_tendency..., column...)
 end
 
 """
@@ -220,15 +223,17 @@ end
 
 The global budgets of the available energy against time, one column per model, each budget as d/dt of its energy from
 differences of the outputs against the diagnosed terms averaged between them (what they leave is the error of the
-differences, measured by the same estimate for ∫ρK against its exact tendency, and the terms in ∂ₜP_*, whose integral
-vanishes), at fixed reference state:
+differences, measured by the same estimate for ∫ρK against its exact tendency, and the change of the reference state that
+the diabatic tendencies do not give, from the discretisation of advection: see `reference_tendency_figure`), with the
+terms R_Π₁, R_Π₂ in the tendency of the reference pressure ∂ₜP_*:
 - the energies, as changes from t = 0;
-- the APE, d/dt ∫ρΠ₂ = -∫C_APE + G_APE, with G_APE = ∫(-(Q̃_ϑ - Q*_ϑ) - (Q̃_q - Q*_q) + Q̃ - Q*);
-- the ACE, d/dt ∫ρΠ₁ = -∫C_ACE + G_ACE, with G_ACE = ∫(-(Q_ϑ - Q̃_ϑ) - (Q_q - Q̃_q) + Q - Q̃), over the times `fast`
-  (a range (t₀, t₁) [s]): in FC2D the ACE is exchanged with K by sound waves, much faster than the other budgets;
+- the APE, d/dt ∫ρΠ₂ = -∫C_APE + G_APE + ∫R_Π₂, with G_APE = ∫(-(Q̃_ϑ - Q*_ϑ) - (Q̃_q - Q*_q) + Q̃ - Q*);
+- the ACE, d/dt ∫ρΠ₁ = -∫C_ACE + G_ACE + ∫R_Π₁, with G_ACE = ∫(-(Q_ϑ - Q̃_ϑ) - (Q_q - Q̃_q) + Q - Q̃), over the times
+  `fast` (a range (t₀, t₁) [s]): in FC2D the ACE is exchanged with K by sound waves, much faster than the other budgets;
 - the conversions to K, C = C_ACE + C_APE + C_bg, and the form of the energy notes C_APE ≈ C_b,2*;
-- K and the available energy, d/dt ∫ρ(K + Π) = ∫C_bg - ∫ρε_K + ∫VF + G (closed walls), in which the sound waves cancel;
-- the background, d/dt ∫ρ(P - Π) = -∫C_bg + ∫(Q* - Q*_ϑ - Q*_q).
+- K and the available energy, d/dt ∫ρ(K + Π) = ∫C_bg - ∫ρε_K + ∫VF + G + ∫R_Π (closed walls), in which the sound waves
+  cancel, and ∫R_Π = ∫(R_Π₁ + R_Π₂) is zero to the resolution of the slots;
+- the background, d/dt ∫ρ(P - Π) = -∫C_bg + ∫(Q* - Q*_ϑ - Q*_q) - ∫R_Π.
 With `smooth` [s], all but the energies and the ACE are means over blocks of that duration, which remove the sound waves
 of FC2D from the slow budgets (the block means of the differences telescope, so the budgets still compare exactly).
 """
@@ -252,6 +257,8 @@ function available_energy_budget_figure(results; fast = nothing, smooth = nothin
                         I(key, :heating_composition_at_p_star) .+ I(key, :heating_composition_at_z_star) .+
                         I(key, :heating_at_p_star) .- I(key, :heating_at_z_star))
         C_ACE, C_APE = average(I(key, :conversion_ACE)), average(I(key, :conversion_APE))
+        # the terms in ∂ₜP_*
+        R_ACE, R_APE = average(I(key, :reference_pressure_term_ACE)), average(I(key, :reference_pressure_term_APE))
         # the error of the differences, from those of ∫ρK against the average of its exact tendency
         error = d_dt(I(key, :integrated_kinetic_energy)) .- average(I(key, :dρK))
         # energies, as changes from t = 0
@@ -267,18 +274,20 @@ function available_energy_budget_figure(results; fast = nothing, smooth = nothin
         # the APE
         ax = Axis(figure[2, column]; title = "$label: budget of ∫ρΠ₂ (APE)$(n > 1 ? ", means over $smooth s" : "")", ylabel = "W m⁻¹")
         lines!(ax, mid_slow, slow(d_dt(I(key, :integrated_APE))); label = "d/dt ∫ρΠ₂", color = :black)
-        lines!(ax, mid_slow, slow(.-C_APE .+ G_APE); label = "-∫C_APE + G_APE", color = :black, linestyle = :dot)
+        lines!(ax, mid_slow, slow(.-C_APE .+ G_APE .+ R_APE); label = "-∫C_APE + G_APE + ∫R_Π₂", color = :black, linestyle = :dot)
         lines!(ax, mid_slow, slow(.-C_APE); label = "-∫C_APE")
         lines!(ax, mid_slow, slow(G_APE); label = "G_APE")
-        lines!(ax, mid_slow, slow(d_dt(I(key, :integrated_APE)) .+ C_APE .- G_APE); label = "d/dt ∫ρΠ₂ + ∫C_APE - G_APE")
+        lines!(ax, mid_slow, slow(R_APE); label = "∫R_Π₂")
+        lines!(ax, mid_slow, slow(d_dt(I(key, :integrated_APE)) .+ C_APE .- G_APE .- R_APE); label = "residual")
         axislegend(ax; position = :lb)
         # the ACE, over the times `fast`
         shown = isnothing(fast) ? eachindex(mid) : findall(t -> fast[1] <= t <= fast[2], mid)
         ax = Axis(figure[3, column]; title = "$label: budget of ∫ρΠ₁ (ACE)", ylabel = "W m⁻¹")
         lines!(ax, mid[shown], d_dt(I(key, :integrated_ACE))[shown]; label = "d/dt ∫ρΠ₁", color = :black)
-        lines!(ax, mid[shown], (.-C_ACE .+ G_ACE)[shown]; label = "-∫C_ACE + G_ACE", color = :black, linestyle = :dot)
+        lines!(ax, mid[shown], (.-C_ACE .+ G_ACE .+ R_ACE)[shown]; label = "-∫C_ACE + G_ACE + ∫R_Π₁", color = :black, linestyle = :dot)
         lines!(ax, mid[shown], G_ACE[shown]; label = "G_ACE")
-        lines!(ax, mid[shown], (d_dt(I(key, :integrated_ACE)) .+ C_ACE .- G_ACE)[shown]; label = "d/dt ∫ρΠ₁ + ∫C_ACE - G_ACE")
+        lines!(ax, mid[shown], R_ACE[shown]; label = "∫R_Π₁")
+        lines!(ax, mid[shown], (d_dt(I(key, :integrated_ACE)) .+ C_ACE .- G_ACE .- R_ACE)[shown]; label = "residual")
         lines!(ax, mid[shown], error[shown]; label = "error of d/dt (from ∫ρK)", color = :gray)
         axislegend(ax; position = :lb)
         # the conversions to K
@@ -289,22 +298,25 @@ function available_energy_budget_figure(results; fast = nothing, smooth = nothin
         axislegend(ax; position = :lb)
         # K and the available energy, in which the exchanges between K and ACE cancel
         generation = G_ACE .+ G_APE
-        total = average(I(key, :background_conversion) .- I(key, :viscous_dissipation) .+ I(key, :integrated_vortex_work)) .+ generation
+        R = R_ACE .+ R_APE
+        total = average(I(key, :background_conversion) .- I(key, :viscous_dissipation) .+ I(key, :integrated_vortex_work)) .+ generation .+ R
         d_total = d_dt(I(key, :integrated_kinetic_energy) .+ I(key, :integrated_AE))
         ax = Axis(figure[5, column]; title = "$label: budget of ∫ρ(K + Π)", ylabel = "W m⁻¹")
         lines!(ax, mid_slow, slow(d_total); label = "d/dt ∫ρ(K + Π)", color = :black)
-        lines!(ax, mid_slow, slow(total); label = "∫C_bg - ∫ρε_K + ∫VF + G", color = :black, linestyle = :dot)
+        lines!(ax, mid_slow, slow(total); label = "∫C_bg - ∫ρε_K + ∫VF + G + ∫R_Π", color = :black, linestyle = :dot)
         lines!(ax, mid_slow, slow(generation); label = "G = G_ACE + G_APE")
+        lines!(ax, mid_slow, slow(R); label = "∫R_Π")
         lines!(ax, mid_slow, slow(average(.-I(key, :viscous_dissipation))); label = "-∫ρε_K")
         lines!(ax, mid_slow, slow(d_total .- total); label = "residual")
         axislegend(ax; position = :lb)
         # the background
         background = average(.-I(key, :background_conversion) .+ I(key, :heating_at_z_star) .-
-                             I(key, :heating_consvar_at_z_star) .- I(key, :heating_composition_at_z_star))
+                             I(key, :heating_consvar_at_z_star) .- I(key, :heating_composition_at_z_star)) .- R
         ax = Axis(figure[6, column]; title = "$label: budget of ∫ρ(P - Π)", xlabel = "t [s]", ylabel = "W m⁻¹")
         lines!(ax, mid_slow, slow(d_dt(I(key, :background_potential_energy))); label = "d/dt ∫ρ(P - Π)", color = :black)
-        lines!(ax, mid_slow, slow(background); label = "-∫C_bg + ∫(Q* - Q*_ϑ - Q*_q)", color = :black, linestyle = :dot)
+        lines!(ax, mid_slow, slow(background); label = "-∫C_bg + ∫(Q* - Q*_ϑ - Q*_q) - ∫R_Π", color = :black, linestyle = :dot)
         lines!(ax, mid_slow, slow(average(.-I(key, :background_conversion))); label = "-∫C_bg")
+        lines!(ax, mid_slow, slow(d_dt(I(key, :background_potential_energy)) .- background); label = "residual")
         axislegend(ax; position = :lb)
     end
     return figure
@@ -395,27 +407,23 @@ end
     figure = local_available_energy_budget_figure(results, key; n = last output)
 
 Maps of the terms of the budgets of ρΠ₂ (APE) and ρΠ₁ (ACE) of the model `key` at output n, each as its contribution to
-the tendency at a fixed reference state, with their sum (that tendency, without the terms in ∂ₜP_*), and the conversions
-against the forms of the energy notes.
+the tendency, with the terms in ∂ₜP_*, the tendency and the residual of the budget, and the conversions against the forms
+of the energy notes.
 """
 function local_available_energy_budget_figure(results, key; n = lastindex(results.times))
-    figure = Figure(size = (2000, 800))
+    figure = Figure(size = (2250, 800))
     budget_row!(figure, 1, results, key, "budget of ρΠ₂ (APE)",
         ((:div_APE_flux_rev, -1, "-∇·J_APE^rev"), (:div_APE_flux_irr, -1, "-∇·J_APE^irr"), (:conversion_APE, -1, "-C_APE"),
          (((:heating_consvar_at_p_star, -1), (:heating_consvar_at_z_star, 1)), "-(Q_ϑ(P_*) - Q*_ϑ)"),
          (((:heating_composition_at_p_star, -1), (:heating_composition_at_z_star, 1)), "-(Q_q(P_*) - Q*_q)"),
-         (((:heating_at_p_star, 1), (:heating_at_z_star, -1)), "Q(P_*) - Q*"),
-         (((:div_APE_flux_rev, -1), (:div_APE_flux_irr, -1), (:conversion_APE, -1), (:heating_consvar_at_p_star, -1),
-           (:heating_consvar_at_z_star, 1), (:heating_composition_at_p_star, -1), (:heating_composition_at_z_star, 1),
-           (:heating_at_p_star, 1), (:heating_at_z_star, -1)), "sum: ∂ₜ(ρΠ₂) at fixed P_*")); n)
+         (((:heating_at_p_star, 1), (:heating_at_z_star, -1)), "Q(P_*) - Q*"), (:reference_pressure_term_APE, 1, "R_Π₂"),
+         (:dρAPE, 1, "∂ₜ(ρΠ₂)"), (:APE_budget_residual, 1, "residual")); n)
     budget_row!(figure, 2, results, key, "budget of ρΠ₁ (ACE)",
         ((:div_ACE_flux_rev, -1, "-∇·J_ACE^rev"), (:div_ACE_flux_irr, -1, "-∇·J_ACE^irr"), (:conversion_ACE, -1, "-C_ACE"),
          (((:heating_consvar, -1), (:heating_consvar_at_p_star, 1)), "-(Q_ϑ - Q_ϑ(P_*))"),
          (((:heating_composition, -1), (:heating_composition_at_p_star, 1)), "-(Q_q - Q_q(P_*))"),
-         (((:heating, 1), (:heating_at_p_star, -1)), "Q - Q(P_*)"),
-         (((:div_ACE_flux_rev, -1), (:div_ACE_flux_irr, -1), (:conversion_ACE, -1), (:heating_consvar, -1),
-           (:heating_consvar_at_p_star, 1), (:heating_composition, -1), (:heating_composition_at_p_star, 1),
-           (:heating, 1), (:heating_at_p_star, -1)), "sum: ∂ₜ(ρΠ₁) at fixed P_*")); n)
+         (((:heating, 1), (:heating_at_p_star, -1)), "Q - Q(P_*)"), (:reference_pressure_term_ACE, 1, "R_Π₁"),
+         (:dρACE, 1, "∂ₜ(ρΠ₁)"), (:ACE_budget_residual, 1, "residual")); n)
     budget_row!(figure, 3, results, key, "conversions",
         ((:conversion_APE, 1, "C_APE"), (:buoyancy_conversion_APE, 1, "C_b,2*"), (:APE_conversion_residual, 1, "C_APE - C_b,2*"),
          (:conversion_ACE, 1, "C_ACE"),
@@ -423,6 +431,62 @@ function local_available_energy_budget_figure(results, key; n = lastindex(result
          (:ACE_conversion_residual, 1, "C_ACE - C_b,1* - C_D* + ∇·J_C*"), (:background_conversion, 1, "C_bg")); n)
     Label(figure[0, :], "$(nameof(typeof(results.models[key]))): local budgets of the available energy at t = $(results.times[n]) s";
           fontsize = 18)
+    return figure
+end
+
+"""
+    figure = reference_tendency_figure(results; smooth = nothing, profiles = 3)
+
+The tendency of the reference state, one column per model:
+- the change of ∫ρΠ₁ and ∫ρΠ₂ that the diagnosed tendencies ∫∂ₜ(ρΠ₁), ∫∂ₜ(ρΠ₂) do not give: d/dt of the energy from
+  differences of the outputs, less the average of the diagnosed tendency between them, as means over blocks of `smooth`
+  seconds. It is the change of the reference state that the diabatic tendencies do not give, from the discretisation of
+  advection (spurious mixing, and the change of the slot masses in FC2D, which are those of the rows), plus the error of the
+  differences, measured by the same estimate for ∫ρK;
+- the integrals of the terms in ∂ₜP_*, ∫R_Π₁, ∫R_Π₂ and ∫R_Π, the last zero to the resolution of the slots;
+- ∂ₜP_* from the diabatic tendencies against the centred differences of P_* between the outputs of the data files, on the
+  rows, at `profiles` outputs spread over the run (the differences also hold the change from advection, and the noise of
+  the sorted placement between outputs).
+"""
+function reference_tendency_figure(results; smooth = nothing, profiles = 3)
+    (; models, data) = results
+    I(key, name) = series_integral(results, key, name)
+    figure = Figure(size = (1100, 1300))
+    for (column, key) in enumerate(keys(models))
+        model = models[key]
+        label = nameof(typeof(model))
+        times = series_times(results, key)
+        mid = midpoints(times)
+        d_dt(y) = difference(times, y)
+        n = block_size(times, smooth)
+        slow(y) = block_means(y, n)
+        # the change not given by the diagnosed tendencies, and the error of the differences
+        ax = Axis(figure[1, column]; title = "$label: d/dt ∫ρΠ - ∫∂ₜ(ρΠ)$(n > 1 ? ", means over $smooth s" : "")", ylabel = "W m⁻¹")
+        lines!(ax, slow(mid), slow(d_dt(I(key, :integrated_APE)) .- average(I(key, :dρAPE))); label = "APE")
+        lines!(ax, slow(mid), slow(d_dt(I(key, :integrated_ACE)) .- average(I(key, :dρACE))); label = "ACE")
+        lines!(ax, slow(mid), slow(d_dt(I(key, :integrated_kinetic_energy)) .- average(I(key, :dρK))); label = "error of d/dt (from ∫ρK)",
+               color = :gray)
+        axislegend(ax; position = :lb)
+        # the integrals of the terms in ∂ₜP_*
+        R_ACE, R_APE = I(key, :reference_pressure_term_ACE), I(key, :reference_pressure_term_APE)
+        ax = Axis(figure[2, column]; title = "$label: terms in ∂ₜP_*", xlabel = "t [s]", ylabel = "W m⁻¹")
+        lines!(ax, slow(times), slow(R_APE); label = "∫R_Π₂")
+        lines!(ax, slow(times), slow(R_ACE); label = "∫R_Π₁")
+        lines!(ax, slow(times), slow(R_ACE .+ R_APE); label = "∫R_Π", color = :black)
+        axislegend(ax; position = :lb)
+        # profiles of ∂ₜP_*: from the diabatic tendencies, and from centred differences of the outputs
+        z = CFBoxes.cellgrid(model.domain, model.dz, 2)
+        rows = CFBoxes.interior_cells(model.domain, 2)
+        P, ∂ₜP = data[key][:p_star], data[key][:p_star_tendency]
+        ax = Axis(figure[3, column]; title = "$label: ∂ₜP_* (lines) and differences of P_* (dots)", xlabel = "Pa s⁻¹", ylabel = "z [m]")
+        for (c, k) in enumerate(round.(Int, range(2, lastindex(results.times) - 1, profiles)))
+            color = Makie.wong_colors()[c]
+            centred = (P[rows, k+1] .- P[rows, k-1]) ./ (results.times[k+1] - results.times[k-1])
+            lines!(ax, ∂ₜP[rows, k], z[rows]; color, label = "t = $(round(results.times[k]; sigdigits = 4)) s")
+            scatter!(ax, centred, z[rows]; color, markersize = 6)
+        end
+        axislegend(ax; position = :rb)
+    end
     return figure
 end
 
@@ -475,6 +539,9 @@ function print_summary(results; at_rest = nothing)
             println("    $symbol = $(I(key, name)[1]) J m⁻¹ at t = 0, $(I(key, name)[end]) J m⁻¹ at the end$rest")
         end
         println("    largest number of parcels failing the certificate: $(Int(maximum(I(key, :certificate_violations)))), ",
-                "at a wall: $(Int(maximum(I(key, :wall_minima)))) (of $(length(field(results, key, :AE, 1))))")
+                "at a wall: $(Int(maximum(I(key, :wall_minima)))) (of $(length(field(results, key, :AE, 1)))); ",
+                "of slots with plain weights: $(Int(maximum(I(key, :plain_weight_slots))))")
+        R = I(key, :reference_pressure_term_ACE) .+ I(key, :reference_pressure_term_APE)
+        println("    max |∫R_Π| = $(maximum(abs, R)) W m⁻¹, max |∫R_Π₂| = $(maximum(abs, I(key, :reference_pressure_term_APE))) W m⁻¹")
     end
 end

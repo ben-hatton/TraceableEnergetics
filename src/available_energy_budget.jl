@@ -187,3 +187,131 @@ function displacement_buoyancy!(b₂, model::AN2D, ref::AnelasticLorenzReference
     end
     return fill_halo!(domain, b₂, ZeroGradient())
 end
+
+## Terms in the tendency of the reference pressure
+#
+# With P_* changing in time, the tendencies of ρΠ₁ and ρΠ₂ at a fixed height gain the terms of the energy notes
+#     R_Π₁ = ρ (Σ_p(ϑ, q, z, p) - Σ_p(ϑ, q, z, P_*(z))) ∂ₜP_*(z),
+#     R_Π₂ = ρ Σ_p(ϑ, q, z, P_*(z)) ∂ₜP_*(z) - ρ Σ_p(ϑ, q, z_*, P_*(z_*)) ∂ₜP_*(z_*),
+# the derivatives of Π₁ = Σ(z, p) - Σ(z, P_*) - (p - P_*) Σ_p(z, p) and Π₂ = Σ(z, P_*(z)) - Σ(z_*, P_*(z_*)) with respect
+# to P_* (the motion of z_* does not enter, at the minimum of the static energy). With Σ_p = v for FC2D and 1/ρ_R for
+# AN2D,
+#     FC2D:  R_Π₁ = (1 - ρ ṽ) ∂ₜP_*(z),   R_Π₂ = ρ ṽ ∂ₜP_*(z) - ρ v(ϑ, q, P_*(z_*)) ∂ₜP_*(z_*),   ṽ = v(ϑ, q, P_*(z)),
+#     AN2D:  R_Π₁ = 0,                     R_Π₂ = ∂ₜP_*(z) - ρ_R(z)/ρ_R(z_*) ∂ₜP_*(z_*),
+# where v(ϑ, q, P_*(z_*)) is v_*(z_*) at an interior minimum (level of neutral buoyancy), but not at a wall. Their sum
+# R_Π = ∂ₜP_*(z) - ρ Σ_p(z_*) ∂ₜP_*(z_*) integrates to zero over the box by the volume constraint, to the accuracy with which
+# the reference heights fill the box.
+
+"""
+    ∂ₜP = reference_pressure_tendency_at!(∂ₜP, model, ref, z_star)
+
+∂ₜP_*(z_*) [Pa s⁻¹] at the reference height `z_star` [m] of the parcel of each cell, at the interior cells, after
+`reference_tendency!` (`reference_pressure_tendency`).
+"""
+function reference_pressure_tendency_at!(∂ₜP, model, ref, z_star)
+    (; mgr, domain) = model
+    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
+        for j in jrange, i in irange
+            ∂ₜP[i, j] = reference_pressure_tendency(ref, model, z_star[i, j])
+        end
+    end
+    return fill_halo!(domain, ∂ₜP, ZeroGradient())
+end
+
+"""
+    R₁ = compression_reference_term!(R₁, model, ref)
+    R₂ = displacement_reference_term!(R₂, model, ref, z_star, ∂ₜP_at_z_star)
+
+The terms of the tendencies of ρΠ₁ and ρΠ₂ [W m⁻³] in the tendency of the reference pressure ∂ₜP_*, at the interior cells,
+after `reference_tendency!`: R_Π₁ = (1 - ρ v(ϑ, q, P_*(z))) ∂ₜP_*(z) (FC2D; zero for AN2D) and
+R_Π₂ = ρ v(ϑ, q, P_*(z)) ∂ₜP_*(z) - ρ v(ϑ, q, P_*(z_*)) ∂ₜP_*(z_*) (FC2D), ∂ₜP_*(z) - ρ_R(z)/ρ_R(z_*) ∂ₜP_*(z_*) (AN2D,
+with ρ_R(z_*) = -∂_z P_R(z_*)/g), with ∂ₜP_*(z_*) from `∂ₜP_at_z_star` (`reference_pressure_tendency_at!`).
+"""
+compression_reference_term!(R₁, model::AN2D, ref::AnelasticLorenzReference) = fill!(R₁, 0)
+function compression_reference_term!(R₁, model::FC2D, ref::CompressibleLorenzReference)
+    (; mgr, domain, fluid, dx, dz) = model
+    (; mass, consvar, q, p_star, p_star_tendency) = ref
+    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
+        @inbounds @vec for i in irange, j in jrange
+            n = parcel_index(domain, i, j)
+            ρ = mass[n] / (dx * dz)
+            ṽ = fluid(:p, :consvar, :q).specific_volume(p_star[j], consvar[n], q[n])  # v(ϑ, q, P_*(z))
+            R₁[i, j] = (1 - ρ * ṽ) * p_star_tendency[j]
+        end
+    end
+    return fill_halo!(domain, R₁, ZeroGradient())
+end
+function displacement_reference_term!(R₂, model::FC2D, ref::CompressibleLorenzReference, z_star, ∂ₜP_at_z_star)
+    (; mgr, domain, fluid, dx, dz) = model
+    (; mass, consvar, q, p_star, p_star_tendency) = ref
+    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
+        for j in jrange, i in irange
+            n = parcel_index(domain, i, j)
+            ρ = mass[n] / (dx * dz)
+            ṽ = fluid(:p, :consvar, :q).specific_volume(p_star[j], consvar[n], q[n])                  # v(ϑ, q, P_*(z))
+            P_ref = hermite(ref.pressure, z_star[i, j])[1]                                          # P_*(z_*)
+            v_ref = fluid(:p, :consvar, :q).specific_volume(P_ref, consvar[n], q[n])                 # v(ϑ, q, P_*(z_*))
+            R₂[i, j] = ρ * (ṽ * p_star_tendency[j] - v_ref * ∂ₜP_at_z_star[i, j])
+        end
+    end
+    return fill_halo!(domain, R₂, ZeroGradient())
+end
+function displacement_reference_term!(R₂, model::AN2D, ref::AnelasticLorenzReference, z_star, ∂ₜP_at_z_star)
+    (; mgr, domain, space) = model
+    (; ρ_R) = model.reference
+    (; p_star_tendency) = ref
+    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
+        for j in jrange, i in irange
+            ρ_ref = -hermite(ref.pressure, z_star[i, j])[2] / space.g                              # ρ_R(z_*)
+            R₂[i, j] = p_star_tendency[j] - ρ_R[j] / ρ_ref * ∂ₜP_at_z_star[i, j]
+        end
+    end
+    return fill_halo!(domain, R₂, ZeroGradient())
+end
+
+"""
+    dρΠ = available_energy_tendency!(dρΠ, model, dstate, B, Δϑ, Δq, dρconsvar, dρq, R)
+
+The tendency of ρΠ₁ or ρΠ₂ [W m⁻³] at the interior cells, from those of the model's densities and of the reference
+pressure: ∂ₜ(ρΠ) = B ∂ₜρ + ΔΣ_ϑ ∂ₜ(ρϑ) + ΔΣ_q ∂ₜ(ρq) + R, with the Bernoulli coefficient B, the differences of the
+potentials ΔΣ_ϑ, ΔΣ_q and the term R in ∂ₜP_* of that energy; ∂ₜρ from the tendencies `dstate` (FC2D; zero for AN2D).
+"""
+function available_energy_tendency!(dρΠ, model::FC2D, dstate, B, Δϑ, Δq, dρconsvar, dρq, R)
+    (; mgr, domain) = model
+    dρ = view(dstate.m, :, :, 1)
+    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
+        @inbounds @vec for i in irange, j in jrange
+            dρΠ[i, j] = B[i, j] * dρ[i, j] + Δϑ[i, j] * dρconsvar[i, j] + Δq[i, j] * dρq[i, j] + R[i, j]
+        end
+    end
+    return fill_halo!(domain, dρΠ, ZeroGradient())
+end
+function available_energy_tendency!(dρΠ, model::AN2D, dstate, B, Δϑ, Δq, dρconsvar, dρq, R)
+    (; mgr, domain) = model
+    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
+        @inbounds @vec for i in irange, j in jrange
+            dρΠ[i, j] = Δϑ[i, j] * dρconsvar[i, j] + Δq[i, j] * dρq[i, j] + R[i, j]
+        end
+    end
+    return fill_halo!(domain, dρΠ, ZeroGradient())
+end
+
+"""
+    res = available_energy_budget_residual!(res, model, dρΠ, ∇J_rev, ∇J_irr, C, (Q_ϑ, Q_q, Q), (Q′_ϑ, Q′_q, Q′), R)
+
+The residual of the budget of ρΠ₁ or ρΠ₂ [W m⁻³] at the interior cells,
+    ∂ₜ(ρΠ) + ∇·(J^rev + J^irr) + C + (Q_ϑ - Q′_ϑ) + (Q_q - Q′_q) - (Q - Q′) - R,
+with the heatings at the two states of the energy, (Q_ϑ, Q_q, Q) at the parcel's state and (Q′_ϑ, Q′_q, Q′) at the
+intermediate state for Π₁, at the intermediate and reference states for Π₂: zero to round-off by the product rule of the
+operators (for the APE of AN2D, up to the divergence of ρ_R u).
+"""
+function available_energy_budget_residual!(res, model, dρΠ, ∇J_rev, ∇J_irr, C, (Q_ϑ, Q_q, Q), (Q′_ϑ, Q′_q, Q′), R)
+    (; mgr, domain) = model
+    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
+        @inbounds @vec for i in irange, j in jrange
+            res[i, j] = dρΠ[i, j] + ∇J_rev[i, j] + ∇J_irr[i, j] + C[i, j] + (Q_ϑ[i, j] - Q′_ϑ[i, j]) + (Q_q[i, j] - Q′_q[i, j]) -
+                        (Q[i, j] - Q′[i, j]) - R[i, j]
+        end
+    end
+    return fill_halo!(domain, res, ZeroGradient())
+end

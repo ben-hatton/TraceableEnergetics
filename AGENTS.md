@@ -91,13 +91,13 @@ change in this repository.
   variables (on the z dimension, or a dimension of their own such as reference-state slots), not full cell fields.
 
 ## CURRENT WORK
-- The Lorenz reference state of available energy. Milestone 1 is done (the sorted rearrangement with its certificate,
-  the reference heights, the available energy Π = Π₁ + Π₂: AE, ACE = Π₁, APE = Π₂, notation of the energy notes), and
-  milestone 4 apart from the R terms and the tendencies ∂ₜ(ρΠ₁), ∂ₜ(ρΠ₂), which wait for milestone 3 (∂ₜP_*). Both are
-  diagnosed for both models and plotted by tools/budget_figures.jl in examples/energy_budget (rising bubble) and
-  examples/thermohaline_lock_exchange (ACE, heat and salt all significant). Next: milestone 3, then milestone 2 (exact
-  rearrangement; the sorted one fails the certificate for up to 9 parcels in the lock exchange). Start from
-  notes/reference_state_plan.md.
+- The Lorenz reference state of available energy. Milestones 1 (the sorted rearrangement with its certificate, the
+  reference heights, the available energy Π = Π₁ + Π₂: AE, ACE = Π₁, APE = Π₂, notation of the energy notes), 3 (∂ₜP_*
+  from the diabatic tendencies, src/reference_tendency.jl) and 4 (the budgets of ACE and APE, with the R terms in ∂ₜP_*)
+  are done, for both models, and plotted by tools/budget_figures.jl in examples/energy_budget (rising bubble) and
+  examples/thermohaline_lock_exchange (ACE, heat and salt all significant). Next: milestone 2 (exact rearrangement; the
+  sorted one fails the certificate for up to 9 parcels in the lock exchange), with the test of the N_*⁻² weights under
+  strong thermobaricity deferred to it. Start from notes/reference_state_plan.md.
 
 ## WORKING WITH THE USER
 Check in with the user:

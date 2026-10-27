@@ -637,7 +637,15 @@ evaluate $\dot v_{nk}$ and $v_{P,nk}$ at the slot pressure ($P_{R,k}$ in AN2D, $
 with $\rho_k=\rho_{R,k}$ (AN2D) or $\rho_{*,k}$ (FC2D), and $\partial_zv_*$ at $z_k$ from the profile of \S\ref{sec:profile}.
 \begin{itemize}
   \item \textbf{AN2D}: $\partial_tv_{*,k}=\langle\dot v\rangle_k$, and $\partial_t\pi_*$ by integrating \eqref{eq:dtvstar-an}
-        between the slot centres with the rule used for $\pi_*$ (\S\ref{sec:an-slots}).
+        between the slot centres with the rule used for $\pi_*$ (\S\ref{sec:an-slots}): the node slopes $g\rho_{R,k}\partial_tv_{*,k}$,
+        the values by the trapezoidal rule in $P_R$, $\partial_t\pi_*(z_c)-\partial_t\pi_*(z_{c-1})=-\tfrac12(\partial_tv_{*,c-1}+\partial_tv_{*,c})
+        (P_R(z_c)-P_R(z_{c-1}))$, and a zero mean over the mass of the rows, as for $\pi_*$. Between the end rows and the walls,
+        where $v_*=v_e+b_e(P_R-P_R(z_e))$ (\S\ref{sec:profile}), only $\partial_tv_e$ is kept: $\partial_tb_e$ needs the mixed
+        derivatives $\partial^2v/\partial P\partial\vt$, $\partial^2v/\partial P\partial q$, which the equation of state does not
+        provide. The neglected term of $\partial_t\pi_*$, $-\partial_tb_e\,\Delta P^2/2$, is at most $2.6\times10^{-3}$ of
+        $\max|\partial_t\pi_*|$ for a thermobaric coefficient $\gamma=3\times10^{-4}$\,Pa$^{-1}$ at $M_z=16$ (and $10^{-6}$ for
+        the $\gamma$ of the tests), and it changes $\int R_{\Pi_2}\,\mathrm dV$ by about $10^{-4}$ of $\int|R_{\Pi_2}|\,\mathrm dV$
+        (\code{tools/reference\_tendency\_study.jl});
   \item \textbf{FC2D}:
         \begin{equation}
           \partial_t\Ptop=-\frac{\sum_kM_k\langle\dot v\rangle_k}{\sum_kM_k\langle v_P\rangle_k},\qquad
@@ -645,11 +653,17 @@ with $\rho_k=\rho_{R,k}$ (AN2D) or $\rho_{*,k}$ (FC2D), and $\partial_zv_*$ at $
         \end{equation}
         The slot edges move at $\partial_tz_e=L_x^{-1}\sum_{k\text{ below }e}M_k\,\partial_tv_{*,k}$, which vanishes at both
         walls, and the edge pressures at $\partial_t\Ptop$. $\partial_tP_*$ at fixed height is the derivative of the
-        interpolant of \S\ref{sec:profile} with respect to these node motions; at the edges this is \eqref{eq:dtPz}.
+        interpolant of \S\ref{sec:profile} with respect to these node motions; at the edges this is \eqref{eq:dtPz}. It is
+        computed with dual numbers, value $+\,\varepsilon\times$ tendency, for the heights, pressures and secants of the
+        edges, through the same monotone slopes and Hermite cubic as $P_*$: the derivative of every formula of the
+        interpolant, on the same branch. The slot masses $M_k$ are those of the rows of the state; the tendency holds them
+        fixed, although advection changes them.
 \end{itemize}
 If $N^2_{nk}\le0$ for a parcel of a slot (a marginally or discretely unstable level), the weights are undefined there: use
 $w_{nk}=x_{nk}$ in that slot and flag it. The tendency is that of the slot-level profile, so it matches the dual profile of
-\S\ref{sec:dual} to $O(\Delta z)$.
+\S\ref{sec:dual} to $O(\Delta z)$. With it, $\int R_\Pi\,\mathrm dV$ vanishes to first order in the slot size, as the reference
+heights of the parcels of a mixed slot differ from their placement by up to a slot thickness: $|\int R_\Pi|/\int|R_\Pi|$ is
+$2\times10^{-2}$ to $2\times10^{-3}$ from $M_z=8$ to $64$ in the tests.
 
 \paragraph{Horizontal-mean reference state.} Its profile is a row average, not a function of the distribution of $(\vt,q)$,
 so it also changes under advection. Differentiate its definition (\S\ref{sec:mean-profiles}) with the model's full
@@ -743,6 +757,16 @@ $\gamma\neq0$; then greedy+repair and the histogram only if the exact solver is 
         $\Pi=O(\Delta z^2)$ at a wall (2026-10-26).
   \item \textbf{Reference pressure tendency}: from the diabatic tendencies ($N_*^{-2}$ weights, any equation of state) by
         default, with differences of successive snapshots as a check (\S\ref{sec:dtpstar}).
+  \item \textbf{FC2D $\partial_tP_*$ at fixed height}: the derivative of the monotone cubic $P_*$ with respect to the motion
+        of its nodes, by dual numbers (\S\ref{sec:dtpstar-b}), 2026-10-27. Three methods were compared: dual numbers and a
+        hand-written tangent of the interpolant agreed to round-off and matched differences of the reference state to their
+        floor, at the same cost; the formula \eqref{eq:dtPz} applied between the edges, with $\partial_tz|_m$ linear there,
+        is not the derivative of the $P_*$ of $\Pi$ (off by $0.4$ to $0.7\%$ at $M_z=64$ to $16$). The dual numbers reuse
+        the code of the interpolant.
+  \item \textbf{AN2D beyond the end rows}: $\partial_tb_e$ is neglected (\S\ref{sec:dtpstar-b}), its size measured,
+        2026-10-27.
+  \item \textbf{Test of the weights under thermobaricity} (test~\ref{test:weights}b) is done with the exact rearrangement
+        (milestone~2): the sorted placement reorders the parcels by its sort key, not by their level of neutral buoyancy.
 \end{itemize}
 
 \paragraph{Accepted limitation: the FC2D reference grid.} In AN2D the reference column is built on the model's own rows (one slot per row),

@@ -123,6 +123,7 @@ save_figure("global_budget.png", energy_budget_figure(results))
 foreach(key -> save_figure("local_budget_$key.png", local_energy_budget_figure(results, key)), keys(models))
 save_figure("available_energy_budget.png", available_energy_budget_figure(results))
 save_figure("generation.png", generation_figure(results))
+save_figure("reference_tendency.png", reference_tendency_figure(results))
 foreach(key -> save_figure("local_available_energy_budget_$key.png", local_available_energy_budget_figure(results, key)), keys(models))
 save_figure("available_energy.png", available_energy_maps(results))
 

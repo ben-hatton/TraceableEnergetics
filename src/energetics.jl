@@ -25,10 +25,18 @@ scratch of the tendencies. The densities are (ρ_R ϑ, ρ_R q) for AN2D and (ρ,
 tracer_flux((; mu, mw), k) = (view(mu, :, :, k), view(mw, :, :, k))
 
 """
-    out = pointwise!(out, mgr, f, a, b[, c])
+    out = pointwise!(out, mgr, f, a[, b[, c]])
 
-out = f(a, b[, c]) pointwise on arrays of the same grid, halo included, by the manager `mgr`.
+out = f(a[, b[, c]]) pointwise on arrays of the same grid, halo included, by the manager `mgr`.
 """
+function pointwise!(out, mgr, f::Fun, a) where Fun
+    @with mgr, let (irange, jrange) = (axes(out, 1), axes(out, 2))
+        @inbounds @vec for i in irange, j in jrange
+            out[i, j] = f(a[i, j])
+        end
+    end
+    return out
+end
 function pointwise!(out, mgr, f::Fun, a, b) where Fun
     @with mgr, let (irange, jrange) = (axes(out, 1), axes(out, 2))
         @inbounds @vec for i in irange, j in jrange

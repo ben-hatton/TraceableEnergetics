@@ -45,7 +45,8 @@ diagnostic_info(model::FC2D; reference_state = nothing) =
     merge(CFCompressible.diagnostic_info(model), map(first, energetics_entries(model, nothing, nothing, nothing)), reference_state_info(model, reference_state))
 reference_state_info(model, ::Nothing) = (;)
 reference_state_info(model, ref) =
-    map(first, merge(reference_state_entries(model, ref, nothing), available_energy_budget_entries(model, nothing, nothing)))
+    map(first, merge(reference_state_entries(model, ref, nothing), available_energy_budget_entries(model, nothing, nothing),
+                     reference_tendency_entries(model, nothing)))
 
 """
     entry = entry(long_name, units, location, recipe)
@@ -74,21 +75,28 @@ end
 """
     book = add_reference_state!(book, F, model, ref)
 
-Adds to `book` the recipe `reference_state`, which computes the reference state `ref` for the state of the session, and
-the recipes of `reference_state_entries` and `available_energy_budget_entries`; nothing if `ref` is `nothing`. The output array of each diagnostic on the
-cells is allocated on its first use, in the float type `F`, as for the energetics.
+Adds to `book` the recipe `reference_state`, which computes the reference state `ref` for the state of the session, the
+recipe `reference_state_tendency`, which computes its tendency from the diabatic rates (`reference_tendency!`), and
+the recipes of `reference_state_entries`, `available_energy_budget_entries` and `reference_tendency_entries`; nothing if
+`ref` is `nothing`. The output array of each diagnostic on the cells is allocated on its first use, in the float type
+`F`, as for the energetics.
 """
 add_reference_state!(book, F, model, ::Nothing) = book
 function add_reference_state!(book, F, model, ref)
     (; mgr, domain) = model
-    entries = merge(reference_state_entries(model, ref, nothing), available_energy_budget_entries(model, nothing, nothing))
+    entries = merge(reference_state_entries(model, ref, nothing), available_energy_budget_entries(model, nothing, nothing),
+                    reference_tendency_entries(model, nothing))
     cache = Dict{Symbol, Any}()
     out(name) = get!(() -> alloc(F, mgr, domain, first(entries[name]).location), cache, name)::Matrix{F}
     # scratch arrays on the x and z faces of the terms built from face products, apart from those of the energetics
     faces = (alloc(F, mgr, domain, (Face(), Cell())), alloc(F, mgr, domain, (Cell(), Face())))
     book.recipes[:reference_state] = (model, state) -> reference_state!(ref, model, state)
+    # the tendency of the reference state, from the N_*⁻²-weighted means of v̇ over the slots, after the reference state
+    book.recipes[:reference_state_tendency] = (model, reference_state, consvar_diabatic_rate, composition_diabatic_rate) ->
+        reference_tendency!(reference_state, model, consvar_diabatic_rate, composition_diabatic_rate)
     merge!(book.recipes, pairs(map(last, reference_state_entries(model, ref, out))))
     merge!(book.recipes, pairs(map(last, available_energy_budget_entries(model, out, faces))))
+    merge!(book.recipes, pairs(map(last, reference_tendency_entries(model, out))))
     return book
 end
 
@@ -459,7 +467,8 @@ and at the reference state (z_*, P_*(z_*)) (Σ*, `_at_z_star`), their difference
 B₂ = Π₂ - ϑ Δ₂Σ_ϑ - q Δ₂Σ_q, the budgets at a fixed reference state are, at each cell to round-off,
     ∂ₜ(ρΠ₁) = -∇·(J_ACE^rev + J_ACE^irr) - C_ACE - (Q_ϑ - Q̃_ϑ) - (Q_q - Q̃_q) + Q - Q̃,
     ∂ₜ(ρΠ₂) = -∇·(J_APE^rev + J_APE^irr) - C_APE - (Q̃_ϑ - Q*_ϑ) - (Q̃_q - Q*_q) + Q̃ - Q*,
-and C = C_ACE + C_APE + C_bg. The terms in ∂ₜP_* are not diagnosed yet. The forms of the energy notes, C_b,1*, C_b,2*,
+and C = C_ACE + C_APE + C_bg. The terms in ∂ₜP_*, and the full tendencies, are those of `reference_tendency_entries`.
+The forms of the energy notes, C_b,1*, C_b,2*,
 C_D* and ∇·J_C*, are diagnosed with the residuals of the manipulation, C_ACE - C_b,1* - C_D* + ∇·J_C* and
 C_APE - C_b,2*. The recipes write into the arrays `out(name)`, with the scratch arrays `faces` on the x and z faces; with
 `out = nothing`, only the information of the entries is used.
@@ -595,6 +604,75 @@ available_energy_budget_entries(model, out, faces) = let (; mgr) = model, cells 
         APE_conversion_residual = entry("residual of C_APE = C_b,2*", "W m⁻³", cells,
             (conversion_APE, buoyancy_conversion_APE) -> pointwise!(out(:APE_conversion_residual), mgr, -, conversion_APE, buoyancy_conversion_APE)),
     )
+end
+
+"""
+    entries = reference_tendency_entries(model, out)
+
+The diagnostics of the tendency of the Lorenz reference state from the diabatic tendencies (`reference_tendency!`, in
+reference_tendency.jl) and of the terms it adds to the budgets of the available compressible energy (ACE) Π₁ and the
+available potential energy (APE) Π₂, as a named tuple of `entry(long_name, units, location, recipe)`, the same for AN2D
+and FC2D (with ∂ₜP_top for FC2D):
+- the diabatic rates ρ Dϑ/Dt = σ_ϑ - ∇·J_ϑ, ρ Dq/Dt = -∇·J_q, from which the recipe `reference_state_tendency`
+  (`add_reference_state!`) computes the tendency of the reference state once per diagnostics session;
+- ∂ₜP_* on the z axis and at the reference height z_* of each parcel [Pa s⁻¹], ∂ₜP_top (FC2D), and the number of slots
+  whose means have plain weights;
+- the terms in ∂ₜP_*, R_Π₁ = ρ (Σ_p(z, p) - Σ_p(z, P_*(z))) ∂ₜP_*(z) and
+  R_Π₂ = ρ Σ_p(z, P_*(z)) ∂ₜP_*(z) - ρ Σ_p(z_*, P_*(z_*)) ∂ₜP_*(z_*) [W m⁻³];
+- the tendencies ∂ₜ(ρΠ₁) = B₁ ∂ₜρ + Δ₁Σ_ϑ ∂ₜ(ρϑ) + Δ₁Σ_q ∂ₜ(ρq) + R_Π₁ and ∂ₜ(ρΠ₂) = B₂ ∂ₜρ + Δ₂Σ_ϑ ∂ₜ(ρϑ) + Δ₂Σ_q ∂ₜ(ρq) + R_Π₂
+  [W m⁻³], and the residuals of their budgets,
+      ∂ₜ(ρΠ₁) + ∇·(J_ACE^rev + J_ACE^irr) + C_ACE + (Q_ϑ - Q̃_ϑ) + (Q_q - Q̃_q) - (Q - Q̃) - R_Π₁,
+      ∂ₜ(ρΠ₂) + ∇·(J_APE^rev + J_APE^irr) + C_APE + (Q̃_ϑ - Q*_ϑ) + (Q̃_q - Q*_q) - (Q̃ - Q*) - R_Π₂,
+  zero at each cell to round-off.
+The recipes write into the arrays `out(name)`; with `out = nothing`, only the information of the entries is used.
+"""
+reference_tendency_entries(model, out) = let (; mgr) = model, cells = (Cell(), Cell()), rows = (nothing, Cell())
+    entries = (;
+        # ρ Dϑ/Dt = σ_ϑ - ∇·J_ϑ, ρ Dq/Dt = -∇·J_q
+        consvar_diabatic_rate = entry("diabatic rate ρ Dϑ/Dt = σ_ϑ - ∇·J_ϑ", "kg m⁻³ s⁻¹ × consvar", cells,
+            (conservative_variable_production, div_consflux) -> pointwise!(out(:consvar_diabatic_rate), mgr, -, conservative_variable_production, div_consflux)),
+        composition_diabatic_rate = entry("diabatic rate ρ Dq/Dt = -∇·J_q", "kg m⁻³ s⁻¹", cells,
+            div_qflux -> pointwise!(out(:composition_diabatic_rate), mgr, -, div_qflux)),
+        p_star_tendency = entry("tendency of the reference pressure ∂ₜP_* at fixed height", "Pa s⁻¹", rows,
+            reference_state_tendency -> reference_state_tendency.p_star_tendency),
+        p_star_tendency_at_z_star = entry("tendency of the reference pressure ∂ₜP_*(z_*) at the reference height", "Pa s⁻¹", cells,
+            (model, reference_state_tendency, z_star) -> reference_pressure_tendency_at!(out(:p_star_tendency_at_z_star), model, reference_state_tendency, z_star)),
+        plain_weight_slots = entry("number of slots whose means have plain weights (N² ≤ 0 for one of their parcels)", "1", (),
+            reference_state_tendency -> eltype(reference_state_tendency.mass)(reference_state_tendency.plain_weight_slots)),
+        # R_Π₁ = ρ (Σ_p(z, p) - Σ_p(z, P_*(z))) ∂ₜP_*(z), R_Π₂ = ρ Σ_p(z, P_*(z)) ∂ₜP_*(z) - ρ Σ_p(z_*, P_*(z_*)) ∂ₜP_*(z_*)
+        reference_pressure_term_ACE = entry("term R_Π₁ of ∂ₜP_* in the tendency of ρΠ₁ (zero for AN2D)", "W m⁻³", cells,
+            (model, reference_state_tendency) -> compression_reference_term!(out(:reference_pressure_term_ACE), model, reference_state_tendency)),
+        reference_pressure_term_APE = entry("term R_Π₂ of ∂ₜP_* in the tendency of ρΠ₂", "W m⁻³", cells,
+            (model, reference_state_tendency, z_star, p_star_tendency_at_z_star) ->
+                displacement_reference_term!(out(:reference_pressure_term_APE), model, reference_state_tendency, z_star, p_star_tendency_at_z_star)),
+        # ∂ₜ(ρΠ) = B ∂ₜρ + ΔΣ_ϑ ∂ₜ(ρϑ) + ΔΣ_q ∂ₜ(ρq) + R
+        dρACE = entry("tendency of ρ Π₁", "W m⁻³", cells,
+            (model, dstate, bernoulli_potential_ACE, conjugate_variable_ACE, modified_chemical_potential_ACE, dρconsvar, dρq, reference_pressure_term_ACE) ->
+                available_energy_tendency!(out(:dρACE), model, dstate, bernoulli_potential_ACE, conjugate_variable_ACE, modified_chemical_potential_ACE,
+                                           dρconsvar, dρq, reference_pressure_term_ACE)),
+        dρAPE = entry("tendency of ρ Π₂", "W m⁻³", cells,
+            (model, dstate, bernoulli_potential_APE, conjugate_variable_APE, modified_chemical_potential_APE, dρconsvar, dρq, reference_pressure_term_APE) ->
+                available_energy_tendency!(out(:dρAPE), model, dstate, bernoulli_potential_APE, conjugate_variable_APE, modified_chemical_potential_APE,
+                                           dρconsvar, dρq, reference_pressure_term_APE)),
+        # the residuals of the budgets of ρΠ₁ and ρΠ₂
+        ACE_budget_residual = entry("residual of the budget of ρ Π₁", "W m⁻³", cells,
+            (model, dρACE, div_ACE_flux_rev, div_ACE_flux_irr, conversion_ACE, heating_consvar, heating_composition, heating,
+             heating_consvar_at_p_star, heating_composition_at_p_star, heating_at_p_star, reference_pressure_term_ACE) ->
+                available_energy_budget_residual!(out(:ACE_budget_residual), model, dρACE, div_ACE_flux_rev, div_ACE_flux_irr, conversion_ACE,
+                                                  (heating_consvar, heating_composition, heating),
+                                                  (heating_consvar_at_p_star, heating_composition_at_p_star, heating_at_p_star), reference_pressure_term_ACE)),
+        APE_budget_residual = entry("residual of the budget of ρ Π₂", "W m⁻³", cells,
+            (model, dρAPE, div_APE_flux_rev, div_APE_flux_irr, conversion_APE, heating_consvar_at_p_star, heating_composition_at_p_star,
+             heating_at_p_star, heating_consvar_at_z_star, heating_composition_at_z_star, heating_at_z_star, reference_pressure_term_APE) ->
+                available_energy_budget_residual!(out(:APE_budget_residual), model, dρAPE, div_APE_flux_rev, div_APE_flux_irr, conversion_APE,
+                                                  (heating_consvar_at_p_star, heating_composition_at_p_star, heating_at_p_star),
+                                                  (heating_consvar_at_z_star, heating_composition_at_z_star, heating_at_z_star), reference_pressure_term_APE)),
+    )
+    model isa FC2D || return entries
+    return merge(entries, (;
+        p_top_tendency = entry("tendency of the pressure P_top at the top of the reference column", "Pa s⁻¹", (),
+            reference_state_tendency -> reference_state_tendency.p_top_tendency),
+    ))
 end
 
 """

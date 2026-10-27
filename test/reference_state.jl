@@ -19,21 +19,23 @@ tank(F; z0 = 0) = Tank2D(Lx = F(Lx), Lz = F(Lz), g = F(g), z0 = F(z0))
 
 # AN2D in a box periodic in x, with the reference density ρ(z) (by default that of the AN2D test model, 10 % denser at
 # the bottom) and the pressure 1e5 Pa at the origin z0 of the geopotential. Not in BigFloat: its Poisson solver uses FFTs.
-function an_box(F; Mx = 8, Mz = 8, ρ = z -> ρ0 * (1 + 0.1 * (Lz - z) / Lz), fluid = reference_fluid(F), mgr = nothing, z0 = 0)
+# (diffusivities k_T, k_q [m² s⁻¹] and dynamic viscosity [kg m⁻¹ s⁻¹] can be changed, for both models)
+function an_box(F; Mx = 8, Mz = 8, ρ = z -> ρ0 * (1 + 0.1 * (Lz - z) / Lz), fluid = reference_fluid(F), mgr = nothing, z0 = 0,
+                k_T = 1e-4, k_q = 1e-5, dyn_visc = 1e-3)
     domain = Box2D(; Mx, Mz)
     space = tank(F; z0)
     return AN2D((; mgr, domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme = VortexEnergyCons(),
-        buoyancy_scheme = ThermodynamicForcing(), thermoflux_scheme = ThermoFluxConsistent(k_T = F(1e-4), k_q = F(1e-5)),
-        viscosity_scheme = ViscosityScheme(dyn_visc = F(1e-3)),
+        buoyancy_scheme = ThermodynamicForcing(), thermoflux_scheme = ThermoFluxConsistent(k_T = F(k_T), k_q = F(k_q)),
+        viscosity_scheme = ViscosityScheme(dyn_visc = F(dyn_visc)),
         anelastic_reference = AnelasticReference(domain, space, z -> F(ρ(z)); pref = F(1e5)),
         boundary_conditions = BoxBoundaryConditions(domain; bottom = closed_wall(), top = closed_wall()), gauge_offset = F(0)))
 end
 
 # FC2D in the same box. Its fluid can be built in BigFloat
-function fc_box(F; Mx = 8, Mz = 8, fluid = reference_fluid(F), mgr = nothing, z0 = 0)
+function fc_box(F; Mx = 8, Mz = 8, fluid = reference_fluid(F), mgr = nothing, z0 = 0, k_T = 1e-4, k_q = 1e-5, dyn_visc = 1e-3)
     domain = Box2D(; Mx, Mz)
     return FC2D((; mgr, domain, space = tank(F; z0), fluid, spatial_scheme = Centred2(), vortex_scheme = VortexEnergyCons(),
-        thermoflux_scheme = ThermoFluxConsistent(k_T = F(1e-4), k_q = F(1e-5)), viscosity_scheme = ViscosityScheme(dyn_visc = F(1e-3)),
+        thermoflux_scheme = ThermoFluxConsistent(k_T = F(k_T), k_q = F(k_q)), viscosity_scheme = ViscosityScheme(dyn_visc = F(dyn_visc)),
         boundary_conditions = BoxBoundaryConditions(domain; bottom = closed_wall(), top = closed_wall())))
 end
 

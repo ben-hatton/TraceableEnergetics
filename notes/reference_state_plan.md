@@ -81,7 +81,8 @@ outside this repository: read it, never edit it.
 - Upstream limitations found (not fixed, no permission): ClimFluids NonlinearBinaryFluid returns Float64 for Float32
   parameters (Float64 literals); CFAnelastics `AnelasticReference` computes p_R in Float64 on a Float32 grid
   (`cellpoint`'s 0.5), and AN2D cannot be built in BigFloat (FFT Poisson solver); CFCompressible `balanced_density`
-  fails in BigFloat (broadcast into an `undef` array).
+  fails in BigFloat (broadcast into an `undef` array); the Poisson solver of AN2D fails in Float32 (an FFTW plan applied
+  to a misaligned array), so the Float32 tests of the reference tendency of AN2D take their rates from Float64.
 
 ## 3. Decisions already taken with the user
 
@@ -274,6 +275,23 @@ formulas, their discrete form, the lid term and the motion of the nodes.
 2. Exact rearrangement, generic in F, warm-started from the sorted placement and from the previous snapshot.
 3. ∂_t p_*: from the diabatic tendencies, plus an offline check by differences of snapshots, reading `p_star` from a
    `DataFile`.
+
+   Status (2026-10-27): done, with the R terms and the tendencies ∂ₜ(ρΠ₁), ∂ₜ(ρΠ₂) of milestone 4. Code in
+   `src/reference_tendency.jl` (`reference_tendency!`, `reference_pressure_tendency`), the weighted means `slot_means!`
+   in `src/rearrangement.jl`, the kernels of R_Π₁, R_Π₂, the tendencies and the residuals in
+   `src/available_energy_budget.jl`, the entries `reference_tendency_entries` in `src/diagnostics.jl` (`p_star_tendency`,
+   `p_star_tendency_at_z_star`, `p_top_tendency`, `plain_weight_slots`, `reference_pressure_term_ACE/APE`, `dρACE`,
+   `dρAPE`, `ACE/APE_budget_residual`), tests in `test/reference_tendency.jl`, studies in
+   `tools/reference_tendency_study.jl`, the snapshot check in `reference_tendency_figure` (tools/budget_figures.jl).
+   Decided with the user:
+   - FC2D ∂ₜP_* at fixed height by dual numbers (ForwardDiff) through the monotone cubic, after comparing it with a
+     hand-written tangent (the same to 1e-16) and the continuous formula ∂ₜP_top + g ρ_* ∂ₜz|_m (0.4 to 0.7 % off);
+   - AN2D: ∂ₜb_e of the end slots neglected between the end rows and the walls (checked: at most 2.6e-3 of max|∂ₜπ_*| at
+     γ = 3e-4 Pa⁻¹, M_z = 16);
+   - the test of the weights under strong thermobaricity (b) moves to milestone 2 (needs the exact solver).
+   Found: the tendency matches differences of the sorted reference state at a fixed placement to their floor (γ = 0);
+   ∫R_Π converges at first order in the slot size (2e-2 to 2e-3 of ∫|R_Π| from M_z = 8 to 64); nearly equal parcels change
+   slots under perturbations as small as 1e-3 s of the diabatic rates at M_z = 64, which limits the differences.
 4. The available-energy budget entries from `energy.tex` (sections "Available energy" and "Available energy budgets"),
    with residuals reported. They are:
    - Π, Π₁, Π₂;
@@ -281,8 +299,8 @@ formulas, their discrete form, the lid term and the motion of the nodes.
    - the heating terms at the intermediate state and at the reference state;
    - the R terms.
 
-   Status (2026-10-26): done apart from the R terms and the tendencies ∂ₜ(ρΠ₁), ∂ₜ(ρΠ₂), which wait for milestone 3
-   (decided with the user). Decided with the user: the budgets in Bernoulli form, exact at each cell by the product rule
+   Status (2026-10-26): done apart from the R terms and the tendencies ∂ₜ(ρΠ₁), ∂ₜ(ρΠ₂), which waited for milestone 3
+   (decided with the user; done 2026-10-27, see milestone 3). Decided with the user: the budgets in Bernoulli form, exact at each cell by the product rule
    of the operators (as the budget of ρP), with the forms of the energy notes (C_b,1*, C_b,2*, C_D*, ∇·J_C*) and the
    residuals of the manipulation reported; names with the energy prefix and `_at_p_star`/`_at_z_star`. Kernels in
    `src/available_energy_budget.jl`, entries `available_energy_budget_entries` in `src/diagnostics.jl`, tests in

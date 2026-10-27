@@ -14,6 +14,7 @@ using CFCompressible: CFCompressible, FC2D
 using NCDatasets: NCDataset, defDim, defVar
 using JLD2: JLD2, jldopen
 using Roots: find_zero, A42
+using ForwardDiff: Dual, partials
 using CairoMakie: Makie, Figure, Axis, Colorbar, Observable, heatmap!, lift, record
 
 export linear_profile, tanh_profile, shear, jet, couette, mode, noise, consvar_from_theta
@@ -39,6 +40,8 @@ include("compressible_reference.jl")
 include("compressible_available_energy.jl")
 # the budgets of the available compressible and potential energies, for either model
 include("available_energy_budget.jl")
+# the tendency of the reference state from the diabatic tendencies
+include("reference_tendency.jl")
 include("diagnostics.jl")
 include("output.jl")
 

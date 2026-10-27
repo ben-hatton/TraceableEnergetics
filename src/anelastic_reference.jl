@@ -58,7 +58,15 @@ mutable struct AnelasticLorenzReference{F, M <: AbstractRearrangement}
     const node_pressure::Vector{F}      # P_R at the nodes of π_* [Pa]
     const p_star::Vector{F}             # P_* at the cell centres of the z axis [Pa]
     const v_star::Vector{F}             # v_* at the cell centres of the z axis [m³ kg⁻¹]
+    # the tendency of the reference state from the diabatic tendencies (`reference_tendency!`)
+    const consvar_rate::Vector{F}       # Dϑ/Dt of each parcel [consvar s⁻¹]
+    const q_rate::Vector{F}             # Dq/Dt of each parcel [s⁻¹]
+    const slot_means::SlotMeans{F}      # the N_*⁻²-weighted means of the parcels of each slot
+    const slot_volume_tendency::Vector{F}   # ∂ₜv_*,k [m³ kg⁻¹ s⁻¹]
+    const potential_tendency::HermiteProfile{F} # ∂ₜπ_*(z) [J kg⁻¹ s⁻¹], at the nodes of π_*
+    const p_star_tendency::Vector{F}    # ∂ₜP_* at the cell centres of the z axis [Pa s⁻¹]
     certificate_violations::Int
+    plain_weight_slots::Int             # slots whose means have plain weights, as N² ≤ 0 for one of their parcels
 end
 
 function AnelasticLorenzReference(model::AN2D{F}, method::AbstractRearrangement = SortedRearrangement()) where F
@@ -73,7 +81,8 @@ function AnelasticLorenzReference(model::AN2D{F}, method::AbstractRearrangement 
     ref = AnelasticLorenzReference(method, vector(), vector(), vector(), zeros(Int, N),
                                    vector(), collect(1:N), zeros(Int, N), Placement(F, N, K), vector(), vector(),
                                    zeros(F, K), zeros(F, K), zeros(F, K), zeros(F, K), zeros(F, K), zeros(F, K),
-                                   HermiteProfile(F, nz), HermiteProfile(F, K + 2), zeros(F, K + 2), zeros(F, nz), zeros(F, nz), 0)
+                                   HermiteProfile(F, nz), HermiteProfile(F, K + 2), zeros(F, K + 2), zeros(F, nz), zeros(F, nz),
+                                   vector(), vector(), SlotMeans(F, K), zeros(F, K), HermiteProfile(F, K + 2), zeros(F, nz), 0, 0)
     # P_R through the cell centres of the whole z axis, with the slopes ∂_z P_R = -g ρ_R
     for j in 1:nz
         ref.pressure.z[j] = cellpoint(domain, dz, 2, j)
@@ -93,6 +102,7 @@ function AnelasticLorenzReference(model::AN2D{F}, method::AbstractRearrangement 
         ref.potential.z[K+2-k] = ref.slot_height[k]
     end
     ref.potential.z[K+2] = space.Lz
+    ref.potential_tendency.z .= ref.potential.z
     for c in 1:K+2
         ref.node_pressure[c] = hermite(ref.pressure, ref.potential.z[c])[1]
     end
