@@ -21,12 +21,12 @@ export linear_profile, tanh_profile, shear, jet, couette, mode, noise, consvar_f
 export setup, kelvin_helmholtz, rayleigh_benard, rising_bubble, lock_exchange
 export initialize
 export diagnostics, diagnostic_info, interior_diagnostic, diagnostic_coordinates
-export Outputs, record!, DataFile, read_diagnostic, DiagnosticVideo
+export Outputs, record!, DataFile, read_diagnostic, DiagnosticVideo, IntegralSeries, read_series, Thinned
 export AbstractRearrangement, SortedRearrangement, ExactRearrangement, AnelasticLorenzReference, CompressibleLorenzReference, reference_state!
 
+# initial states
 include("setups.jl")
 include("initialize.jl")
-include("energetics.jl")
 # numerical methods of the reference state: interpolation, minimisation, placement of masses, the transportation
 # simplex, quadrature
 include("numerics/interpolation.jl")
@@ -34,16 +34,20 @@ include("numerics/minimisation.jl")
 include("numerics/placement.jl")
 include("numerics/transportation.jl")
 include("numerics/quadrature.jl")
-# the Lorenz reference state of each model, and the available energy of its parcels
-include("rearrangement.jl")
-include("anelastic_reference.jl")
-include("anelastic_available_energy.jl")
-include("compressible_reference.jl")
-include("compressible_available_energy.jl")
-# the budgets of the available compressible and potential energies, for either model
-include("available_energy_budget.jl")
-# the tendency of the reference state from the diabatic tendencies
-include("reference_tendency.jl")
+# the energy budget: kernels and diagnostics
+include("energetics/kernels.jl")
+include("energetics/entries.jl")
+# the Lorenz reference state of each model: the state and its steps, the placement of the parcels, their reference
+# heights and available energy, the tendency of the reference state, the budgets of the available energy, and their
+# diagnostics
+include("reference_state/lorenz_reference.jl")
+include("reference_state/rearrangement.jl")
+include("reference_state/reference_heights.jl")
+include("reference_state/available_energy.jl")
+include("reference_state/tendency.jl")
+include("reference_state/budget.jl")
+include("reference_state/entries.jl")
+# the book of diagnostics, and its outputs during a run
 include("diagnostics.jl")
 include("output.jl")
 

@@ -1,5 +1,5 @@
 # Tests of the budgets of the available compressible energy (ACE) Π₁ and the available potential energy (APE) Π₂
-# (src/available_energy_budget.jl), for AN2D and FC2D, on small grids. Included in the module of the reference-state
+# (src/reference_state/budget.jl), for AN2D and FC2D, on small grids. Included in the module of the reference-state
 # tests, after test/reference_state.jl, whose models, states and helpers it uses.
 using TraceableEnergetics: potential_difference, domain_integral
 

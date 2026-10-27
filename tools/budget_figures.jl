@@ -4,7 +4,7 @@
 #     include("<relative path>/tools/budget_figures.jl")
 # after the packages of the example (TraceableEnergetics, CFBoxes, CairoMakie). A run of each model records the
 # diagnostics `budget_names(model)` in a data file, and possibly their integrals over the box at a finer interval in an
-# `IntegralSeries`; `read_results` reads them back as `results = (; models, data, times, series)`, from which each
+# `IntegralSeries` (`read_series`); `read_results` reads them back as `results = (; models, data, times, series)`, from which each
 # function below draws a figure.
 #
 # The budgets are those of the diagnostics of TraceableEnergetics: with K the kinetic and P the potential energy per unit
@@ -20,70 +20,11 @@
 #     d/dt ∫ρΠ dV = -∫(C_ACE + C_APE) dV + G,    d/dt ∫ρ(P - Π) dV = -∫C_bg dV + ∫(Q* - Q*_ϑ - Q*_q) dV,
 # with the generation G = ∫(-Q_ϑ + Q*_ϑ - Q_q + Q*_q + Q - Q*) dV, up to ∫R_Π dV = 0 (the terms in ∂ₜP_*).
 
-using CookBooks: CookBooks
 using CFBoxes: CFBoxes
-using JLD2: JLD2
 
 #####
 ##### Diagnostics to record, and reading them back
 #####
-
-"""
-    series = IntegralSeries(model, names; reference_state = nothing, file = nothing)
-    series = read_series(file)
-
-An output of `Outputs` (see `record!`) that keeps, at every call, the integral over the box ∫ f dx dz of each cell
-diagnostic f among `names` [W m⁻¹ for a term of a budget], and the value of each number (location `()`), for time series
-finer than the fields written to a data file: `series.times` [s] and `series.values[name]`. Profiles and fields on the
-faces among `names` are skipped. The diagnostics of a reference state need it as the keyword `reference_state`. With a
-`file` (JLD2), `close(series)`, called by `loop` when the run ends, saves the times and values there, and `read_series`
-reads them back as `(; times, values)`.
-"""
-struct IntegralSeries{M, F}
-    model::M
-    cells::Vector{Symbol}               # the cell diagnostics, integrated over the box
-    numbers::Vector{Symbol}             # the numbers, kept as they are
-    times::Vector{F}
-    values::Dict{Symbol, Vector{F}}
-    file::Union{Nothing, String}        # where `close` saves the series, if anywhere
-end
-function IntegralSeries(model, names; reference_state = nothing, file = nothing)
-    info = diagnostic_info(model; reference_state)
-    cells = [name for name in names if info[name].location == (CFBoxes.Cell(), CFBoxes.Cell())]
-    numbers = [name for name in names if info[name].location == ()]
-    F = typeof(model.dx)
-    return IntegralSeries(model, cells, numbers, F[], Dict(name => F[] for name in (cells..., numbers...)), file)
-end
-function TraceableEnergetics.record!(series::IntegralSeries, session, t)
-    (; domain, dx, dz) = series.model
-    push!(series.times, t)
-    foreach(name -> push!(series.values[name], sum(interior(domain, CookBooks.get(session, name))) * dx * dz), series.cells)
-    foreach(name -> push!(series.values[name], CookBooks.get(session, name)), series.numbers)
-    return series
-end
-function Base.close(series::IntegralSeries)
-    isnothing(series.file) || JLD2.jldsave(series.file; times = series.times, values = series.values)
-    return series
-end
-read_series(file) = JLD2.jldopen(handle -> (; times = handle["times"], values = handle["values"]), file, "r")
-
-"""
-    output = Thinned(output, every)
-
-An output of `Outputs` that passes on to `output` only every `every`-th call, from the first: a data file of fields at a
-coarser interval than the time series of an `IntegralSeries`.
-"""
-mutable struct Thinned{O}
-    const output::O
-    const every::Int
-    calls::Int
-end
-Thinned(output, every) = Thinned(output, every, 0)
-function TraceableEnergetics.record!(thinned::Thinned, session, t)
-    (thinned.calls += 1) % thinned.every == 1 % thinned.every && record!(thinned.output, session, t)
-    return thinned
-end
-Base.close(thinned::Thinned) = close(thinned.output)
 
 """
     names = budget_names(model)

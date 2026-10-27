@@ -1,6 +1,6 @@
 ## KERNELS OF THE ENERGETICS DIAGNOSTICS
 #
-# The energy budget of energy.tex as diagnostics of AN2D and FC2D: the recipes are in diagnostics.jl, the kernels here.
+# The energy budget of energy.tex as diagnostics of AN2D and FC2D: the recipes are in entries.jl, the kernels here.
 # K and P are specific energies [J kg⁻¹], the energy densities ρK, ρP [J m⁻³] and every term of the budget are per unit
 # volume [W m⁻³], with ρ = ρ_R for AN2D. Fields on the cells carry no suffix; their components on the x and z faces end
 # in `_x` and `_z`.
@@ -25,33 +25,33 @@ scratch of the tendencies. The densities are (ρ_R ϑ, ρ_R q) for AN2D and (ρ,
 tracer_flux((; mu, mw), k) = (view(mu, :, :, k), view(mw, :, :, k))
 
 """
-    out = pointwise!(out, mgr, f, a[, b[, c]])
+    out = pointwise!(out, mgr, f, a...)
 
-out = f(a[, b[, c]]) pointwise on arrays of the same grid, halo included, by the manager `mgr`.
+out = f(a...) pointwise on arrays of the same grid, halo included, by the manager `mgr`.
 """
-function pointwise!(out, mgr, f::Fun, a) where Fun
+function pointwise!(out, mgr, f::Fun, a::Vararg{Any, N}) where {Fun, N}
     @with mgr, let (irange, jrange) = (axes(out, 1), axes(out, 2))
         @inbounds @vec for i in irange, j in jrange
-            out[i, j] = f(a[i, j])
+            out[i, j] = f(map(x -> @inbounds(x[i, j]), a)...)
         end
     end
     return out
 end
-function pointwise!(out, mgr, f::Fun, a, b) where Fun
-    @with mgr, let (irange, jrange) = (axes(out, 1), axes(out, 2))
+
+"""
+    out = cellwise!(out, model, f, a...)
+
+out = f(a...) pointwise on cell arrays at the interior cells, by the manager of `model`, with a zero-gradient halo: the
+halo of the arrays `a` is never read.
+"""
+function cellwise!(out, model, f::Fun, a::Vararg{Any, N}) where {Fun, N}
+    (; mgr, domain) = model
+    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
-            out[i, j] = f(a[i, j], b[i, j])
+            out[i, j] = f(map(x -> @inbounds(x[i, j]), a)...)
         end
     end
-    return out
-end
-function pointwise!(out, mgr, f::Fun, a, b, c) where Fun
-    @with mgr, let (irange, jrange) = (axes(out, 1), axes(out, 2))
-        @inbounds @vec for i in irange, j in jrange
-            out[i, j] = f(a[i, j], b[i, j], c[i, j])
-        end
-    end
-    return out
+    return fill_halo!(domain, out, ZeroGradient())
 end
 
 """
@@ -347,15 +347,7 @@ end
 
 Tendency of ρ K, ρ dK + K dρ [W m⁻³] at the interior cells (for AN2D, ρ_R dK).
 """
-function kinetic_energy_tendency!(dρK, model, ρ, K, dK, dρ)
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            dρK[i, j] = ρ[i, j] * dK[i, j] + K[i, j] * dρ[i, j]
-        end
-    end
-    return fill_halo!(domain, dρK, ZeroGradient())
-end
+kinetic_energy_tendency!(dρK, model, ρ, K, dK, dρ) = cellwise!(dρK, model, (ρ, K, dK, dρ) -> ρ * dK + K * dρ, ρ, K, dK, dρ)
 
 """
     dρP = potential_energy_tendency!(dρP, model::AN2D, conjvar, chempot, dρconsvar, dρq)
@@ -364,24 +356,10 @@ end
 Tendency of ρ P [W m⁻³] at the interior cells from those of the densities, with d(ρ P) = Σ_B dρ + Σ_ϑ d(ρϑ) + Σ_q d(ρq)
 (from d(ρ h - p) = h dρ + ρ (v dp + h_ϑ dϑ + h_q dq) - dp); dρ = 0 for AN2D, where ρ_R P depends on ϑ, q only.
 """
-function potential_energy_tendency!(dρP, model::AN2D, conjvar, chempot, dρconsvar, dρq)
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            dρP[i, j] = conjvar[i, j] * dρconsvar[i, j] + chempot[i, j] * dρq[i, j]
-        end
-    end
-    return fill_halo!(domain, dρP, ZeroGradient())
-end
-function potential_energy_tendency!(dρP, model::FC2D, Σ_B, conjvar, chempot, dρ, dρconsvar, dρq)
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            dρP[i, j] = Σ_B[i, j] * dρ[i, j] + conjvar[i, j] * dρconsvar[i, j] + chempot[i, j] * dρq[i, j]
-        end
-    end
-    return fill_halo!(domain, dρP, ZeroGradient())
-end
+potential_energy_tendency!(dρP, model::AN2D, conjvar, chempot, dρconsvar, dρq) =
+    cellwise!(dρP, model, (Σ_ϑ, Σ_q, dρϑ, dρq) -> Σ_ϑ * dρϑ + Σ_q * dρq, conjvar, chempot, dρconsvar, dρq)
+potential_energy_tendency!(dρP, model::FC2D, Σ_B, conjvar, chempot, dρ, dρconsvar, dρq) =
+    cellwise!(dρP, model, (Σ_B, Σ_ϑ, Σ_q, dρ, dρϑ, dρq) -> Σ_B * dρ + Σ_ϑ * dρϑ + Σ_q * dρq, Σ_B, conjvar, chempot, dρ, dρconsvar, dρq)
 
 # Residuals
 
@@ -390,15 +368,7 @@ end
 
 Closure of the energy budget, Q - Q_ϑ - Q_q - ρ ε_K [W m⁻³] at the interior cells.
 """
-function heating_residual!(res, model, Q, Q_ϑ, Q_q, ρε)
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            res[i, j] = Q[i, j] - Q_ϑ[i, j] - Q_q[i, j] - ρε[i, j]
-        end
-    end
-    return fill_halo!(domain, res, ZeroGradient())
-end
+heating_residual!(res, model, Q, Q_ϑ, Q_q, ρε) = cellwise!(res, model, (Q, Q_ϑ, Q_q, ρε) -> Q - Q_ϑ - Q_q - ρε, Q, Q_ϑ, Q_q, ρε)
 
 """
     res = kinetic_budget_residual!(res, model, dρK, ∇J_rev, ∇J_irr, C, ρε, VF)
@@ -406,15 +376,8 @@ end
 ∂ₜ(ρK) + ∇·(J_K^rev + J_K^irr) - C + ρ ε_K - VF [W m⁻³] at the interior cells: not zero at a cell, but its sum over the
 box is (see `integrated_budget_residual`).
 """
-function kinetic_budget_residual!(res, model, dρK, ∇J_rev, ∇J_irr, C, ρε, VF)
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            res[i, j] = dρK[i, j] + ∇J_rev[i, j] + ∇J_irr[i, j] - C[i, j] + ρε[i, j] - VF[i, j]
-        end
-    end
-    return fill_halo!(domain, res, ZeroGradient())
-end
+kinetic_budget_residual!(res, model, dρK, ∇J_rev, ∇J_irr, C, ρε, VF) =
+    cellwise!(res, model, (dρK, ∇J_rev, ∇J_irr, C, ρε, VF) -> dρK + ∇J_rev + ∇J_irr - C + ρε - VF, dρK, ∇J_rev, ∇J_irr, C, ρε, VF)
 
 """
     res = potential_budget_residual!(res, model, dρP, ∇J_rev, ∇J_irr, C, Q_ϑ, Q_q, Q)
@@ -422,15 +385,8 @@ end
 ∂ₜ(ρP) + ∇·(J_P^rev + J_P^irr) + C + Q_ϑ + Q_q - Q [W m⁻³] at the interior cells: zero to round-off, by the product rule
 of the operators (for AN2D, up to the divergence of ρ_R u).
 """
-function potential_budget_residual!(res, model, dρP, ∇J_rev, ∇J_irr, C, Q_ϑ, Q_q, Q)
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            res[i, j] = dρP[i, j] + ∇J_rev[i, j] + ∇J_irr[i, j] + C[i, j] + Q_ϑ[i, j] + Q_q[i, j] - Q[i, j]
-        end
-    end
-    return fill_halo!(domain, res, ZeroGradient())
-end
+potential_budget_residual!(res, model, dρP, ∇J_rev, ∇J_irr, C, Q_ϑ, Q_q, Q) =
+    cellwise!(res, model, (dρP, ∇J_rev, ∇J_irr, C, Q_ϑ, Q_q, Q) -> dρP + ∇J_rev + ∇J_irr + C + Q_ϑ + Q_q - Q, dρP, ∇J_rev, ∇J_irr, C, Q_ϑ, Q_q, Q)
 
 # Manipulated conversion, C = -∇·J_C + C_b + C_D, which is exact in the continuous equations only
 
@@ -534,12 +490,4 @@ pressure_dilatation!(C_D, model::FC2D, pressure_anomaly, divergence) = pointwise
 
 C + ∇·J_C - C_b - C_D [W m⁻³] at the interior cells: the error of the manipulations beyond discrete exactness.
 """
-function conversion_residual!(res, model, C, ∇J_C, C_b, C_D)
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            res[i, j] = C[i, j] + ∇J_C[i, j] - C_b[i, j] - C_D[i, j]
-        end
-    end
-    return fill_halo!(domain, res, ZeroGradient())
-end
+conversion_residual!(res, model, C, ∇J_C, C_b, C_D) = cellwise!(res, model, (C, ∇J_C, C_b, C_D) -> C + ∇J_C - C_b - C_D, C, ∇J_C, C_b, C_D)

@@ -1,4 +1,4 @@
-# Studies of the tendency ∂ₜP_* of the Lorenz reference state from the diabatic tendencies (src/reference_tendency.jl),
+# Studies of the tendency ∂ₜP_* of the Lorenz reference state from the diabatic tendencies (src/reference_state/tendency.jl),
 # on a stratified state at rest with lateral structure, which diffusion changes.
 #
 # 1. FC2D: ∂ₜP_* at fixed height, as the derivative of the monotone cubic P_* with respect to the motion of its nodes (dual

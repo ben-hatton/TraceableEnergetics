@@ -7,14 +7,19 @@ compressible equations, using models built in the [ClimFlows](https://github.com
 
 ```
 src/               the TraceableEnergetics package: model-independent setups (initial conditions) and their
-                   lowering to each model's initialize, the diagnostics of either model with the energy budget,
-                   and their output during a run (NetCDF or JLD2 data files, videos)
+                   lowering to each model's initialize, the diagnostics of either model, and their output during a
+                   run (NetCDF or JLD2 data files, time series, videos)
+  energetics/        the energy budget: kernels and diagnostics
+  reference_state/   the Lorenz reference state of available energy: placement of the parcels, reference heights,
+                     available energy, tendency of the reference state, budgets of the available energy
+  numerics/          interpolation, quadrature, minimisation, placement of masses, the transportation simplex
 examples/          scripts that run the models, each writing to its own output/ (untracked):
-  kelvin_helmholtz/  a shear layer in both models, side by side
-  recording/         the outputs of a run: data files and videos, and reading them back
-  energy_budget/     local and global energy budgets of a rising bubble in both models
-  vortex_schemes/    energy conservation and nonlinear behaviour of the vortex-force schemes
-tools/             helpers shared by scripts (setup.jl, scales, stratification)
+  kelvin_helmholtz/          a shear layer in both models, side by side
+  recording/                 the outputs of a run: data files and videos, and reading them back
+  energy_budget/             local and global energy budgets of a rising bubble in both models
+  kelvin_helmholtz_budget/   the energy budget of a Kelvin-Helmholtz shear layer in both models
+  thermohaline_lock_exchange/ the budgets of the available energy of a thermohaline lock exchange in both models
+tools/             helpers shared by scripts (setup.jl, budget figures, scales, stratification) and studies
 notes/             the specifications of the models, the energy budget and the APE reference state
 test/              setups tests, canonical setups, diagnostics and outputs on both models; cross-model tests
 ```

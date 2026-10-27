@@ -1,7 +1,7 @@
 ## KERNELS OF THE BUDGETS OF THE AVAILABLE ENERGY
 #
 # The budgets of the available compressible energy (ACE) Π₁ and the available potential energy (APE) Π₂ of the energy
-# notes, as diagnostics of AN2D and FC2D (recipes in diagnostics.jl), computed after the reference state and the reference
+# notes, as diagnostics of AN2D and FC2D (recipes in entries.jl), computed after the reference state and the reference
 # heights z_* of the same state. With the potential Σ(ϑ, q, z, p) of the model (h(p) + g z for FC2D,
 # h(P_R) + (p - P_R)/ρ_R + g z for AN2D), its derivatives Σ_ϑ, Σ_q evaluated at three states of a parcel,
 #     the state itself (z, p):                Σ_ϑ,   Σ_q    (the model's conjugate variable and chemical potential),
@@ -11,7 +11,7 @@
 # Δ₂Σ_ϑ = Σ̃_ϑ - Σ*_ϑ (`_APE`), the material derivatives of the energy notes give, at a fixed reference state,
 #     ∂ₜ(ρΠ₁) = B₁ ∂ₜρ + Δ₁Σ_ϑ ∂ₜ(ρϑ) + Δ₁Σ_q ∂ₜ(ρq),   B₁ = Π₁ + (p - P_*) Σ_p - ϑ Δ₁Σ_ϑ - q Δ₁Σ_q,
 #     ∂ₜ(ρΠ₂) = B₂ ∂ₜρ + Δ₂Σ_ϑ ∂ₜ(ρϑ) + Δ₂Σ_q ∂ₜ(ρq),   B₂ = Π₂ - ϑ Δ₂Σ_ϑ - q Δ₂Σ_q,
-# with Σ_p = 1/ρ (1/ρ_R for AN2D, where ∂ₜρ = 0). These are written as the budget of ρP is (energetics.jl), in
+# with Σ_p = 1/ρ (1/ρ_R for AN2D, where ∂ₜρ = 0). These are written as the budget of ρP is (energetics/kernels.jl), in
 # Bernoulli form, from the fluxes of the tendencies and the operators of the model: with the reversible flux
 #     J^rev = ρu ℑ(B) + ρϑu ℑ(Δ Σ_ϑ) + ρqu ℑ(Δ Σ_q),
 # the irreversible flux J^irr = ℑ(Δ Σ_ϑ) J_ϑ + ℑ(Δ Σ_q) J_q, the conversion
@@ -20,7 +20,7 @@
 # δ(ℑ(a) b) = a δb + ℑ(b δa), gives at each cell, to round-off (for AN2D, up to the divergence of ρ_R u),
 #     ∂ₜ(ρΠ₁) = -∇·(J_ACE^rev + J_ACE^irr) - C_ACE - (Q_ϑ - Q̃_ϑ) - (Q_q - Q̃_q) + Q - Q̃,
 #     ∂ₜ(ρΠ₂) = -∇·(J_APE^rev + J_APE^irr) - C_APE - (Q̃_ϑ - Q*_ϑ) - (Q̃_q - Q*_q) + Q̃ - Q*,
-# plus the terms in ∂ₜP_* (R_Π₁, R_Π₂ of the energy notes), not diagnosed yet. In the continuous equations
+# plus the terms in ∂ₜP_* (R_Π₁, R_Π₂ of the energy notes, below). In the continuous equations
 #     J_ACE^rev = ρΠ₁u + J_C*,   C_ACE = C_b,1* + C_D* - ∇·J_C*,   J_APE^rev = ρΠ₂u,   C_APE = C_b,2*,
 # with J_C* = (p - P_*) u, the buoyancy conversions C_b,1* = ρ g ρ_* (v - ṽ) w, C_b,2* = ρ g ρ_* (ṽ - v_*) w (FC2D;
 # ṽ = v(ϑ, q, P_*(z))), C_b,1* = 0, C_b,2* = ρ_R g ρ_R (v(ϑ, q, P_R) - v_*) w (AN2D), and the pressure dilatation
@@ -91,24 +91,10 @@ The coefficients of ∂ₜρ in the tendencies of ρΠ₁ and ρΠ₂ at a fixed
 with ρ = ρ_R for AN2D, where B₁ = (p - P_*)/ρ_R. Their gradients along the mass flux, with those of the differences of
 the potentials along the tracer fluxes, are the conversions C_ACE and C_APE (`bernoulli_conversion!`).
 """
-function compression_bernoulli!(B₁, model, ACE, pressure_anomaly, density, (; consvar, q), Δϑ, Δq)
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            B₁[i, j] = ACE[i, j] + pressure_anomaly[i, j] / density[i, j] - consvar[i, j] * Δϑ[i, j] - q[i, j] * Δq[i, j]
-        end
-    end
-    return fill_halo!(domain, B₁, ZeroGradient())
-end
-function displacement_bernoulli!(B₂, model, APE, (; consvar, q), Δϑ, Δq)
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            B₂[i, j] = APE[i, j] - consvar[i, j] * Δϑ[i, j] - q[i, j] * Δq[i, j]
-        end
-    end
-    return fill_halo!(domain, B₂, ZeroGradient())
-end
+compression_bernoulli!(B₁, model, ACE, pressure_anomaly, density, (; consvar, q), Δϑ, Δq) =
+    cellwise!(B₁, model, (Π₁, pa, ρ, ϑ, q, Δϑ, Δq) -> Π₁ + pa / ρ - ϑ * Δϑ - q * Δq, ACE, pressure_anomaly, density, consvar, q, Δϑ, Δq)
+displacement_bernoulli!(B₂, model, APE, (; consvar, q), Δϑ, Δq) =
+    cellwise!(B₂, model, (Π₂, ϑ, q, Δϑ, Δq) -> Π₂ - ϑ * Δϑ - q * Δq, APE, consvar, q, Δϑ, Δq)
 
 """
     C = bernoulli_conversion!(C, model, faces, (mass_flux_x, mass_flux_z), (mu, mw), k, B, Δϑ, Δq)
@@ -276,25 +262,10 @@ The tendency of ρΠ₁ or ρΠ₂ [W m⁻³] at the interior cells, from those 
 pressure: ∂ₜ(ρΠ) = B ∂ₜρ + ΔΣ_ϑ ∂ₜ(ρϑ) + ΔΣ_q ∂ₜ(ρq) + R, with the Bernoulli coefficient B, the differences of the
 potentials ΔΣ_ϑ, ΔΣ_q and the term R in ∂ₜP_* of that energy; ∂ₜρ from the tendencies `dstate` (FC2D; zero for AN2D).
 """
-function available_energy_tendency!(dρΠ, model::FC2D, dstate, B, Δϑ, Δq, dρconsvar, dρq, R)
-    (; mgr, domain) = model
-    dρ = view(dstate.m, :, :, 1)
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            dρΠ[i, j] = B[i, j] * dρ[i, j] + Δϑ[i, j] * dρconsvar[i, j] + Δq[i, j] * dρq[i, j] + R[i, j]
-        end
-    end
-    return fill_halo!(domain, dρΠ, ZeroGradient())
-end
-function available_energy_tendency!(dρΠ, model::AN2D, dstate, B, Δϑ, Δq, dρconsvar, dρq, R)
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            dρΠ[i, j] = Δϑ[i, j] * dρconsvar[i, j] + Δq[i, j] * dρq[i, j] + R[i, j]
-        end
-    end
-    return fill_halo!(domain, dρΠ, ZeroGradient())
-end
+available_energy_tendency!(dρΠ, model::FC2D, dstate, B, Δϑ, Δq, dρconsvar, dρq, R) =
+    cellwise!(dρΠ, model, (B, dρ, Δϑ, dρϑ, Δq, dρq, R) -> B * dρ + Δϑ * dρϑ + Δq * dρq + R, B, view(dstate.m, :, :, 1), Δϑ, dρconsvar, Δq, dρq, R)
+available_energy_tendency!(dρΠ, model::AN2D, dstate, B, Δϑ, Δq, dρconsvar, dρq, R) =
+    cellwise!(dρΠ, model, (Δϑ, dρϑ, Δq, dρq, R) -> Δϑ * dρϑ + Δq * dρq + R, Δϑ, dρconsvar, Δq, dρq, R)
 
 """
     res = available_energy_budget_residual!(res, model, dρΠ, ∇J_rev, ∇J_irr, C, (Q_ϑ, Q_q, Q), (Q′_ϑ, Q′_q, Q′), R)
@@ -305,13 +276,7 @@ with the heatings at the two states of the energy, (Q_ϑ, Q_q, Q) at the parcel'
 intermediate state for Π₁, at the intermediate and reference states for Π₂: zero to round-off by the product rule of the
 operators (for the APE of AN2D, up to the divergence of ρ_R u).
 """
-function available_energy_budget_residual!(res, model, dρΠ, ∇J_rev, ∇J_irr, C, (Q_ϑ, Q_q, Q), (Q′_ϑ, Q′_q, Q′), R)
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            res[i, j] = dρΠ[i, j] + ∇J_rev[i, j] + ∇J_irr[i, j] + C[i, j] + (Q_ϑ[i, j] - Q′_ϑ[i, j]) + (Q_q[i, j] - Q′_q[i, j]) -
-                        (Q[i, j] - Q′[i, j]) - R[i, j]
-        end
-    end
-    return fill_halo!(domain, res, ZeroGradient())
-end
+available_energy_budget_residual!(res, model, dρΠ, ∇J_rev, ∇J_irr, C, (Q_ϑ, Q_q, Q), (Q′_ϑ, Q′_q, Q′), R) =
+    cellwise!(res, model, (dρΠ, ∇J_rev, ∇J_irr, C, Q_ϑ, Q_q, Q, Q′_ϑ, Q′_q, Q′, R) ->
+                  dρΠ + ∇J_rev + ∇J_irr + C + (Q_ϑ - Q′_ϑ) + (Q_q - Q′_q) - (Q - Q′) - R,
+              dρΠ, ∇J_rev, ∇J_irr, C, Q_ϑ, Q_q, Q, Q′_ϑ, Q′_q, Q′, R)

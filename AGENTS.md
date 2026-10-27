@@ -96,7 +96,7 @@ change in this repository.
   and salt all significant): 1, the sorted rearrangement with its certificate, the reference heights, the available
   energy Π = Π₁ + Π₂ (AE, ACE = Π₁, APE = Π₂, notation of the energy notes); 2, the exact rearrangement
   (`ExactRearrangement`, a transportation simplex, src/numerics/transportation.jl), used by the examples; 3, ∂ₜP_* from
-  the diabatic tendencies (src/reference_tendency.jl); 4, the budgets of ACE and APE, with the R terms in ∂ₜP_*.
+  the diabatic tendencies (src/reference_state/tendency.jl); 4, the budgets of ACE and APE, with the R terms in ∂ₜP_*.
   Deferred speedups (sort warm start, Hermite interval hint, previous-snapshot warm start of the simplex, banded pricing,
   incremental tree updates) are to be offered to the user with fresh timings. See notes/reference_state_plan.md.
 

@@ -1,5 +1,5 @@
-# Tests of the tendency of the Lorenz reference state from the diabatic tendencies (src/reference_tendency.jl) and of the
-# terms in ∂ₜP_* of the budgets of ACE and APE (src/available_energy_budget.jl), for AN2D and FC2D, on small grids.
+# Tests of the tendency of the Lorenz reference state from the diabatic tendencies (src/reference_state/tendency.jl) and of the
+# terms in ∂ₜP_* of the budgets of ACE and APE (src/reference_state/budget.jl), for AN2D and FC2D, on small grids.
 # Included in the module of the reference-state tests, after test/available_energy_budget.jl, whose models, states and
 # helpers it uses.
 using TraceableEnergetics: reference_tendency!, reference_pressure_tendency, reference_pressure_tendency_at!,

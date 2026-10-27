@@ -13,6 +13,44 @@
 # level are those of a slot, with the masses of the placement, and the tendencies are those of the slot profile: of the
 # nodes of π_* in AN2D, of the slot edges in FC2D, from which follows ∂ₜP_* at fixed height.
 
+"""
+    count = slot_means!(means::SlotMeans, placement, slot_mass, slot_pressure, fluid, g, consvar, q, consvar_rate, q_rate)
+
+The means over the parcels of each slot k, weighted by the inverse of their stratification at the slot,
+    ⟨a⟩_k = Σ_n w_nk a_nk / Σ_n w_nk,   w_nk = x_nk/N²_nk,   N²_nk = g ρ_k (∂_z v_*(z_k) + g ρ_k ∂v/∂p_nk),
+of the rate of change of the specific volume at the slot pressure P_k, v̇_nk = ∂v/∂ϑ ϑ̇_n + ∂v/∂q q̇_n [m³ kg⁻¹ s⁻¹], and of
+the compressibility ∂v/∂p_nk [m³ kg⁻¹ Pa⁻¹], with v and its derivatives at (P_k, ϑ_n, q_n), the parcel rates ϑ̇_n, q̇_n
+(`consvar_rate`, `q_rate`), and ρ_k and ∂_z v_*(z_k) from `means`. A parcel that is weakly stratified at its level moves
+further for a given change of its volume, and displaces more of the others. Where N²_nk ≤ 0 for a parcel of the slot,
+the weights are undefined and the slot takes the plain means, w_nk = x_nk. Returns the number of such slots.
+"""
+function slot_means!(means::SlotMeans{F}, placement, slot_mass, slot_pressure, fluid, g, consvar, q, consvar_rate, q_rate) where F
+    (; density, volume_gradient, weight, volume_rate, compressibility, plain_volume_rate, plain_compressibility, unstable) = means
+    foreach(a -> fill!(a, 0), (weight, volume_rate, compressibility, plain_volume_rate, plain_compressibility))
+    fill!(unstable, false)
+    for e in 1:placement.count
+        n, k, x = placement.parcel[e], placement.slot[e], placement.mass[e]
+        x > 0 || continue                                           # an entry of zero mass of the exact placement
+        _, ∂v_∂p, ∂v_∂ϑ, ∂v_∂q = fluid(:p, :consvar, :q).volume_functions(slot_pressure[k], consvar[n], q[n])
+        v̇ = ∂v_∂ϑ * consvar_rate[n] + ∂v_∂q * q_rate[n]                # at fixed pressure
+        N² = g * density[k] * (volume_gradient[k] + g * density[k] * ∂v_∂p)
+        unstable[k] |= N² <= 0
+        w = x / N²
+        weight[k] += w
+        volume_rate[k] += w * v̇
+        compressibility[k] += w * ∂v_∂p
+        plain_volume_rate[k] += x * v̇
+        plain_compressibility[k] += x * ∂v_∂p
+    end
+    for k in eachindex(weight)
+        plain_volume_rate[k] /= slot_mass[k]
+        plain_compressibility[k] /= slot_mass[k]
+        volume_rate[k] = unstable[k] ? plain_volume_rate[k] : volume_rate[k] / weight[k]
+        compressibility[k] = unstable[k] ? plain_compressibility[k] : compressibility[k] / weight[k]
+    end
+    return count(unstable)
+end
+
 ## AN2D
 
 """

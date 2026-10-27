@@ -3,7 +3,8 @@
 # `loop` calls its `outputs` at t = 0 and at the end of each time slice, and closes them when the run ends. `Outputs`
 # opens the diagnostics session once per call and hands it to each output: a `DataFile` (NetCDF or JLD2) writes the
 # full arrays, with halo, for post-processing, and is closed at the end; a `DiagnosticVideo` keeps the interior, for
-# viewing, and is saved at the end. Any other output only needs `record!(output, session, t)` and `close(output)`.
+# viewing, and is saved at the end; an `IntegralSeries` keeps the integrals over the box at every call, and `Thinned`
+# passes on only every n-th call. Any other output only needs `record!(output, session, t)` and `close(output)`.
 
 """
     outputs = Outputs(output...)
@@ -171,6 +172,67 @@ read_diagnostic(::Val{:jld2}, path, name) = jldopen(path, "r") do file
     slices = 1:length(keys(file["t"]))
     return stack(n -> file["$name/$n"], slices), [file["t/$n"] for n in slices]
 end
+
+#####
+##### Time series of the integrals over the box, and outputs at a coarser interval
+#####
+
+"""
+    series = IntegralSeries(model, names; reference_state = nothing, file = nothing)
+    series = read_series(file)
+
+An output of `Outputs` (see `record!`) that keeps, at every call, the integral over the box ∫ f dx dz of each cell
+diagnostic f among `names` [W m⁻¹ for a term of a budget], and the value of each number (location `()`), for time series
+finer than the fields written to a data file: `series.times` [s] and `series.values[name]`. Profiles and fields on the
+faces among `names` are skipped. The diagnostics of a reference state need it as the keyword `reference_state`. With a
+`file` (JLD2), `close(series)`, called by `loop` when the run ends, saves the times and values there, and `read_series`
+reads them back as `(; times, values)`.
+"""
+struct IntegralSeries{M, F}
+    model::M
+    cells::Vector{Symbol}               # the cell diagnostics, integrated over the box
+    numbers::Vector{Symbol}             # the numbers, kept as they are
+    times::Vector{F}
+    values::Dict{Symbol, Vector{F}}
+    file::Union{Nothing, String}        # where `close` saves the series, if anywhere
+end
+function IntegralSeries(model, names; reference_state = nothing, file = nothing)
+    info = diagnostic_info(model; reference_state)
+    cells = [name for name in names if info[name].location == (Cell(), Cell())]
+    numbers = [name for name in names if info[name].location == ()]
+    F = typeof(model.dx)
+    return IntegralSeries(model, cells, numbers, F[], Dict(name => F[] for name in (cells..., numbers...)), file)
+end
+function record!(series::IntegralSeries, session, t)
+    (; domain, dx, dz) = series.model
+    push!(series.times, t)
+    foreach(name -> push!(series.values[name], sum(interior(domain, CookBooks.get(session, name))) * dx * dz), series.cells)
+    foreach(name -> push!(series.values[name], CookBooks.get(session, name)), series.numbers)
+    return series
+end
+function Base.close(series::IntegralSeries)
+    isnothing(series.file) || JLD2.jldsave(series.file; times = series.times, values = series.values)
+    return series
+end
+read_series(file) = JLD2.jldopen(handle -> (; times = handle["times"], values = handle["values"]), file, "r")
+
+"""
+    output = Thinned(output, every)
+
+An output of `Outputs` that passes on to `output` only every `every`-th call, from the first: a data file of fields at a
+coarser interval than the time series of an `IntegralSeries`.
+"""
+mutable struct Thinned{O}
+    const output::O
+    const every::Int
+    calls::Int
+end
+Thinned(output, every) = Thinned(output, every, 0)
+function record!(thinned::Thinned, session, t)
+    (thinned.calls += 1) % thinned.every == 1 % thinned.every && record!(thinned.output, session, t)
+    return thinned
+end
+Base.close(thinned::Thinned) = close(thinned.output)
 
 #####
 ##### Videos

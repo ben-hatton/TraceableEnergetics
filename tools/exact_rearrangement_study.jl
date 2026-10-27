@@ -1,5 +1,5 @@
 # Studies of the exact rearrangement of the Lorenz reference state (`ExactRearrangement`, the transportation simplex
-# from the sorted placement, src/numerics/transportation.jl and src/rearrangement.jl) against the sort
+# from the sorted placement, src/numerics/transportation.jl and src/reference_state/rearrangement.jl) against the sort
 # (`SortedRearrangement`).
 #
 # 1. Cost: time, pivots and passes over the parcel-slot pairs of both methods, on the thermohaline lock exchange at rest

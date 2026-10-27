@@ -3,6 +3,11 @@
 This is a handoff for a new session in this repository. Nothing in it has been implemented yet. It was written on
 2026-10-23, at the end of a design session with the user.
 
+**Files moved (2026-10-27).** The paths below are those at the time of each milestone. The code is now organised by
+topic: `src/energetics/` (kernels, entries), `src/reference_state/` (`lorenz_reference.jl`, `rearrangement.jl`,
+`reference_heights.jl`, `available_energy.jl`, `tendency.jl`, `budget.jl`, `entries.jl`), `src/diagnostics.jl` (the
+book only), and `src/numerics/`.
+
 **Read these first:**
 - this file;
 - `AGENTS.md`, whose rules apply throughout;
@@ -35,8 +40,8 @@ outside this repository: read it, never edit it.
    - `CFAnelastics.loop` (0.1.3) and `CFCompressible.loop` (0.1.4) take `book = diagnostics(model)`, the book handed to
      `outputs`. Pass the book of `TraceableEnergetics.diagnostics`, which adds the energy budget to the diagnostics of
      the model package: `loop(state, model, time_scheme, params; outputs, book = diagnostics(model))`.
-   - `examples/energy_budget/run.jl` records the energy budget this way. `examples/vortex_schemes/run.jl` still uses
-     its older workaround, an output, `Record`, that holds its own book.
+   - `examples/energy_budget/run.jl` records the energy budget this way. `examples/vortex_schemes/run.jl`, since
+     removed, used an older workaround, an output, `Record`, that held its own book.
    - New reference-state diagnostics merged into the book of `TraceableEnergetics.diagnostics` are therefore recorded
      during a run with no further change.
 

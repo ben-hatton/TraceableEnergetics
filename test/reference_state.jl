@@ -1,6 +1,5 @@
 # Tests of the Lorenz reference state of available potential energy and the available energy of its parcels, by
-# sorting, with its certificate, for AN2D (src/anelastic_reference.jl, src/anelastic_available_energy.jl) and FC2D
-# (src/compressible_reference.jl, src/compressible_available_energy.jl), on small grids. Included in a module after
+# sorting, with its certificate, for AN2D and FC2D (src/reference_state/), on small grids. Included in a module after
 # config.jl.
 using CFAnelastics, CFCompressible, CookBooks
 using TraceableEnergetics
