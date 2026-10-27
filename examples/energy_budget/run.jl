@@ -21,15 +21,21 @@
 # compression from P_*(z) to p at fixed z (h(p) - h(P_*(z)) - (p - P_*(z)) v for FC2D, zero for AN2D, where Σ is linear in
 # p), and the available potential energy (APE) Π₂ = Σ(z, P_*(z)) - Σ(z_*, P_*(z_*)), the displacement from z_* to z
 # through the reference state. Each is computed parcel by parcel and integrated over the box, ∫ρΠ dV = Σ_n m_n Π_n, and
-# the background potential energy is ∫ρ(P - Π) dV. With closed walls, the integral of the divergence in
-# C = -∇·[(p - P_*)u] + C_b^* + C_D^* vanishes, so ∫C dV is the conversion from available energy to K, and the global
-# budgets are
-#     d/dt ∫ρΠ dV = -∫C dV + G,    d/dt ∫ρ(P - Π) dV = ∫(Q - Q_ϑ - Q_q) dV - G,
-# with G = ∫(-Q_ϑ + Q_ϑ^* - Q_q + Q_q^* + Q - Q^*) dV the diabatic generation of available energy. Its terms at the
-# reference state are not diagnosed yet: G is inferred as d/dt ∫ρΠ dV + ∫C dV, with the time derivative from differences
-# of successive outputs and the rates averaged between them (both second order in the output interval; the same estimate
-# for ∫ρK, against its exact tendency, measures the error of the differences). The available energy of the neutral state
-# at rest (the same state without the bubble), zero for an exact reference state, is printed for comparison.
+# the background potential energy is ∫ρ(P - Π) dV. With the potentials Σ_ϑ, Σ_q at the intermediate state (z, P_*(z))
+# (Σ̃) and at the reference state (z_*, P_*(z_*)) (Σ*), the budgets at a fixed reference state are
+#     ∂ₜ(ρΠ₁) = -∇·(J_ACE^rev + J_ACE^irr) - C_ACE - (Q_ϑ - Q̃_ϑ) - (Q_q - Q̃_q) + Q - Q̃,
+#     ∂ₜ(ρΠ₂) = -∇·(J_APE^rev + J_APE^irr) - C_APE - (Q̃_ϑ - Q*_ϑ) - (Q̃_q - Q*_q) + Q̃ - Q*,
+# with the heatings Q̃_ϑ = -J_ϑ·∇Σ̃_ϑ, Q*_ϑ = -J_ϑ·∇Σ*_ϑ, ..., and the conversions to K, C_ACE (= C_b,1* + C_D* - ∇·J_C*
+# in the continuous equations, with J_C* = (p - P_*)u) and C_APE (= C_b,2*, the buoyancy conversion relative to the
+# reference state), which leave the conversion C_bg = C - C_ACE - C_APE of the background, zero in the continuous
+# equations. The terms in ∂ₜP_*, R_Π₁ and R_Π₂, are not diagnosed yet; ∫R_Π dV = 0. With closed walls, the global budgets
+# are then
+#     d/dt ∫ρΠ dV = -∫(C_ACE + C_APE) dV + G,    d/dt ∫ρ(P - Π) dV = -∫C_bg dV + ∫(Q* - Q*_ϑ - Q*_q) dV,
+# with G = ∫(-Q_ϑ + Q*_ϑ - Q_q + Q*_q + Q - Q*) dV the diabatic generation of available energy. They are checked
+# against d/dt ∫ρΠ dV from differences of successive outputs, with the rates averaged between them (both second order in
+# the output interval; the same estimate for ∫ρK, against its exact tendency, measures the error of the differences).
+# The available energy of the neutral state at rest (the same state without the bubble), zero for an exact reference
+# state, is printed for comparison.
 #
 #   julia -t 4 examples/energy_budget/run.jl
 #
@@ -42,6 +48,7 @@ using CFPlanets: Tank2D
 using CookBooks: CookBooks
 using MutatingOrNot: void
 using CairoMakie
+include("../../tools/budget_figures.jl")
 
 #####
 ##### Models: a small box, closed by free-slip insulating walls (see examples/kelvin_helmholtz for each choice)
@@ -81,23 +88,8 @@ loops = (an = CFAnelastics.loop, fc = CFCompressible.loop)
 ##### Diagnostics recorded at t = 0 and at the end of each time slice
 #####
 
-# local budget of ρK, of ρP, and the manipulated conversion, at the cells [W m⁻³]
-kinetic_terms   = (:dρK, :div_kinetic_flux_rev, :div_kinetic_flux_irr, :conversion, :viscous_dissipation, :vortex_work,
-                   :kinetic_budget_residual)
-potential_terms = (:dρP, :div_potential_flux_rev, :div_potential_flux_irr, :heating, :heating_consvar, :heating_composition,
-                   :potential_budget_residual, :heating_residual)
-conversion_terms = (:div_pressure_flux, :buoyancy_conversion, :pressure_dilatation, :conversion_residual)
-# global budget: integrals over the box, per unit length along y [J m⁻¹ or W m⁻¹]
-integrals = (:integrated_kinetic_energy, :integrated_potential_energy, :integrated_energy_tendency, :integrated_boundary_flux,
-             :integrated_vortex_work, :integrated_budget_residual)
-# available energy: AE = Π, ACE = Π₁ and APE = Π₂ on the cells [J kg⁻¹], the reference profiles P_*, v_* on z, the
-# integrals ∫ρΠ dV, ∫ρΠ₁ dV, ∫ρΠ₂ dV and the background potential energy ∫ρ(P - Π) dV [J m⁻¹], and the checks of the
-# reference state: the parcels whose placement fails the certificate of optimality, those whose reference height is at
-# a wall, and for FC2D the top pressure of the reference column and its excess height
-available_terms = (:AE, :ACE, :APE, :p_star, :v_star, :integrated_AE, :integrated_ACE, :integrated_APE,
-                   :background_potential_energy, :certificate_violations, :wall_minima)
-names = map(key -> (kinetic_terms..., potential_terms..., conversion_terms..., integrals..., available_terms...,
-                     (key == :fc ? (:p_top, :volume_residual) : ())...), NamedTuple{keys(models)}(keys(models)))
+# the local budgets of ρK, ρP, ACE and APE at the cells, their integrals, and the available energies (`budget_names`)
+names = map(budget_names, models)
 
 params = (; Nslice = 40, slice_size = 0.5, dt_max = 0.1, cfl = 0.9)
 dir = mkpath(joinpath(@__DIR__, "output"))
@@ -121,106 +113,18 @@ for key in keys(models)
 end
 
 #####
-##### Reading back
+##### Reading back, and the figures (tools/budget_figures.jl)
 #####
 
-# every recorded diagnostic of each model: a (x, z, t) array with halo for a field, a vector over t for a number
-data = map(paths, names) do path, names
-    NamedTuple{names}(map(name -> first(read_diagnostic(path, name)), names))
-end
-times = last(read_diagnostic(paths.an, :dρK))
-
-# the interior of the field `name` of `model` at slice n, and its integral over the box ∫ field dx dz [W m⁻¹]
-field(key, name, n) = interior(models[key].domain, view(data[key][name], :, :, n))
-integral(key, name) = [sum(field(key, name, n)) * models[key].dx * models[key].dz for n in eachindex(times)]
-
-#####
-##### Global budget: the integrals over the box against time, one column per model
-#####
-
-figure = Figure(size = (1100, 1200))
-for (column, key) in enumerate(keys(models))
-    d = data[key]
-    label = nameof(typeof(models[key]))
-    # energies, as changes from t = 0 (∫ρP is about 10¹⁰ times larger than ∫ρK)
-    ax = Axis(figure[1, column]; title = "$label: energy change from t = 0", ylabel = "J m⁻¹")
-    ΔK = d.integrated_kinetic_energy .- d.integrated_kinetic_energy[1]
-    ΔP = d.integrated_potential_energy .- d.integrated_potential_energy[1]
-    lines!(ax, times, ΔK; label = "∫ρK")
-    lines!(ax, times, ΔP; label = "∫ρP")
-    lines!(ax, times, ΔK .+ ΔP; label = "∫ρ(K + P)", linestyle = :dash, color = :black)
-    axislegend(ax; position = :lt)
-    # budget of ∫ρK: d/dt ∫ρK = -∮J_K·dS + ∫C - ∫ρε_K + ∫VF
-    ax = Axis(figure[2, column]; title = "$label: budget of ∫ρK", ylabel = "W m⁻¹")
-    lines!(ax, times, integral(key, :dρK); label = "d/dt ∫ρK", color = :black)
-    lines!(ax, times, integral(key, :conversion); label = "∫C")
-    lines!(ax, times, -integral(key, :viscous_dissipation); label = "-∫ρε_K")
-    lines!(ax, times, -integral(key, :div_kinetic_flux_rev) .- integral(key, :div_kinetic_flux_irr); label = "-∮J_K·dS")
-    lines!(ax, times, d.integrated_vortex_work; label = "∫VF")
-    axislegend(ax; position = :rt)
-    # budget of ∫ρP: d/dt ∫ρP = -∮J_P·dS - ∫C + ∫(Q - Q_ϑ - Q_q)
-    ax = Axis(figure[3, column]; title = "$label: budget of ∫ρP", ylabel = "W m⁻¹")
-    lines!(ax, times, integral(key, :dρP); label = "d/dt ∫ρP", color = :black)
-    lines!(ax, times, -integral(key, :conversion); label = "-∫C")
-    lines!(ax, times, integral(key, :heating) .- integral(key, :heating_consvar) .- integral(key, :heating_composition);
-           label = "∫(Q - Q_ϑ - Q_q)")
-    lines!(ax, times, -integral(key, :div_potential_flux_rev) .- integral(key, :div_potential_flux_irr); label = "-∮J_P·dS")
-    axislegend(ax; position = :rt)
-    # closure of the global budget: d/dt ∫ρ(K + P) + ∮(J_K + J_P)·dS - ∫VF, against the scale of the exchanges
-    ax = Axis(figure[4, column]; title = "$label: residual of the budget of ∫ρ(K + P)", xlabel = "t [s]",
-              ylabel = "W m⁻¹")
-    lines!(ax, times, d.integrated_budget_residual; label = "residual", color = :black)
-    lines!(ax, times, d.integrated_energy_tendency; label = "d/dt ∫ρ(K + P)")
-    lines!(ax, times, d.integrated_boundary_flux; label = "∮(J_K + J_P)·dS")
-    axislegend(ax; position = :rt)
-end
-global_file = joinpath(dir, "global_budget.png")
-save(global_file, figure)
-
-#####
-##### Local budgets: maps of each term at the end of the run, one figure per model
-#####
-
-# each term is shown as its contribution to the tendency (with its sign in the budget), on its own symmetric colour range:
-# the terms span many orders of magnitude (the divergence of ρΣu is large at a cell, but integrates to the wall flux),
-# and the residuals are of round-off size
-function budget_row!(figure, row, key, title, panels)
-    x, z = diagnostic_coordinates(models[key], first(first(panels)))
-    n = lastindex(times)
-    Label(figure[row, 1], title; rotation = π / 2, tellheight = false)
-    for (k, (name, sign, label)) in enumerate(panels)
-        map = sign * field(key, name, n)
-        # a zero field (C_D for AN2D) gets the smallest nonzero range
-        limit = max(maximum(abs, map), floatmin(eltype(map)))
-        cell = figure[row, k + 1] = GridLayout()
-        ax = Axis(cell[1, 1]; title = label, aspect = DataAspect())
-        heatmap!(ax, x, z, map; colormap = :balance, colorrange = (-limit, limit))
-        hidedecorations!(ax)
-        Colorbar(cell[2, 1]; colormap = :balance, limits = (-limit, limit), vertical = false, flipaxis = false,
-                 label = "W m⁻³", ticklabelsize = 10, ticks = Makie.WilkinsonTicks(3))
-    end
-end
-
-local_files = map(keys(models)) do key
-    figure = Figure(size = (2000, 800))
-    # (diagnostic, sign in the budget, title)
-    budget_row!(figure, 1, key, "budget of ρK",
-        ((:dρK, 1, "∂ₜ(ρK)"), (:div_kinetic_flux_rev, -1, "-∇·J_K^rev"), (:div_kinetic_flux_irr, -1, "-∇·J_K^irr"),
-         (:conversion, 1, "C"), (:viscous_dissipation, -1, "-ρε_K"), (:vortex_work, 1, "VF"),
-         (:kinetic_budget_residual, 1, "residual (zero in ∫ only)")))
-    budget_row!(figure, 2, key, "budget of ρP",
-        ((:dρP, 1, "∂ₜ(ρP)"), (:div_potential_flux_rev, -1, "-∇·J_P^rev"), (:div_potential_flux_irr, -1, "-∇·J_P^irr"),
-         (:conversion, -1, "-C"), (:heating_consvar, -1, "-Q_ϑ"), (:heating_composition, -1, "-Q_q"),
-         (:heating, 1, "Q"), (:potential_budget_residual, 1, "residual")))
-    budget_row!(figure, 3, key, "conversion",
-        ((:conversion, 1, "C"), (:div_pressure_flux, -1, "-∇·J_C"), (:buoyancy_conversion, 1, "C_b"),
-         (:pressure_dilatation, 1, "C_D"),
-         (:conversion_residual, 1, "C + ∇·J_C - C_b - C_D")))
-    Label(figure[0, :], "$(nameof(typeof(models[key]))): local energy budget at t = $(times[end]) s"; fontsize = 18)
-    file = joinpath(dir, "local_budget_$key.png")
-    save(file, figure)
-    file
-end
+results = read_results(models, paths)
+files = String[]
+save_figure(name, figure) = (file = joinpath(dir, name); save(file, figure); push!(files, file))
+save_figure("global_budget.png", energy_budget_figure(results))
+foreach(key -> save_figure("local_budget_$key.png", local_energy_budget_figure(results, key)), keys(models))
+save_figure("available_energy_budget.png", available_energy_budget_figure(results))
+save_figure("generation.png", generation_figure(results))
+foreach(key -> save_figure("local_available_energy_budget_$key.png", local_available_energy_budget_figure(results, key)), keys(models))
+save_figure("available_energy.png", available_energy_maps(results))
 
 #####
 ##### Available energy at rest: the same neutral state without the bubble
@@ -239,99 +143,5 @@ at_rest = map(models, resting_states, references, lorenz) do model, state, refer
     energies
 end
 
-#####
-##### Global budget of the available energy: one column per model
-#####
-
-# rates between successive outputs, at the midpoints of the intervals: the differences of a series y, and the average
-# of a rate r (the trapezoidal rule), both second order in the output interval
-midpoints = (times[1:end-1] .+ times[2:end]) ./ 2
-difference(y) = diff(y) ./ diff(times)
-average(r) = (r[1:end-1] .+ r[2:end]) ./ 2
-
-figure = Figure(size = (1100, 1200))
-for (column, key) in enumerate(keys(models))
-    d = data[key]
-    label = nameof(typeof(models[key]))
-    # energies, as changes from t = 0: K, the available energy ∫ρΠ and its APE part ∫ρΠ₂, and the background ∫ρ(P - Π)
-    ax = Axis(figure[1, column]; title = "$label: energy change from t = 0", ylabel = "J m⁻¹")
-    change(y) = y .- y[1]
-    lines!(ax, times, change(d.integrated_kinetic_energy); label = "∫ρK")
-    lines!(ax, times, change(d.integrated_AE); label = "∫ρΠ (AE)")
-    lines!(ax, times, change(d.integrated_APE); label = "∫ρΠ₂ (APE)", linestyle = :dot)
-    lines!(ax, times, change(d.background_potential_energy); label = "∫ρ(P - Π)")
-    lines!(ax, times, change(d.integrated_kinetic_energy .+ d.integrated_AE); label = "∫ρ(K + Π)", linestyle = :dash,
-           color = :black)
-    axislegend(ax; position = :lt)
-    # budget of the available energy: d/dt ∫ρΠ = -∫C + G, with the generation G inferred from the other two
-    conversion = average(integral(key, :conversion))
-    generation = difference(d.integrated_AE) .+ conversion
-    # the same differences for ∫ρK, against the average of its exact tendency: their error
-    error = difference(d.integrated_kinetic_energy) .- average(integral(key, :dρK))
-    ax = Axis(figure[2, column]; title = "$label: budget of ∫ρΠ (AE)", ylabel = "W m⁻¹")
-    lines!(ax, midpoints, difference(d.integrated_AE); label = "d/dt ∫ρΠ", color = :black)
-    lines!(ax, midpoints, difference(d.integrated_APE); label = "d/dt ∫ρΠ₂", color = :black, linestyle = :dot)
-    lines!(ax, midpoints, -conversion; label = "-∫C")
-    lines!(ax, midpoints, generation; label = "G = d/dt ∫ρΠ + ∫C")
-    lines!(ax, midpoints, error; label = "error of d/dt (from ∫ρK)", color = :gray)
-    axislegend(ax; position = :rt)
-    # budget of the background: d/dt ∫ρ(P - Π) = ∫(Q - Q_ϑ - Q_q) - G, the diabatic source of ∫ρP less the generation of
-    # available energy
-    diabatic = average(integral(key, :heating) .- integral(key, :heating_consvar) .- integral(key, :heating_composition))
-    ax = Axis(figure[3, column]; title = "$label: budget of ∫ρ(P - Π)", ylabel = "W m⁻¹")
-    lines!(ax, midpoints, difference(d.background_potential_energy); label = "d/dt ∫ρ(P - Π)", color = :black)
-    lines!(ax, midpoints, diabatic; label = "∫(Q - Q_ϑ - Q_q)")
-    lines!(ax, midpoints, -generation; label = "-G")
-    axislegend(ax; position = :rt)
-    # the available compressible energy, zero for AN2D, and far smaller than the APE for FC2D
-    ax = Axis(figure[4, column]; title = "$label: ∫ρΠ₁ (ACE)", xlabel = "t [s]", ylabel = "J m⁻¹")
-    lines!(ax, times, d.integrated_ACE; color = :black)
-end
-available_file = joinpath(dir, "available_energy_budget.png")
-save(available_file, figure)
-
-#####
-##### Available energy of the parcels: maps of AE, ACE and APE at the start, middle and end of the run
-#####
-
-# a row per model and term, each on its own colour range, as Π₁ is far smaller than Π₂ (and zero for AN2D)
-figure = Figure(size = (1500, 1500))
-slices = (1, cld(lastindex(times), 2), lastindex(times))
-terms = ((:AE, "Π (AE)"), (:ACE, "Π₁ (ACE)"), (:APE, "Π₂ (APE)"))
-for (k, key) in enumerate(keys(models)), (l, (name, symbol)) in enumerate(terms)
-    model = models[key]
-    row = 3(k - 1) + l
-    # the terms are on the cells, and nonnegative; a field that is zero (ACE for AN2D) is shown on the range (0, 1)
-    x, z = CFBoxes.coordinates(model.domain, (model.dx, model.dz), (CFBoxes.Cell(), CFBoxes.Cell()))
-    largest = maximum(n -> maximum(field(key, name, n)), slices)
-    limit = iszero(largest) ? one(largest) : largest
-    Label(figure[row, 1], "$(nameof(typeof(model))): $symbol$(iszero(largest) ? " = 0" : "")"; rotation = π / 2,
-          tellheight = false)
-    for (c, n) in enumerate(slices)
-        ax = Axis(figure[row, c + 1]; title = "t = $(times[n]) s", aspect = DataAspect())
-        heatmap!(ax, x, z, field(key, name, n); colormap = :viridis, colorrange = (0, limit))
-        hidedecorations!(ax)
-    end
-    Colorbar(figure[row, length(slices) + 2]; colormap = :viridis, limits = (0, limit), label = "$symbol [J kg⁻¹]")
-end
-parcels_file = joinpath(dir, "available_energy.png")
-save(parcels_file, figure)
-
-#####
-##### Summary
-#####
-
-println()
-for key in keys(models)
-    d = data[key]
-    scale = maximum(abs, integral(key, :conversion))
-    println("$(nameof(typeof(models[key]))): max |global residual| = $(maximum(abs, d.integrated_budget_residual)) W m⁻¹, ",
-            "max |∫C| = $scale W m⁻¹, max |∫VF| = $(maximum(abs, d.integrated_vortex_work)) W m⁻¹")
-    for (name, symbol) in ((:integrated_AE, "∫ρΠ (AE)"), (:integrated_ACE, "∫ρΠ₁ (ACE)"), (:integrated_APE, "∫ρΠ₂ (APE)"))
-        println("    $symbol = $(d[name][1]) J m⁻¹ at t = 0, $(d[name][end]) J m⁻¹ at the end ",
-                "($(at_rest[key][name]) J m⁻¹ at rest)")
-    end
-    println("    largest number of parcels failing the certificate: $(Int(maximum(d.certificate_violations))), ",
-            "at a wall: $(Int(maximum(d.wall_minima))) (of $(length(field(key, :AE, 1))))")
-end
-println("figures saved to $global_file, $(join(local_files, ", ")), $available_file, $parcels_file")
+print_summary(results; at_rest)
+println("figures saved to $(join(files, ", "))")

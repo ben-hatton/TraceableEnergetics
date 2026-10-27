@@ -97,8 +97,10 @@ All of these are recorded in the note's "Decisions" section.
 **Physics choices**
 - The available-energy budget is evaluated from the continuous formulas, and residuals are reported, as
   `conversion_residual` does. Exact closure at each cell is not required.
-- The Lorenz profile is taken from the duals of the slot constraints when the solver provides them, otherwise from slot
-  means.
+- The Lorenz profile is taken from the slot-mean specific volumes, in both models; the duals certify the placement only
+  (changed with the user on 2026-10-27: the dual profile of AN2D changes abruptly when the parcel split between two rows
+  changes, and makes the reference heights of split parcels jump between rows, which made G, ∫ρΠ and C_APE - C_b,2*
+  rough; in AN2D π_* integrates -v_* dP_R - g dz with v_* linear in P_R between the rows).
 - The reference height used in the budgets is the LNB z_*: the global minimiser of Σ(ϑ, q, z, p_*(z, t)) over
   [0, L_z]. It is neither Tailleux (2013)'s nearest root nor the placement height ẑ.
 - ∂_t p_* is computed by default from the diabatic tendencies: an N_*⁻²-weighted mean of the parcels at each level,
@@ -278,6 +280,27 @@ formulas, their discrete form, the lid term and the motion of the nodes.
    - the fluxes;
    - the heating terms at the intermediate state and at the reference state;
    - the R terms.
+
+   Status (2026-10-26): done apart from the R terms and the tendencies ∂ₜ(ρΠ₁), ∂ₜ(ρΠ₂), which wait for milestone 3
+   (decided with the user). Decided with the user: the budgets in Bernoulli form, exact at each cell by the product rule
+   of the operators (as the budget of ρP), with the forms of the energy notes (C_b,1*, C_b,2*, C_D*, ∇·J_C*) and the
+   residuals of the manipulation reported; names with the energy prefix and `_at_p_star`/`_at_z_star`. Kernels in
+   `src/available_energy_budget.jl`, entries `available_energy_budget_entries` in `src/diagnostics.jl`, tests in
+   `test/available_energy_budget.jl` (closure at each cell with the tendency at a fixed reference state computed in the
+   test). Found:
+   - the conversion C = C_ACE + C_APE + C_bg, with C_bg of the background zero in the continuous equations; C_bg and
+     C_APE - C_b,2* converge at about second order in the mean but first order in the maximum (v_* is only continuous,
+     so z_* has kinks in (ϑ, q)): about 2 % of the conversion at M_z = 32;
+   - in an exactly neutral layer z_* is arbitrary, and although Π₂ does not depend on it, Σ*_ϑ = h_ϑ(P_*(z_*)) does, so
+     the heatings at the reference state Q*_ϑ, and the generation G, depend on how ties are broken: at t = 0 of
+     examples/energy_budget G is -1.1e-4 W/m in AN2D (ties at the top of the neutral layer) and -2.7e-4 W/m in FC2D (at
+     the bottom wall or the parcel's own height); from the first output on, the parcels differ and the models agree.
+   - examples/thermohaline_lock_exchange (isochoric warm-salty against cold-fresh, k_T = 1e-4, k_q = 3e-5): FC2D starts
+     with ACE = 12 % of the APE, exchanged with K by sound waves (16 to 32 Hz, undamped) through C_ACE; G_ACE follows the
+     acoustic pressure but averages to zero; heat diffusion destroys available energy and salt diffusion generates it,
+     of similar sizes; the APE budgets of AN2D and FC2D nearly coincide. The global budgets are recorded every 2.5 ms
+     (`IntegralSeries`), the slow ones plotted as block means over 0.25 s. The sorted rearrangement fails the
+     certificate for up to 9 parcels (thermobaricity), a case for milestone 2.
 
 ## 7. Tests
 

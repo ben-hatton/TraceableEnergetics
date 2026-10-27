@@ -251,6 +251,28 @@ end
     @test all(>=(0), interior(model.domain, energy.AE))
 end
 
+# The profile π_* follows from the slot volumes: its values at the row centres are the integral of -v_* dP_R - g dz with
+# v_* linear in P_R between the rows, with a mass-weighted mean of zero over the rows, and it changes with the state in
+# proportion to a perturbation of size ε of the tracers (the slot volumes are continuous in the state, the duals are not:
+# they change abruptly when the parcel split between two rows changes), in Float32 and Float64
+@testset "profile from the slot volumes, AN2D, $F" for F in (Float32, Float64)
+    model = an_box(F)
+    perturbed(ε) = tracer_state(model, (x, z) -> θ_active(x, z) + ε * cos(2π * x / Lx) * z / Lz, q_active)
+    profile(state) = (ref = lorenz(model); reference_state!(ref, model, state); ref.potential)
+    ref = lorenz(model)
+    reference_state!(ref, model, perturbed(0.0))
+    (; z, y) = ref.potential
+    K = length(z) - 2
+    v, P = ref.slot_volume, ref.node_pressure
+    step(c) = -(v[K+3-c] + v[K+2-c]) / 2 * (P[c] - P[c-1]) - model.space.g * (z[c] - z[c-1])
+    @test all(c -> isapprox(y[c] - y[c-1], step(c); rtol = 64eps(F)), 3:K+1)
+    @test abs(sum(k -> ref.slot_mass[k] * y[K+2-k], 1:K)) <= 64eps(F) * sum(ref.slot_mass) * maximum(abs, y)
+    # the change of π_* per unit ε, at three sizes of ε above the round-off of the float type
+    sizes = F == Float32 ? (1e-1, 3e-2, 1e-2) : (1e-3, 1e-4, 1e-5)
+    rates = map(ε -> maximum(abs, profile(perturbed(ε)).y .- y) / ε, sizes)
+    @test maximum(rates) <= 2 * minimum(rates)
+end
+
 # Invariance: a periodic shift of the state in x permutes the parcels and changes neither the reference state nor
 # E_P - E_*; changing the origin z0 of the geopotential changes neither the reference heights nor any available energy
 @testset "invariance, AN2D" begin
@@ -587,8 +609,10 @@ active_setup(model::FC2D) = initialize(model, (; consvar = θ_active, q = q_acti
     @test CookBooks.get(session, :integrated_ACE) == parcel_integral(model, ref, energy.ACE)
     @test CookBooks.get(session, :integrated_APE) == parcel_integral(model, ref, energy.APE)
     @test CookBooks.get(session, :wall_minima) == count(at_wall(model, energy))
-    names = model isa FC2D ? (:z_star, :ACE, :AE, :integrated_APE, :p_star, :background_potential_energy, :wall_minima, :p_top) :
-                             (:z_star, :ACE, :AE, :integrated_APE, :p_star, :background_potential_energy, :wall_minima)
+    names = model isa FC2D ? (:z_star, :ACE, :AE, :integrated_APE, :p_star, :background_potential_energy, :wall_minima, :p_top,
+                              :APE_flux_rev_z, :conversion_APE) :
+                             (:z_star, :ACE, :AE, :integrated_APE, :p_star, :background_potential_energy, :wall_minima,
+                              :APE_flux_rev_z, :conversion_APE)
     dir = mktempdir()
     for path in (joinpath(dir, "reference.nc"), joinpath(dir, "reference.jld2"))
         file = DataFile(path, model, names; reference_state = ref)

@@ -5,9 +5,10 @@
 #     c_nk = h(P_R(z_k), ϑ_n, q_n) - h(P_R(z_o), ϑ_n, q_n) + g (z_k - z_o)        [J kg⁻¹]
 # with the difference of h as the integral of v over the pressure (`enthalpy_difference`), which keeps the precision of
 # the float type (h itself is about 10⁶ J kg⁻¹). A constant per parcel changes neither the placement nor the slot duals,
-# and the cost of a parcel in its own row is zero. The dual potentials of the slots give the reduced reference pressure
-# π_* = (P_* - P_R)/ρ_R = -ψ_k at the row centres, up to a constant, and
-#     ∂_z π_* = g (ρ_R v_* - 1),   P_* = P_R + ρ_R π_*.
+# and the cost of a parcel in its own row is zero. The reduced reference pressure π_* = (P_* - P_R)/ρ_R, defined up to a
+# constant, follows from the mean specific volume v_*,k of the parcels of each slot,
+#     ∂_z π_* = g (ρ_R v_* - 1),   P_* = P_R + ρ_R π_*;
+# the dual potentials of the slots, π_* = -ψ_k for the optimal placement, certify the placement.
 # The reference height z_* of each parcel, the minimiser of its static energy along this profile, is computed here too
 # (`reference_heights!`); the available energy of the parcels, in anelastic_available_energy.jl. Heights z are measured
 # from the bottom of the box; masses are per unit length along y [kg m⁻¹].
@@ -157,13 +158,29 @@ function reference_state!(ref::AnelasticLorenzReference{F}, model::AN2D, state) 
     ref.slot_volume ./= ref.slot_mass
     ref.slot_compressibility ./= ref.slot_mass
 
-    # 4. The nodes of π_*: at the row centres π_* = -ψ_k, with the slope ∂_z π_* = g (ρ_R v_*,k - 1). Node K + 2 - k is
-    # slot k, as the nodes go up from the bottom wall
+    # 4. The nodes of π_* at the row centres, from the slot volumes: the slopes ∂_z π_* = g (ρ_R v_*,k - 1), and the values
+    # from ∂_z π_* = -v_* ∂_z P_R - g, with v_* linear in the pressure between successive rows (the trapezoidal rule in P_R),
+    #     π_*(z_c) - π_*(z_c-1) = -(v_*,c-1 + v_*,c)/2 (P_R(z_c) - P_R(z_c-1)) - g (z_c - z_c-1),
+    # exact when v is linear in p, as for a neutral fluid of NonlinearBinaryFluid, whose static energy is then flat at the
+    # nodes. Node K + 2 - k is slot k, as the nodes go up from the bottom wall. The duals ψ_k give π_* = -ψ_k too (for the
+    # optimal placement), but they change abruptly in time when the parcel split between two rows changes, and a parcel
+    # split between two rows has the same static energy at both, so that its reference height jumps between them: they
+    # serve the certificate only
     (; z, y, d) = ref.potential
     for k in 1:K
         j = Hz + K + 1 - k                                          # cell index of the row of slot k
-        y[K+2-k] = -ref.slot_dual[k]
         d[K+2-k] = g * (ρ_R[j] * ref.slot_volume[k] - 1)
+    end
+    y[2] = 0                                                        # the bottom row, before the constant is fixed
+    for c in 3:K+1
+        v₋, v₊ = ref.slot_volume[K+3-c], ref.slot_volume[K+2-c]    # v_* of the rows of nodes c - 1 and c
+        y[c] = y[c-1] - (v₋ + v₊) / 2 * (ref.node_pressure[c] - ref.node_pressure[c-1]) - g * (z[c] - z[c-1])
+    end
+    # π_* is defined up to a constant, which changes neither the reference heights nor the available energy: its mean
+    # over the mass of the rows, Σ_k M_k π_*(z_k) / Σ_k M_k, is zero
+    mean_π = sum(k -> ref.slot_mass[k] * y[K+2-k], 1:K) / sum(ref.slot_mass)
+    for c in 2:K+1
+        y[c] -= mean_π
     end
     # between the end rows and the walls, v_* follows the compression of the parcels of the end slot e,
     # v_*(z) = v_e + b_e (P_R(z) - P_R(z_e)), so that a parcel of that slot keeps its static energy: a constant v_* would

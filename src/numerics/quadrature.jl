@@ -44,3 +44,27 @@ precision of the float type.
     ∂v₊ = volume_functions(P + t₊, ϑ, q)[2]
     return -half * (5 * (t₋ * ∂v₋ + t₊ * ∂v₊) + 8 * half * ∂v₀) / 9
 end
+
+"""
+    Δ = potential_difference(fluid, p, Δp, ϑ, q, c)
+
+The change of a thermodynamic potential from p to p + Δp [Pa] at fixed conserved variable ϑ and composition q: for
+c = 3, that of the conjugate variable, h_ϑ(p + Δp) - h_ϑ(p) [J kg⁻¹ / consvar], and for c = 4, that of the modified
+chemical potential, h_q(p + Δp) - h_q(p) [J kg⁻¹]. With the Maxwell relations ∂h_ϑ/∂p = ∂v/∂ϑ and ∂h_q/∂p = ∂v/∂q, it is
+the integral of the c-th of the volume functions (v, ∂v/∂p, ∂v/∂ϑ, ∂v/∂q), by three-point Gauss–Legendre quadrature as in
+`enthalpy_difference`,
+    Δ = ∫ ∂v/∂ϑ (p′, ϑ, q) dp′ = (Δp/2) [5 f(p̄ - c) + 8 f(p̄) + 5 f(p̄ + c)]/9,   p̄ = p + Δp/2,   c = √(3/5) Δp/2,
+exact when ∂v/∂ϑ, ∂v/∂q are polynomials of degree five or less in p. The difference of two values of h_ϑ (about 10³ to
+10⁴ J kg⁻¹ K⁻¹) loses in Float32 the changes with pressure that the budgets need; the integral keeps the relative
+precision of the float type.
+"""
+@inline function potential_difference(fluid, p, Δp, ϑ, q, c)
+    volume_functions = fluid(:p, :consvar, :q).volume_functions
+    half = Δp / 2                                   # half the interval
+    middle = p + half                               # its middle, p̄
+    offset = sqrt(3 * one(half) / 5) * half          # distance of the outer nodes from the middle
+    f₋ = volume_functions(middle - offset, ϑ, q)[c]  # the c-th volume function at the three nodes
+    f₀ = volume_functions(middle, ϑ, q)[c]
+    f₊ = volume_functions(middle + offset, ϑ, q)[c]
+    return half * (5 * (f₋ + f₊) + 8 * f₀) / 9
+end

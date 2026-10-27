@@ -37,6 +37,8 @@ include("anelastic_reference.jl")
 include("anelastic_available_energy.jl")
 include("compressible_reference.jl")
 include("compressible_available_energy.jl")
+# the budgets of the available compressible and potential energies, for either model
+include("available_energy_budget.jl")
 include("diagnostics.jl")
 include("output.jl")
 

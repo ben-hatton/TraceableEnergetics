@@ -44,7 +44,8 @@ diagnostic_info(model::AN2D; reference_state = nothing) =
 diagnostic_info(model::FC2D; reference_state = nothing) =
     merge(CFCompressible.diagnostic_info(model), map(first, energetics_entries(model, nothing, nothing, nothing)), reference_state_info(model, reference_state))
 reference_state_info(model, ::Nothing) = (;)
-reference_state_info(model, ref) = map(first, reference_state_entries(model, ref, nothing))
+reference_state_info(model, ref) =
+    map(first, merge(reference_state_entries(model, ref, nothing), available_energy_budget_entries(model, nothing, nothing)))
 
 """
     entry = entry(long_name, units, location, recipe)
@@ -74,17 +75,20 @@ end
     book = add_reference_state!(book, F, model, ref)
 
 Adds to `book` the recipe `reference_state`, which computes the reference state `ref` for the state of the session, and
-the recipes of `reference_state_entries`; nothing if `ref` is `nothing`. The output array of each diagnostic on the
+the recipes of `reference_state_entries` and `available_energy_budget_entries`; nothing if `ref` is `nothing`. The output array of each diagnostic on the
 cells is allocated on its first use, in the float type `F`, as for the energetics.
 """
 add_reference_state!(book, F, model, ::Nothing) = book
 function add_reference_state!(book, F, model, ref)
     (; mgr, domain) = model
-    entries = reference_state_entries(model, ref, nothing)
+    entries = merge(reference_state_entries(model, ref, nothing), available_energy_budget_entries(model, nothing, nothing))
     cache = Dict{Symbol, Any}()
     out(name) = get!(() -> alloc(F, mgr, domain, first(entries[name]).location), cache, name)::Matrix{F}
+    # scratch arrays on the x and z faces of the terms built from face products, apart from those of the energetics
+    faces = (alloc(F, mgr, domain, (Face(), Cell())), alloc(F, mgr, domain, (Cell(), Face())))
     book.recipes[:reference_state] = (model, state) -> reference_state!(ref, model, state)
     merge!(book.recipes, pairs(map(last, reference_state_entries(model, ref, out))))
+    merge!(book.recipes, pairs(map(last, available_energy_budget_entries(model, out, faces))))
     return book
 end
 
@@ -431,6 +435,165 @@ function reference_state_entries(model::FC2D{F}, ref, out) where F
             (integrated_potential_energy, integrated_AE) -> integrated_potential_energy - integrated_AE),
         certificate_violations = entry("number of parcels with a negative reduced cost", "1", (),
             reference_state -> F(reference_state.certificate_violations)),
+    )
+end
+
+"""
+    k = consvar_index(model)
+
+Index of the advected density ρϑ among those of the advection scratch of the tendencies: (ρ_R ϑ, ρ_R q) for AN2D,
+(ρ, ρ ϑ, ρ q) for FC2D. That of ρq is k + 1.
+"""
+consvar_index(::AN2D) = 1
+consvar_index(::FC2D) = 2
+
+"""
+    entries = available_energy_budget_entries(model, out, faces)
+
+The diagnostics of the budgets of the available compressible energy (ACE) Π₁ and the available potential energy (APE) Π₂
+(kernels in available_energy_budget.jl), as a named tuple of `entry(long_name, units, location, recipe)`, the same for
+AN2D and FC2D (the ACE terms are zero for AN2D, apart from those of the pressure flux J_C* = (p - P_*) u). With the
+potentials Σ_ϑ, Σ_q of the model at the parcel's state (z, p), at the intermediate state (z, P_*(z)) (Σ̃, `_at_p_star`)
+and at the reference state (z_*, P_*(z_*)) (Σ*, `_at_z_star`), their differences Δ₁Σ = Σ - Σ̃ (`_ACE`) and
+Δ₂Σ = Σ̃ - Σ* (`_APE`), and the Bernoulli coefficients B₁ = Π₁ + (p - P_*)/ρ - ϑ Δ₁Σ_ϑ - q Δ₁Σ_q,
+B₂ = Π₂ - ϑ Δ₂Σ_ϑ - q Δ₂Σ_q, the budgets at a fixed reference state are, at each cell to round-off,
+    ∂ₜ(ρΠ₁) = -∇·(J_ACE^rev + J_ACE^irr) - C_ACE - (Q_ϑ - Q̃_ϑ) - (Q_q - Q̃_q) + Q - Q̃,
+    ∂ₜ(ρΠ₂) = -∇·(J_APE^rev + J_APE^irr) - C_APE - (Q̃_ϑ - Q*_ϑ) - (Q̃_q - Q*_q) + Q̃ - Q*,
+and C = C_ACE + C_APE + C_bg. The terms in ∂ₜP_* are not diagnosed yet. The forms of the energy notes, C_b,1*, C_b,2*,
+C_D* and ∇·J_C*, are diagnosed with the residuals of the manipulation, C_ACE - C_b,1* - C_D* + ∇·J_C* and
+C_APE - C_b,2*. The recipes write into the arrays `out(name)`, with the scratch arrays `faces` on the x and z faces; with
+`out = nothing`, only the information of the entries is used.
+"""
+available_energy_budget_entries(model, out, faces) = let (; mgr) = model, cells = (Cell(), Cell()), x_faces = (Face(), Cell()),
+                                                         z_faces = (Cell(), Face()), k = consvar_index(model)
+    (;
+        # Δ₁Σ_ϑ = Σ_ϑ(z, p) - Σ_ϑ(z, P_*(z)) = ∫ ∂v/∂ϑ dp from P_*(z) to p, and the same for Σ_q
+        conjugate_variable_ACE = entry("Σ_ϑ - Σ̃_ϑ, from the intermediate state (z, P_*(z)) to (z, p)", "J kg⁻¹ / consvar", cells,
+            (model, reference_state) -> compression_potential!(out(:conjugate_variable_ACE), model, reference_state, 3)),
+        modified_chemical_potential_ACE = entry("Σ_q - Σ̃_q, from the intermediate state (z, P_*(z)) to (z, p)", "J kg⁻¹", cells,
+            (model, reference_state) -> compression_potential!(out(:modified_chemical_potential_ACE), model, reference_state, 4)),
+        # Δ₂Σ_ϑ = Σ_ϑ(z, P_*(z)) - Σ_ϑ(z_*, P_*(z_*)) = ∫ ∂v/∂ϑ dp from P_*(z_*) to P_*(z), and the same for Σ_q
+        conjugate_variable_APE = entry("Σ̃_ϑ - Σ*_ϑ, from the reference state (z_*, P_*(z_*)) to (z, P_*(z))", "J kg⁻¹ / consvar", cells,
+            (model, reference_state, z_star) -> displacement_potential!(out(:conjugate_variable_APE), model, reference_state, z_star, 3)),
+        modified_chemical_potential_APE = entry("Σ̃_q - Σ*_q, from the reference state (z_*, P_*(z_*)) to (z, P_*(z))", "J kg⁻¹", cells,
+            (model, reference_state, z_star) -> displacement_potential!(out(:modified_chemical_potential_APE), model, reference_state, z_star, 4)),
+        # Σ̃_ϑ = Σ_ϑ - Δ₁Σ_ϑ, Σ̃_q = Σ_q - Δ₁Σ_q
+        conjugate_variable_at_p_star = entry("conjugate variable Σ̃_ϑ at the intermediate state (z, P_*(z))", "J kg⁻¹ / consvar", cells,
+            (conjugate_variable, conjugate_variable_ACE) -> pointwise!(out(:conjugate_variable_at_p_star), mgr, -, conjugate_variable, conjugate_variable_ACE)),
+        modified_chemical_potential_at_p_star = entry("modified chemical potential Σ̃_q at the intermediate state (z, P_*(z))", "J kg⁻¹", cells,
+            (modified_chemical_potential, modified_chemical_potential_ACE) ->
+                pointwise!(out(:modified_chemical_potential_at_p_star), mgr, -, modified_chemical_potential, modified_chemical_potential_ACE)),
+        # Σ*_ϑ = Σ̃_ϑ - Δ₂Σ_ϑ, Σ*_q = Σ̃_q - Δ₂Σ_q
+        conjugate_variable_at_z_star = entry("conjugate variable Σ*_ϑ at the reference state (z_*, P_*(z_*))", "J kg⁻¹ / consvar", cells,
+            (conjugate_variable_at_p_star, conjugate_variable_APE) -> pointwise!(out(:conjugate_variable_at_z_star), mgr, -, conjugate_variable_at_p_star, conjugate_variable_APE)),
+        modified_chemical_potential_at_z_star = entry("modified chemical potential Σ*_q at the reference state (z_*, P_*(z_*))", "J kg⁻¹", cells,
+            (modified_chemical_potential_at_p_star, modified_chemical_potential_APE) ->
+                pointwise!(out(:modified_chemical_potential_at_z_star), mgr, -, modified_chemical_potential_at_p_star, modified_chemical_potential_APE)),
+        # p - P_*(z)
+        pressure_anomaly_star = entry("pressure anomaly p - P_* from the reference pressure", "Pa", cells,
+            (model, reference_state, pressure) -> pressure_anomaly!(out(:pressure_anomaly_star), model, (; p_R = reference_state.p_star), pressure)),
+        # B₁ = Π₁ + (p - P_*)/ρ - ϑ Δ₁Σ_ϑ - q Δ₁Σ_q, B₂ = Π₂ - ϑ Δ₂Σ_ϑ - q Δ₂Σ_q
+        bernoulli_potential_ACE = entry("B₁ = Π₁ + (p - P_*)/ρ - ϑ (Σ_ϑ - Σ̃_ϑ) - q (Σ_q - Σ̃_q)", "J kg⁻¹", cells,
+            (model, scratch, ACE, pressure_anomaly_star, density, conjugate_variable_ACE, modified_chemical_potential_ACE) ->
+                compression_bernoulli!(out(:bernoulli_potential_ACE), model, ACE, pressure_anomaly_star, density, scratch.thermo,
+                                       conjugate_variable_ACE, modified_chemical_potential_ACE)),
+        bernoulli_potential_APE = entry("B₂ = Π₂ - ϑ (Σ̃_ϑ - Σ*_ϑ) - q (Σ̃_q - Σ*_q)", "J kg⁻¹", cells,
+            (model, scratch, APE, conjugate_variable_APE, modified_chemical_potential_APE) ->
+                displacement_bernoulli!(out(:bernoulli_potential_APE), model, APE, scratch.thermo, conjugate_variable_APE, modified_chemical_potential_APE)),
+        # reversible fluxes, J_ACE^rev = ρu B₁ + ρϑu Δ₁Σ_ϑ + ρqu Δ₁Σ_q (= ρΠ₁u + J_C*) and J_APE^rev (= ρΠ₂u)
+        ACE_flux_rev_x = entry("reversible flux of ACE along x, ρu B₁ + ρϑu Δ₁Σ_ϑ + ρqu Δ₁Σ_q", "W m⁻²", x_faces,
+            (model, scratch, mass_flux_x, bernoulli_potential_ACE, conjugate_variable_ACE, modified_chemical_potential_ACE) ->
+                potential_flux_rev_x!(out(:ACE_flux_rev_x), model, mass_flux_x, scratch.advection.mu, k, bernoulli_potential_ACE,
+                                      conjugate_variable_ACE, modified_chemical_potential_ACE)),
+        ACE_flux_rev_z = entry("reversible flux of ACE along z, ρw B₁ + ρϑw Δ₁Σ_ϑ + ρqw Δ₁Σ_q", "W m⁻²", z_faces,
+            (model, scratch, mass_flux_z, bernoulli_potential_ACE, conjugate_variable_ACE, modified_chemical_potential_ACE) ->
+                potential_flux_rev_z!(out(:ACE_flux_rev_z), model, mass_flux_z, scratch.advection.mw, k, bernoulli_potential_ACE,
+                                      conjugate_variable_ACE, modified_chemical_potential_ACE)),
+        APE_flux_rev_x = entry("reversible flux of APE along x, ρu B₂ + ρϑu Δ₂Σ_ϑ + ρqu Δ₂Σ_q", "W m⁻²", x_faces,
+            (model, scratch, mass_flux_x, bernoulli_potential_APE, conjugate_variable_APE, modified_chemical_potential_APE) ->
+                potential_flux_rev_x!(out(:APE_flux_rev_x), model, mass_flux_x, scratch.advection.mu, k, bernoulli_potential_APE,
+                                      conjugate_variable_APE, modified_chemical_potential_APE)),
+        APE_flux_rev_z = entry("reversible flux of APE along z, ρw B₂ + ρϑw Δ₂Σ_ϑ + ρqw Δ₂Σ_q", "W m⁻²", z_faces,
+            (model, scratch, mass_flux_z, bernoulli_potential_APE, conjugate_variable_APE, modified_chemical_potential_APE) ->
+                potential_flux_rev_z!(out(:APE_flux_rev_z), model, mass_flux_z, scratch.advection.mw, k, bernoulli_potential_APE,
+                                      conjugate_variable_APE, modified_chemical_potential_APE)),
+        # irreversible fluxes, J_ACE^irr = Δ₁Σ_ϑ J_ϑ + Δ₁Σ_q J_q, J_APE^irr = Δ₂Σ_ϑ J_ϑ + Δ₂Σ_q J_q
+        ACE_flux_irr_x = entry("irreversible flux of ACE along x, Δ₁Σ_ϑ J_ϑ + Δ₁Σ_q J_q", "W m⁻²", x_faces,
+            (model, consflux_x, qflux_x, conjugate_variable_ACE, modified_chemical_potential_ACE) ->
+                potential_flux_irr_x!(out(:ACE_flux_irr_x), model, consflux_x, qflux_x, conjugate_variable_ACE, modified_chemical_potential_ACE)),
+        ACE_flux_irr_z = entry("irreversible flux of ACE along z, Δ₁Σ_ϑ J_ϑ + Δ₁Σ_q J_q", "W m⁻²", z_faces,
+            (model, consflux_z, qflux_z, conjugate_variable_ACE, modified_chemical_potential_ACE) ->
+                potential_flux_irr_z!(out(:ACE_flux_irr_z), model, consflux_z, qflux_z, conjugate_variable_ACE, modified_chemical_potential_ACE)),
+        APE_flux_irr_x = entry("irreversible flux of APE along x, Δ₂Σ_ϑ J_ϑ + Δ₂Σ_q J_q", "W m⁻²", x_faces,
+            (model, consflux_x, qflux_x, conjugate_variable_APE, modified_chemical_potential_APE) ->
+                potential_flux_irr_x!(out(:APE_flux_irr_x), model, consflux_x, qflux_x, conjugate_variable_APE, modified_chemical_potential_APE)),
+        APE_flux_irr_z = entry("irreversible flux of APE along z, Δ₂Σ_ϑ J_ϑ + Δ₂Σ_q J_q", "W m⁻²", z_faces,
+            (model, consflux_z, qflux_z, conjugate_variable_APE, modified_chemical_potential_APE) ->
+                potential_flux_irr_z!(out(:APE_flux_irr_z), model, consflux_z, qflux_z, conjugate_variable_APE, modified_chemical_potential_APE)),
+        # ∇·J_ACE^rev, ∇·J_ACE^irr, ∇·J_APE^rev, ∇·J_APE^irr
+        div_ACE_flux_rev = entry("divergence of the reversible flux of ACE", "W m⁻³", cells,
+            (model, ACE_flux_rev_x, ACE_flux_rev_z) -> divergence!(out(:div_ACE_flux_rev), model, ACE_flux_rev_x, ACE_flux_rev_z)),
+        div_ACE_flux_irr = entry("divergence of the irreversible flux of ACE", "W m⁻³", cells,
+            (model, ACE_flux_irr_x, ACE_flux_irr_z) -> divergence!(out(:div_ACE_flux_irr), model, ACE_flux_irr_x, ACE_flux_irr_z)),
+        div_APE_flux_rev = entry("divergence of the reversible flux of APE", "W m⁻³", cells,
+            (model, APE_flux_rev_x, APE_flux_rev_z) -> divergence!(out(:div_APE_flux_rev), model, APE_flux_rev_x, APE_flux_rev_z)),
+        div_APE_flux_irr = entry("divergence of the irreversible flux of APE", "W m⁻³", cells,
+            (model, APE_flux_irr_x, APE_flux_irr_z) -> divergence!(out(:div_APE_flux_irr), model, APE_flux_irr_x, APE_flux_irr_z)),
+        # C_ACE = -ρu·∇B₁ - ρϑu·∇(Δ₁Σ_ϑ) - ρqu·∇(Δ₁Σ_q), C_APE the same with B₂, Δ₂Σ
+        conversion_ACE = entry("conversion C_ACE from ACE to K, -ρu·∇B₁ - ρϑu·∇Δ₁Σ_ϑ - ρqu·∇Δ₁Σ_q", "W m⁻³", cells,
+            (model, scratch, mass_flux_x, mass_flux_z, bernoulli_potential_ACE, conjugate_variable_ACE, modified_chemical_potential_ACE) ->
+                bernoulli_conversion!(out(:conversion_ACE), model, faces, (mass_flux_x, mass_flux_z), (scratch.advection.mu, scratch.advection.mw), k,
+                                      bernoulli_potential_ACE, conjugate_variable_ACE, modified_chemical_potential_ACE)),
+        conversion_APE = entry("conversion C_APE from APE to K, -ρu·∇B₂ - ρϑu·∇Δ₂Σ_ϑ - ρqu·∇Δ₂Σ_q", "W m⁻³", cells,
+            (model, scratch, mass_flux_x, mass_flux_z, bernoulli_potential_APE, conjugate_variable_APE, modified_chemical_potential_APE) ->
+                bernoulli_conversion!(out(:conversion_APE), model, faces, (mass_flux_x, mass_flux_z), (scratch.advection.mu, scratch.advection.mw), k,
+                                      bernoulli_potential_APE, conjugate_variable_APE, modified_chemical_potential_APE)),
+        # C_bg = C - C_ACE - C_APE, zero in the continuous equations
+        background_conversion = entry("conversion C_bg = C - C_ACE - C_APE from the background to K (zero when continuous)", "W m⁻³", cells,
+            (conversion, conversion_ACE, conversion_APE) ->
+                pointwise!(out(:background_conversion), mgr, (c, c₁, c₂) -> c - c₁ - c₂, conversion, conversion_ACE, conversion_APE)),
+        # heatings at the intermediate state, Q̃_ϑ = -J_ϑ·∇Σ̃_ϑ, Q̃_q = -J_q·∇Σ̃_q, Q̃ = Σ̃_ϑ σ_ϑ
+        heating_consvar_at_p_star = entry("heating Q̃_ϑ = -J_ϑ·∇Σ̃_ϑ at the intermediate state", "W m⁻³", cells,
+            (model, consflux_x, consflux_z, conjugate_variable_at_p_star) ->
+                gradient_product!(out(:heating_consvar_at_p_star), model, faces, (consflux_x, consflux_z), conjugate_variable_at_p_star)),
+        heating_composition_at_p_star = entry("heating Q̃_q = -J_q·∇Σ̃_q at the intermediate state", "W m⁻³", cells,
+            (model, qflux_x, qflux_z, modified_chemical_potential_at_p_star) ->
+                gradient_product!(out(:heating_composition_at_p_star), model, faces, (qflux_x, qflux_z), modified_chemical_potential_at_p_star)),
+        heating_at_p_star = entry("heating Q̃ = Σ̃_ϑ σ_ϑ at the intermediate state", "W m⁻³", cells,
+            (conjugate_variable_at_p_star, conservative_variable_production) ->
+                pointwise!(out(:heating_at_p_star), mgr, *, conjugate_variable_at_p_star, conservative_variable_production)),
+        # heatings at the reference state, Q*_ϑ = -J_ϑ·∇Σ*_ϑ, Q*_q = -J_q·∇Σ*_q, Q* = Σ*_ϑ σ_ϑ
+        heating_consvar_at_z_star = entry("heating Q*_ϑ = -J_ϑ·∇Σ*_ϑ at the reference state", "W m⁻³", cells,
+            (model, consflux_x, consflux_z, conjugate_variable_at_z_star) ->
+                gradient_product!(out(:heating_consvar_at_z_star), model, faces, (consflux_x, consflux_z), conjugate_variable_at_z_star)),
+        heating_composition_at_z_star = entry("heating Q*_q = -J_q·∇Σ*_q at the reference state", "W m⁻³", cells,
+            (model, qflux_x, qflux_z, modified_chemical_potential_at_z_star) ->
+                gradient_product!(out(:heating_composition_at_z_star), model, faces, (qflux_x, qflux_z), modified_chemical_potential_at_z_star)),
+        heating_at_z_star = entry("heating Q* = Σ*_ϑ σ_ϑ at the reference state", "W m⁻³", cells,
+            (conjugate_variable_at_z_star, conservative_variable_production) ->
+                pointwise!(out(:heating_at_z_star), mgr, *, conjugate_variable_at_z_star, conservative_variable_production)),
+        # the forms of the energy notes: ∇·J_C*, J_C* = (p - P_*) u
+        div_pressure_flux_star = entry("divergence of J_C* = (p - P_*) u", "W m⁻³", cells,
+            (model, u, w, pressure_anomaly_star) -> pressure_flux_divergence!(out(:div_pressure_flux_star), model, faces, u, w, pressure_anomaly_star)),
+        # b₁ = g ρ_* (v - ṽ), b₂ = g ρ_* (ṽ - v_*) (FC2D); b₁ = 0, b₂ = g ρ_R (v(P_R) - v_*) (AN2D)
+        buoyancy_ACE = entry("buoyancy b₁ = g ρ_* (v - v(P_*)) of the compression from P_* to p (zero for AN2D)", "m s⁻²", cells,
+            (model, reference_state) -> compression_buoyancy!(out(:buoyancy_ACE), model, reference_state)),
+        buoyancy_APE = entry("buoyancy b₂ = g ρ_* (v(P_*) - v_*) relative to the reference state", "m s⁻²", cells,
+            (model, reference_state) -> displacement_buoyancy!(out(:buoyancy_APE), model, reference_state)),
+        # C_b,1* = ρ b₁ w, C_b,2* = ρ b₂ w
+        buoyancy_conversion_ACE = entry("buoyancy conversion C_b,1* = ρ b₁ w", "W m⁻³", cells,
+            (model, mass_flux_z, buoyancy_ACE) -> buoyancy_conversion!(out(:buoyancy_conversion_ACE), model, faces, mass_flux_z, buoyancy_ACE)),
+        buoyancy_conversion_APE = entry("buoyancy conversion C_b,2* = ρ b₂ w", "W m⁻³", cells,
+            (model, mass_flux_z, buoyancy_APE) -> buoyancy_conversion!(out(:buoyancy_conversion_APE), model, faces, mass_flux_z, buoyancy_APE)),
+        # C_D* = (p - P_*) ∇·u, zero for AN2D (part of C_b,2*)
+        pressure_dilatation_star = entry("pressure dilatation C_D* = (p - P_*) ∇·u (zero for AN2D)", "W m⁻³", cells,
+            (model, pressure_anomaly_star, divergence) -> pressure_dilatation!(out(:pressure_dilatation_star), model, pressure_anomaly_star, divergence)),
+        # C_ACE + ∇·J_C* - C_b,1* - C_D*, C_APE - C_b,2*: zero in the continuous equations
+        ACE_conversion_residual = entry("residual of C_ACE = C_b,1* + C_D* - ∇·J_C*", "W m⁻³", cells,
+            (model, conversion_ACE, div_pressure_flux_star, buoyancy_conversion_ACE, pressure_dilatation_star) ->
+                conversion_residual!(out(:ACE_conversion_residual), model, conversion_ACE, div_pressure_flux_star, buoyancy_conversion_ACE, pressure_dilatation_star)),
+        APE_conversion_residual = entry("residual of C_APE = C_b,2*", "W m⁻³", cells,
+            (conversion_APE, buoyancy_conversion_APE) -> pointwise!(out(:APE_conversion_residual), mgr, -, conversion_APE, buoyancy_conversion_APE)),
     )
 end
 

@@ -206,15 +206,25 @@ them by cumulative mass: $\zh_n=z_k-\tfrac12\Delta z+(m_{<n}+\tfrac12x_{nk})/(L_
 in the row below parcel $n$. The $\zs$ used in $\Pi$ is the LNB height of \S\ref{sec:lnb}; $\zh$ is used to check it.
 
 \paragraph{Reference profile.} The reference state has no single $(\vt,q)$ per row. Its reduced pressure on the slot centres
-is given by the duals of the slot constraints, $\pi_{*,k}=-\psi_k$ (\S\ref{sec:dual}). This is the exact multiplier, for which
-$\int\Pi\,\mathrm{d}m=E_P-E_*$ exactly ($s=1$). A solver that returns no duals (greedy+repair, \S\ref{sec:greedy}) falls back
-on the slot-mean specific volume
+follows from the slot-mean specific volume
 \begin{equation}
   v_{*,k}=\frac{1}{M_k}\sum_nx_{nk}\,v(P_{R,k},\vt_n,q_n),
 \end{equation}
-with $\pi_*$ hydrostatic with it between the slot centres by the trapezoidal rule. For $s=1$ this is the face average $\Iz$ of
-the model's buoyancy term, $\pi_{*,k}-\pi_{*,k-1}=\Delta z\,\Iz\left[g(\rho_Rv_*-1)\right]$. The fallback agrees with the
-duals to $O(\Delta z)$. Either way $\pi_*$ is defined up to a constant, which does not affect $\Pi$ (\S\ref{sec:outputs}).
+hydrostatic with it, $\partial_z\pi_*=-v_*\,\partial_zP_R-g$, with $v_*$ linear in $P_R$ between the slot centres (the
+trapezoidal rule in the pressure),
+\begin{equation}
+  \pi_{*,k}-\pi_{*,k+1}=-\tfrac12\left(v_{*,k}+v_{*,k+1}\right)\left(P_{R,k}-P_{R,k+1}\right)-g\left(z_k-z_{k+1}\right),
+\end{equation}
+exact when $v$ is linear in $P$, so that the static energy of a neutral fluid is flat at the slot centres. The duals of
+the slot constraints give $\pi_{*,k}=-\psi_k$ (\S\ref{sec:dual}), the exact multiplier, for which
+$\int\Pi\,\mathrm{d}m=E_P-E_*$ exactly when every $\zs$ is at a slot centre ($s=1$). They are not used for the profile
+(decision of the user, \S\ref{sec:decisions}): they change abruptly in time when the parcel split between two slots
+changes, and a parcel split between two slots has the same static energy at both along the dual profile, so its $\zs$
+jumps between them. Both make the budgets of the available energy rough in time and space (the generation $G$ by two
+orders of magnitude in the thermohaline lock exchange), while the slot volumes change continuously with the state; with
+the refined $\zs$ the gap $\int\Pi\,\mathrm{d}m-(E_P-E_*)$ is about the same for both profiles. The duals certify the
+placement (\S\ref{sec:dual}). Either way $\pi_*$ is defined up to a constant, which does not affect $\Pi$
+(\S\ref{sec:outputs}); the code makes its mass-weighted mean over the slots zero.
 
 \subsection{FC2D: slots of fixed mass, unknown top pressure}\label{sec:fc-slots}
 In a compressible reference column the layer thicknesses are not known in advance. What is known is the pressure as a
@@ -723,8 +733,9 @@ $\gamma\neq0$; then greedy+repair and the histogram only if the exact solver is 
   \item \textbf{Slot resolution} $K$: an input set by the user (\S\ref{sec:an-slots}, \S\ref{sec:fc-slots}).
   \item \textbf{Precision}: any floating-point type $F$, chosen by the user (Float128 benchmarks are planned), so no step of
         the computation may be fixed to Float64.
-  \item \textbf{Lorenz profile}: from the duals when the solver provides them, otherwise from slot means
-        (\S\ref{sec:an-slots}).
+  \item \textbf{Lorenz profile}: from the slot-mean specific volumes, in both models (\S\ref{sec:an-slots}); the duals
+        certify the placement only. (First decided as the duals when the solver provides them; changed on 2026-10-27, as the
+        dual profile made the budgets rough.)
   \item \textbf{Reference height for the budgets}: the LNB $\zs$, not the placement height $\zh$ (\S\ref{sec:lnb-sec}).
   \item \textbf{Choice of root}: the global minimiser (\S\ref{sec:lnb}), not the nearest root of Tailleux (2013).
   \item \textbf{AN2D profile beyond the end rows}: $v_*$ follows the compression of the parcels of the end slot
