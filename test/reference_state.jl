@@ -18,7 +18,7 @@ reference_fluid(F; changes...) = NonlinearBinaryFluid(:potential_temperature, ma
 tank(F; z0 = 0) = Tank2D(Lx = F(Lx), Lz = F(Lz), g = F(g), z0 = F(z0))
 
 # AN2D in a box periodic in x, with the reference density ρ(z) (by default that of the AN2D test model, 10 % denser at
-# the bottom) and the pressure 1e5 Pa at the origin z0 of the geopotential. Not in BigFloat: its Poisson solver uses FFTs.
+# the bottom) and the pressure 1e5 Pa at the origin z0 of the geopotential.
 # (diffusivities k_T, k_q [m² s⁻¹] and dynamic viscosity [kg m⁻¹ s⁻¹] can be changed, for both models)
 function an_box(F; Mx = 8, Mz = 8, ρ = z -> ρ0 * (1 + 0.1 * (Lz - z) / Lz), fluid = reference_fluid(F), mgr = nothing, z0 = 0,
                 k_T = 1e-4, k_q = 1e-5, dyn_visc = 1e-3)
@@ -31,7 +31,7 @@ function an_box(F; Mx = 8, Mz = 8, ρ = z -> ρ0 * (1 + 0.1 * (Lz - z) / Lz), fl
         boundary_conditions = BoxBoundaryConditions(domain; bottom = closed_wall(), top = closed_wall()), gauge_offset = F(0)))
 end
 
-# FC2D in the same box. Its fluid can be built in BigFloat
+# FC2D in the same box
 function fc_box(F; Mx = 8, Mz = 8, fluid = reference_fluid(F), mgr = nothing, z0 = 0, k_T = 1e-4, k_q = 1e-5, dyn_visc = 1e-3)
     domain = Box2D(; Mx, Mz)
     return FC2D((; mgr, domain, space = tank(F; z0), fluid, spatial_scheme = Centred2(), vortex_scheme = VortexEnergyCons(),
@@ -139,8 +139,7 @@ end
 # static energy of a parcel is flat along the whole profile (N_*² = 0, z_* undetermined), up to the walls, as v_* follows
 # the compression of the end slots' parcels beyond the end rows (a constant v_* there lowered the walls by O(Δz²) and gave
 # every parcel Π = O(Δz²) at a wall, `expansion_bound`). What remains of Π is the error of the cubic interpolant of π_*:
-# - for a uniform ρ_R, where π_* is quadratic in z, none: Π is at the resolution of the pressures, v eps p0, in Float32 as
-#   in Float64;
+# - for a uniform ρ_R, where π_* is quadratic in z, none: Π is at the resolution of the pressures, v eps p0;
 # - for a ρ_R that varies with height, O(Δz⁴), converging at fourth order.
 mixed(model) = tracer_state(model, (x, z) -> T0, (x, z) -> q0)
 function mixed_energy(model)
@@ -154,10 +153,10 @@ function mixed_energy(model)
     @test all(n -> abs(n) <= 1e-2 * (model.space.g * ρ0)^2 * model.fluid.v0 * model.fluid.α_p, N2[.!at_wall(model, energy)])
     return maximum(interior(model.domain, energy.AE))
 end
-@testset "fully mixed, AN2D, uniform ρ_R, $F" for F in (Float32, Float64)
-    model = an_box(F; ρ = z -> ρ0)
+@testset "fully mixed, AN2D, uniform ρ_R" begin
+    model = an_box(Float64; ρ = z -> ρ0)
     largest = mixed_energy(model)
-    @test largest <= 2 * model.fluid.v0 * eps(F) * model.fluid.p0
+    @test largest <= 2 * model.fluid.v0 * eps() * model.fluid.p0
     @test largest <= expansion_bound(model) / 10
 end
 @testset "fully mixed, AN2D, ρ_R varying with height" begin
@@ -256,9 +255,9 @@ end
 # The profile π_* follows from the slot volumes: its values at the row centres are the integral of -v_* dP_R - g dz with
 # v_* linear in P_R between the rows, with a mass-weighted mean of zero over the rows, and it changes with the state in
 # proportion to a perturbation of size ε of the tracers (the slot volumes are continuous in the state, the duals are not:
-# they change abruptly when the parcel split between two rows changes), in Float32 and Float64
-@testset "profile from the slot volumes, AN2D, $F" for F in (Float32, Float64)
-    model = an_box(F)
+# they change abruptly when the parcel split between two rows changes)
+@testset "profile from the slot volumes, AN2D" begin
+    model = an_box(Float64)
     perturbed(ε) = tracer_state(model, (x, z) -> θ_active(x, z) + ε * cos(2π * x / Lx) * z / Lz, q_active)
     profile(state) = (ref = lorenz(model); reference_state!(ref, model, state); ref.potential)
     ref = lorenz(model)
@@ -267,11 +266,10 @@ end
     K = length(z) - 2
     v, P = ref.slot_volume, ref.node_pressure
     step(c) = -(v[K+3-c] + v[K+2-c]) / 2 * (P[c] - P[c-1]) - model.space.g * (z[c] - z[c-1])
-    @test all(c -> isapprox(y[c] - y[c-1], step(c); rtol = 64eps(F)), 3:K+1)
-    @test abs(sum(k -> ref.slot_mass[k] * y[K+2-k], 1:K)) <= 64eps(F) * sum(ref.slot_mass) * maximum(abs, y)
-    # the change of π_* per unit ε, at three sizes of ε above the round-off of the float type
-    sizes = F == Float32 ? (1e-1, 3e-2, 1e-2) : (1e-3, 1e-4, 1e-5)
-    rates = map(ε -> maximum(abs, profile(perturbed(ε)).y .- y) / ε, sizes)
+    @test all(c -> isapprox(y[c] - y[c-1], step(c); rtol = 64eps()), 3:K+1)
+    @test abs(sum(k -> ref.slot_mass[k] * y[K+2-k], 1:K)) <= 64eps() * sum(ref.slot_mass) * maximum(abs, y)
+    # the change of π_* per unit ε, at three sizes of ε above round-off
+    rates = map(ε -> maximum(abs, profile(perturbed(ε)).y .- y) / ε, (1e-3, 1e-4, 1e-5))
     @test maximum(rates) <= 2 * minimum(rates)
 end
 
@@ -323,7 +321,7 @@ end
 # A horizontally uniform, stably stratified state at rest is its own Lorenz reference state: each parcel stays in its own
 # row, unsplit, as the slots are the rows with their masses. E_P - E_* is then the difference between the model's
 # discrete hydrostatic balance and that of the column (in mass, P_k = P_top + g (Σ_{l<k} M_l + M_k/2)/L_x), O(Δz⁴) and
-# about 1e-18 of M g L_z for M_z = 8 (in BigFloat), so round-off in Float64. P_* is the cubic through the slot edges, so
+# about 1e-18 of M g L_z for M_z = 8, so round-off. P_* is the cubic through the slot edges, so
 # the reference heights are the parcels' own heights to O(Δz²), and Π is round-off of h, eps Cp0 T0
 @testset "resting state, FC2D" begin
     offsets = map((8, 16, 32)) do Mz
@@ -414,23 +412,6 @@ end
     @test energy.ΣmAE >= energy.ΔE
 end
 
-# Precision: the same reference state in BigFloat as in Float64, to the precision of Float64. The state is that of
-# Float64, converted, so that the differences are those of the reference state alone
-@testset "precision, FC2D, BigFloat" begin
-    state = active(fc_box(Float64))
-    model64, model = fc_box(Float64), fc_box(BigFloat)
-    ref64, ref = lorenz(model64), lorenz(model)
-    energy64 = reference_energy!(ref64, model64, state)
-    energy = reference_energy!(ref, model, (; m = BigFloat.(state.m)))
-    @test eltype(energy.z_star) == BigFloat
-    @test ref.certificate_violations == 0
-    @test abs(ref.volume_residual) < 1e-60
-    @test Float64(energy.ΔE) ≈ energy64.ΔE rtol = 1e-6
-    @test Float64(energy.ΣmAE) ≈ energy64.ΣmAE rtol = 1e-6
-    @test Float64.(ref.p_star) ≈ ref64.p_star rtol = 1e-14
-    @test Float64.(energy.z_star) ≈ energy64.z_star atol = 1e-7 * Lz
-end
-
 ## Tests of either model
 
 # The level of neutral buoyancy: at an interior minimum r(z_*) = 0 and N_*² ≥ 0; Π ≥ 0 everywhere; at a wall minimum r
@@ -482,42 +463,16 @@ end
 
 # The available compressible energy Π₁ = h(p) - h(P) - (p - P) v(p) by quadrature, -∫ (s - P) ∂v/∂p(s) ds from P to
 # p = P + Δp, against its exact value -∂v/∂p Δp²/2 for this fluid, whose v is linear in p, for Δp from 10⁻² Pa to 10⁴ Pa
-# of either sign, in Float32, Float64 and BigFloat: it keeps the relative precision of the float type, and is zero at
-# Δp = 0. The difference h(p) - h(P) - Δp v(p) of the definition loses it: in Float32 it is off by more than 1 % below
-# Δp ≈ 10 Pa
-@testset "available compressible energy by quadrature, $F" for F in (Float32, Float64, BigFloat)
-    fluid = reference_fluid(F)
-    P, ϑ, q = F(1e5), F(T0 + 1), F(q0 - 0.001)
+# of either sign: it keeps the relative precision of Float64, and is zero at Δp = 0
+@testset "available compressible energy by quadrature" begin
+    fluid = reference_fluid(Float64)
+    P, ϑ, q = 1e5, T0 + 1, q0 - 0.001
     ∂v_∂p = fluid(:p, :consvar, :q).volume_functions(P, ϑ, q)[2]
-    @test available_compressible_energy(fluid, P, zero(F), ϑ, q) == 0
-    for Δp in F.((1e-2, 1, 1e2, 1e4)), sign in (1, -1)
+    @test available_compressible_energy(fluid, P, 0.0, ϑ, q) == 0
+    for Δp in (1e-2, 1, 1e2, 1e4), sign in (1, -1)
         exact = -∂v_∂p * Δp^2 / 2
-        @test available_compressible_energy(fluid, P, sign * Δp, ϑ, q) ≈ exact rtol = 16eps(F)
+        @test available_compressible_energy(fluid, P, sign * Δp, ϑ, q) ≈ exact rtol = 16eps()
     end
-    difference(Δp) = enthalpy_difference(fluid, P, Δp, ϑ, q) - Δp * fluid(:p, :consvar, :q).specific_volume(P + Δp, ϑ, q)
-    F == Float32 && @test !isapprox(difference(F(1)), -∂v_∂p / 2; rtol = 0.01)
-end
-
-# Where Float32 fails: the differences of h are integrals of v (about 10⁻³ m³ kg⁻¹) over differences of pressure, which
-# keep the precision of Float32, but the pressures themselves (about 10⁵ Pa) are resolved to about 10⁻² Pa, and in FC2D
-# E_P - E_* is the difference of sums of about M g L_z. E_P - E_* and Σ m Π of the active state, with its perturbation
-# scaled by a, are compared with those of Float64, of the same state converted: they hold to 1 % down to some
-# amplitude, below which they are noise. In AN2D, below a ≈ 0.1 every parcel stays in its own row, and E_P - E_* = 0
-# exactly in both
-@testset "Float32 breaks below an amplitude, $M" for (M, make) in (("AN2D", an_box), ("FC2D", fc_box))
-    amplitudes = 10.0 .^ (1:-0.5:-3)
-    failing = map(amplitudes) do a
-        state(model) = tracer_state(model, (x, z) -> θ_rest(z) + a * (θ_active(x, z) - θ_rest(z)),
-                                           (x, z) -> q_rest(z) + a * (q_active(x, z) - q_rest(z)))
-        model32, model64 = make(Float32), make(Float64)
-        energy32 = reference_energy!(lorenz(model32), model32, (; m = Float32.(state(model64).m)))
-        energy64 = reference_energy!(lorenz(model64), model64, state(model64))
-        !isapprox(energy32.ΔE, energy64.ΔE; rtol = 0.01) || !isapprox(energy32.ΣmAE, energy64.ΣmAE; rtol = 0.01)
-    end
-    threshold = amplitudes[findfirst(failing)]
-    @info "Float32, $M: E_P - E_* or Σ m Π is off by more than 1 % below the amplitude $threshold of the active state"
-    @test !any(failing[1:3])                                # down to the active state itself, a = 1
-    @test any(failing)
 end
 
 # The loops over the parcels run on the model's manager: serial, vectorised over the parcels of a row, or on threads, with

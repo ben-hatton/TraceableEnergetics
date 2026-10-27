@@ -7,8 +7,9 @@ h(p + Δp, ϑ, q) - h(p, ϑ, q) [J kg⁻¹] at fixed conserved variable ϑ and c
 integral of the specific volume, ∂h/∂p = v, by three-point Gauss–Legendre quadrature,
     Δh = ∫ v(p′, ϑ, q) dp′ = (Δp/2) [5 v(p̄ - c) + 8 v(p̄) + 5 v(p̄ + c)]/9,   p̄ = p + Δp/2,   c = √(3/5) Δp/2,
 which is exact when v is a polynomial of degree five or less in p (it is linear for `NonlinearBinaryFluid`). The
-difference of two values of h (about 10⁶ J kg⁻¹) loses the differences that decide the reference state (10⁻⁴ J kg⁻¹ or
-less) in Float32; the integral keeps the relative precision of the float type when Δp is small.
+difference of two values of h (about 10⁶ J kg⁻¹) has the round-off of h, about 2 × 10⁻¹⁰ J kg⁻¹ in Float64, far above the
+tolerance of the certificate of the reference state, 16 (K + 1) eps g L_z (about 6 × 10⁻¹³ J kg⁻¹ for 32 slots,
+g = 10 m s⁻², L_z = 0.5 m); the integral keeps the relative precision of the float type when Δp is small.
 """
 @inline function enthalpy_difference(fluid, p, Δp, ϑ, q)
     volume = fluid(:p, :consvar, :q).specific_volume
@@ -31,8 +32,7 @@ here by three-point Gauss–Legendre quadrature, with s - P = t ∈ [0, Δp],
     t₀ = Δp/2,   t± = t₀ ± √(3/5) Δp/2,
 which is exact when ∂v/∂p is a polynomial of degree four or less in p (a constant for `NonlinearBinaryFluid`, where
 Π₁ = -∂v/∂p Δp²/2). Π₁ is of order Δp² ∂v/∂p, so the difference of the three terms h(p) - h(P), (p - P) v(p), each of
-order Δp v, loses most of its digits (all of them in Float32 for Δp of a few Pa); the integral keeps the relative
-precision of the float type.
+order Δp v, loses most of its digits; the integral keeps the relative precision of the float type.
 """
 @inline function available_compressible_energy(fluid, P, Δp, ϑ, q)
     volume_functions = fluid(:p, :consvar, :q).volume_functions
@@ -55,8 +55,8 @@ the integral of the c-th of the volume functions (v, ∂v/∂p, ∂v/∂ϑ, ∂v
 `enthalpy_difference`,
     Δ = ∫ ∂v/∂ϑ (p′, ϑ, q) dp′ = (Δp/2) [5 f(p̄ - c) + 8 f(p̄) + 5 f(p̄ + c)]/9,   p̄ = p + Δp/2,   c = √(3/5) Δp/2,
 exact when ∂v/∂ϑ, ∂v/∂q are polynomials of degree five or less in p. The difference of two values of h_ϑ (about 10³ to
-10⁴ J kg⁻¹ K⁻¹) loses in Float32 the changes with pressure that the budgets need; the integral keeps the relative
-precision of the float type.
+10⁴ J kg⁻¹ K⁻¹) loses about twelve digits for a change of 10⁻⁹ of it; the integral keeps the relative precision of the
+float type.
 """
 @inline function potential_difference(fluid, p, Δp, ϑ, q, c)
     volume_functions = fluid(:p, :consvar, :q).volume_functions

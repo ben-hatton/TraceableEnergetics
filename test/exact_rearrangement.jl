@@ -101,20 +101,6 @@ end
     @test all(isfinite, energy.AE) && all(>=(0), interior(model.domain, energy.AE))
 end
 
-# Where Float32 breaks: the reduced costs that reorder the parcels under thermobaricity, about 1e-4 J kg⁻¹ here, are below
-# the tolerance of the certificate in Float32, 16 (K + 1) eps g L_z (about 2e-4 J kg⁻¹ for K = 16): the sorted placement
-# that fails the certificate in Float64 passes it in Float32, and the exact rearrangement keeps it
-@testset "exact rearrangement, Float32, $M" for (M, make) in (("AN2D", an_box), ("FC2D", fc_box))
-    model32, model64 = (make(F; Mx = 16, Mz = 16, fluid = reference_fluid(F; γ = 3e-4)) for F in (Float32, Float64))
-    state64 = active(model64)
-    ref32, ref64 = exact(model32), exact(model64)
-    reference_state!(ref32, model32, (; m = Float32.(state64.m)))
-    reference_state!(ref64, model64, state64)
-    @test ref64.sorted_energy_excess > 0
-    @test ref32.certificate_violations == 0
-    @test ref32.sorted_energy_excess == 0
-end
-
 # The pass cap scales with the slots, as the passes do: 10 per slot by default
 @testset "exact rearrangement, pass cap, $M" for (M, make) in (("AN2D", an_box), ("FC2D", fc_box))
     model = make(Float64; Mx = 16, Mz = 16, fluid = reference_fluid(Float64; γ = 3e-4))

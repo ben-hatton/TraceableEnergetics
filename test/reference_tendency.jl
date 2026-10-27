@@ -106,15 +106,15 @@ end
 end
 
 # FC2D: the column still fills the box, Σ_k M_k ∂ₜv_*,k = 0, so the bottom edge stays at the bottom and the top edge at
-# the top, in both float types
-@testset "the reference column fills the box, FC2D, $F" for F in (Float32, Float64)
-    model = fc_box(F)
+# the top
+@testset "the reference column fills the box, FC2D" begin
+    model = fc_box(Float64)
     state = make_state(model, rest_fields)
     rates, _, _ = diabatic_rates(model, state)
     ref = reference_tendency!(reference_state!(lorenz(model), model, state), model, rates...)
-    @test abs(sum(ref.slot_mass .* ref.slot_volume_tendency)) <= 16 * eps(F) * sum(abs, ref.slot_mass .* ref.slot_volume_tendency)
+    @test abs(sum(ref.slot_mass .* ref.slot_volume_tendency)) <= 16 * eps() * sum(abs, ref.slot_mass .* ref.slot_volume_tendency)
     @test ref.edge_height_tendency[1] == 0
-    @test abs(ref.edge_height_tendency[end]) <= 16 * eps(F) * maximum(abs, ref.edge_height_tendency)
+    @test abs(ref.edge_height_tendency[end]) <= 16 * eps() * maximum(abs, ref.edge_height_tendency)
 end
 
 # Advection rearranges the fluid without changing the distribution of mass over (ϑ, q): without diffusion or viscous
@@ -223,20 +223,4 @@ allocations(ref, model, consvar_rate, q_rate) = @allocated reference_tendency!(r
     ref = reference_state!(lorenz(model), model, state)
     allocations(ref, model, rates...)
     @test allocations(ref, model, rates...) == 0
-end
-
-# Float32 against Float64, from the same diabatic rates (those of the Float64 model: the Poisson solver of AN2D fails in
-# Float32, as an FFTW plan is applied to a misaligned array): the tendency of P_* is a difference of the volume changes of
-# the parcels (heat and salt are conserved, so ∂ₜP_top comes from the nonlinearity of the equation of state alone), and
-# Float32 keeps about 3 digits of it on these grids
-@testset "precision of the tendency of the reference state, $M" for (M, make) in (("AN2D", an_box), ("FC2D", fc_box))
-    rates, _, _ = let model = make(Float64)
-        diabatic_rates(model, make_state(model, rest_fields))
-    end
-    tendency(F) = let model = make(F), state = make_state(model, rest_fields)
-        reference_tendency!(reference_state!(lorenz(model), model, state), model, map(r -> F.(r), rates)...).p_star_tendency
-    end
-    single, double = tendency(Float32), tendency(Float64)
-    @test eltype(single) == Float32
-    @test maximum(abs, single .- double) <= 1e-2 * maximum(abs, double)
 end

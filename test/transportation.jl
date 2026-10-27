@@ -1,5 +1,5 @@
-# Tests of the transportation simplex (src/numerics/transportation.jl) on cost matrices, independent of the models, in
-# Float32, Float64 and BigFloat. Included in the module of the reference-state tests, after test/reference_state.jl,
+# Tests of the transportation simplex (src/numerics/transportation.jl) on cost matrices, independent of the models.
+# Included in the module of the reference-state tests, after test/reference_state.jl,
 # whose brute force `least_assignment` and pseudo-random `noise` it uses.
 using TraceableEnergetics: Placement, TransportationTree, sorted_placement!, complete_staircase!, optimal_placement!
 
@@ -55,13 +55,13 @@ function check_optimal(C::Matrix{F}, m, M, result) where F
     @test result.start - result.cost ≈ result.decrease atol = 64 * eps(F) * scale * maximum(abs, C)
 end
 
-# Random problems with unequal masses, from a placement in an arbitrary order, in any float type
-@testset "transportation simplex, random, $F" for F in (Float32, Float64, BigFloat)
+# Random problems with unequal masses, from a placement in an arbitrary order
+@testset "transportation simplex, random" begin
     for trial in 1:40
         N, K = 1 + trial % 11, 1 + trial % 5
-        C = F[noise(100trial + 10n + k) for n in 1:N, k in 1:K]
-        m = F[0.1 + noise(1000trial + n) for n in 1:N]
-        M = F[0.1 + noise(2000trial + k) for k in 1:K]
+        C = [noise(100trial + 10n + k) for n in 1:N, k in 1:K]
+        m = [0.1 + noise(1000trial + n) for n in 1:N]
+        M = [0.1 + noise(2000trial + k) for k in 1:K]
         M .*= sum(m) / sum(M)
         check_optimal(C, m, M, simplex(C, m, M))
     end

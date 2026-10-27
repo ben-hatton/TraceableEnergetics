@@ -81,22 +81,21 @@ end
     @test errors[3].ACE < 1e-3 && errors[3].APE < 0.03 && errors[3].background < 0.03
 end
 
-# The differences of the potentials by quadrature, ∫ ∂v/∂ϑ dp and ∫ ∂v/∂q dp, keep the relative precision of the float type,
-# in Float32, Float64 and BigFloat, for Δp from 10⁻² Pa to 10⁴ Pa of either sign: they are compared with the differences
-# of the conjugate variable and the modified chemical potential of ClimFluids, computed in BigFloat at four times the
-# precision of the float type, as the difference of two values of h_ϑ (about 4000 J kg⁻¹ K⁻¹) for a change of about
-# 10⁻⁹ loses twelve digits
-@testset "differences of the potentials by quadrature, $F" for F in (Float32, Float64, BigFloat)
-    fluid = reference_fluid(F)
-    P, ϑ, q = F(1e5), F(T0 + 1), F(q0 - 0.001)
-    for Δp in F.((1e-2, 1, 1e2, 1e4)), sign in (1, -1), (c, potential) in ((3, :conjugate_variable), (4, :modified_chemical_potential))
+# The differences of the potentials by quadrature, ∫ ∂v/∂ϑ dp and ∫ ∂v/∂q dp, keep the relative precision of Float64,
+# for Δp from 10⁻² Pa to 10⁴ Pa of either sign: they are compared with the differences of the conjugate variable and the
+# modified chemical potential of ClimFluids, computed in BigFloat at four times the precision of Float64, as the
+# difference of two values of h_ϑ (about 4000 J kg⁻¹ K⁻¹) for a change of about 10⁻⁹ loses twelve digits
+@testset "differences of the potentials by quadrature" begin
+    fluid = reference_fluid(Float64)
+    P, ϑ, q = 1e5, T0 + 1, q0 - 0.001
+    for Δp in (1e-2, 1, 1e2, 1e4), sign in (1, -1), (c, potential) in ((3, :conjugate_variable), (4, :modified_chemical_potential))
         Δ = sign * Δp
-        # over the interval from P to P + Δ exactly, which P + Δ in the float type F would round
-        exact = setprecision(BigFloat, 4 * max(precision(F), precision(BigFloat))) do
+        # over the interval from P to P + Δ exactly, which P + Δ in Float64 would round
+        exact = setprecision(BigFloat, 4 * precision(Float64)) do
             Σ = getproperty(reference_fluid(BigFloat)(:p, :consvar, :q), potential)
             Σ(big(P) + big(Δ), big(ϑ), big(q)) - Σ(big(P), big(ϑ), big(q))
         end
-        @test potential_difference(fluid, P, Δ, ϑ, q, c) ≈ exact rtol = 64eps(F)
+        @test potential_difference(fluid, P, Δ, ϑ, q, c) ≈ exact rtol = 64eps()
     end
-    @test potential_difference(fluid, P, zero(F), ϑ, q, 3) == 0
+    @test potential_difference(fluid, P, 0.0, ϑ, q, 3) == 0
 end

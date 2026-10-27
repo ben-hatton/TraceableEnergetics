@@ -34,7 +34,7 @@ After `reference_state!`, it holds:
 - the profile P_*(z) (`pressure`);
 - P_* [Pa] and v_* = -g/∂_z P_* [m³ kg⁻¹] at the cell centres of the z axis (`p_star`, `v_star`);
 - the smallest reduced cost of each parcel, min_k (c_nk - u_n - ψ_k) [J kg⁻¹] (`reduced_cost`), the slot where it is
-  least (`best_slot`, as a float, exact up to 2^24 slots in Float32), and the number of parcels for which it is
+  least (`best_slot`, as a float, so that the pass is vectorised), and the number of parcels for which it is
   negative (`certificate_violations`): zero if the placement is optimal for this P_top;
 - for `ExactRearrangement`, the number of pivots of the simplex and of passes over the pairs (`pivots`,
   `pricing_passes`), of placements alternating with P_top (`top_pressure_iterations`), and the decrease from the sorted
