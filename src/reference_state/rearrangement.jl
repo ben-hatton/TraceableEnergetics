@@ -4,109 +4,110 @@
 # placement of the parcels into the slots and its dual potentials, ψ_k of the slots and u_n of the parcels [J kg⁻¹]. Both
 # methods start from the parcels sorted by their specific volume, which fill the slots from the top
 # (`sort_parcels!`); the sorted method keeps that placement, and the exact method improves it by the transportation
-# simplex. The reduced costs of every parcel-slot pair (`reduced_costs!`) are the certificate of either.
+# simplex. The reduced costs of every parcel-slot pair (`reduced_costs!`) are the certificate of either. In FC2D, the
+# slot pressures follow from the top pressure of the column (`fit_column!`), which depends on the placement.
 
 """
     ref = rearrange!(ref, model)
 
-The step of the reference state `ref` of `model` that depends on its method `ref.method` (an `AbstractRearrangement`):
-the placement of the parcels into the slots and its dual potentials, ψ_k of the slots and u_n of the parcels [J kg⁻¹].
+The step of the reference state `ref` of `model` that depends on its method `ref.column.method` (an
+`AbstractRearrangement`): the placement of the parcels into the slots and its dual potentials, ψ_k of the slots and u_n
+of the parcels [J kg⁻¹].
 """
 function rearrange! end
 
 """
-    ref = sort_parcels!(ref::AnelasticLorenzReference, model::AN2D)
+    p = sort_pressure(ref, model)
 
-The parcels, sorted by their specific volume v(P_R(L_z/2), ϑ_n, q_n) at mid-depth [m³ kg⁻¹], lightest first, fill the
-rows from the top (`sorted_placement!`): the placement of `SortedRearrangement`, and the start of `ExactRearrangement`.
+The pressure [Pa] at which the specific volumes of the parcels are compared to sort them (`sort_parcels!`): P_R(L_z/2)
+at mid-depth for AN2D, the mean pressure p̄ of the parcels for FC2D.
 """
-function sort_parcels!(ref::AnelasticLorenzReference, model::AN2D)
-    (; mgr, domain, fluid) = model
-    (; key, consvar, q) = ref
-    # the sort key, by the model's manager
-    p_key = hermite(ref.pressure, model.space.Lz / 2)[1]
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            n = parcel_index(domain, i, j)
-            key[n] = fluid(:p, :consvar, :q).specific_volume(p_key, consvar[n], q[n])
-        end
-    end
-    sortperm!(ref.order, ref.key; rev = true, scratch = ref.scratch)
-    sorted_placement!(ref.placement, ref.order, ref.mass, ref.slot_mass)
-    return ref
-end
+sort_pressure(ref::AnelasticLorenzReference, model::AN2D) = hermite(ref.pressure, model.space.Lz / 2)[1]
+sort_pressure(ref::CompressibleLorenzReference, model::FC2D) = sum(ref.parcels.pressure) / length(ref.parcels.pressure)
 
 """
-    ref = sort_parcels!(ref::CompressibleLorenzReference, model::FC2D)
+    ref = fit_column!(ref, model)
 
-The parcels, sorted by their specific volume v(p̄, ϑ_n, q_n) at the mean pressure p̄ of the parcels [m³ kg⁻¹], lightest
-first, fill the slots from the top (`sorted_placement!`): the placement of `SortedRearrangement`, and the start of
+The slot pressures P_k [Pa] of the placement of `ref`: fixed for AN2D, whose slots are the rows at P_R(z_k); for FC2D,
+from the top pressure of the column that fills the box (`top_pressure!`).
+"""
+fit_column!(ref::AnelasticLorenzReference, model::AN2D) = ref
+fit_column!(ref::CompressibleLorenzReference, model::FC2D) = top_pressure!(ref, model)
+
+"""
+    ref = sort_parcels!(ref, model)
+
+The parcels, sorted by their specific volume v(p, ϑ_n, q_n) at the pressure `sort_pressure` [m³ kg⁻¹], lightest first,
+fill the slots from the top (`sorted_placement!`): the placement of `SortedRearrangement`, and the start of
 `ExactRearrangement`.
 """
-function sort_parcels!(ref::CompressibleLorenzReference, model::FC2D)
+function sort_parcels!(ref::AbstractLorenzReference, model)
     (; mgr, domain, fluid) = model
-    (; key, consvar, q) = ref
+    (; consvar, q) = ref.parcels
+    (; key, order, scratch, placement) = ref.column
     # the sort key, by the model's manager
-    p_key = sum(ref.parcel_pressure) / length(ref.parcel_pressure)
+    p_key = sort_pressure(ref, model)
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
             n = parcel_index(domain, i, j)
             key[n] = fluid(:p, :consvar, :q).specific_volume(p_key, consvar[n], q[n])
         end
     end
-    sortperm!(ref.order, ref.key; rev = true, scratch = ref.scratch)
-    sorted_placement!(ref.placement, ref.order, ref.mass, ref.slot_mass)
+    sortperm!(order, key; rev = true, scratch)
+    sorted_placement!(placement, order, ref.parcels.mass, ref.slots.mass)
     return ref
 end
 
 """
-    ref = rearrange!(ref::AnelasticLorenzReference{<:Any, SortedRearrangement}, model::AN2D)
+    ref = rearrange!(ref::AbstractLorenzReference{<:Any, SortedRearrangement}, model)
 
-The sorted rearrangement of AN2D (`sort_parcels!`); the duals ψ_k and u_n [J kg⁻¹] follow along the staircase of the
-placement (`staircase_duals!`), and the reduced costs from one pass over the pairs (`reduced_costs!`).
+The sorted rearrangement (`sort_parcels!`), with the slot pressures of the placement (`fit_column!`); the duals ψ_k and
+u_n [J kg⁻¹] follow along the staircase of the placement (`staircase_duals!`) with the costs `parcel_cost`, and the
+reduced costs from one pass over the pairs (`reduced_costs!`).
 """
-function rearrange!(ref::AnelasticLorenzReference{<:Any, SortedRearrangement}, model::AN2D)
+function rearrange!(ref::AbstractLorenzReference{<:Any, SortedRearrangement}, model)
+    column = ref.column
     sort_parcels!(ref, model)
-    staircase_duals!(ref.slot_dual, ref.u, ref.placement, ref.order, (n, k) -> anelastic_cost(model, ref, n, k))
+    fit_column!(ref, model)
+    staircase_duals!(column.slot_dual, column.parcel_dual, column.placement, column.order, (n, k) -> parcel_cost(ref, model, n, k))
     reduced_costs!(ref, model)
-    ref.pivots, ref.pricing_passes, ref.sorted_energy_excess = 0, 1, 0
+    column.pivots, column.pricing_passes, column.top_pressure_iterations, column.sorted_energy_excess = 0, 1, 1, 0
     return ref
+end
+
+"""
+    (passes, decrease) = simplex!(ref, model, max_passes)
+
+The least-cost placement at the current slot pressures by the transportation simplex (`optimal_placement!`), from the
+tree of the placement of `ref`, with the costs `parcel_cost` and the passes over the pairs `reduced_costs!`, in at most
+`max_passes` passes; adds its pivots to `ref.column.pivots`, and returns its passes and the decrease of Σ_nk x_nk c_nk.
+"""
+function simplex!(ref::AbstractLorenzReference{F}, model, max_passes) where F
+    column = ref.column
+    cost(n, k) = parcel_cost(ref, model, n, k)
+    price!() = reduced_costs!(ref, model)
+    tolerance = certificate_tolerance(F, length(ref.slots.mass), model.space.g, model.space.Lz)
+    passes, decrease = optimal_placement!(column.placement, column.workspace, column.slot_dual, column.parcel_dual,
+                                          column.reduced_cost, column.best_slot, cost, price!, tolerance, max_passes)
+    column.pivots += column.workspace.pivots
+    return passes, decrease
 end
 
 """
     ref = rearrange!(ref::AnelasticLorenzReference{<:Any, ExactRearrangement}, model::AN2D)
 
-The exact rearrangement of AN2D: the least-cost placement by the transportation simplex (`optimal_placement!`), from the
-sorted placement (`sort_parcels!`) completed into a tree (`complete_staircase!`), with the costs `anelastic_cost` and
-the passes over the pairs `reduced_costs!`. The masses of the parcels and of the rows do not depend on the state's
-motion, so every tree of the simplex is a feasible placement.
+The exact rearrangement of AN2D: the least-cost placement by the transportation simplex (`simplex!`), from the sorted
+placement (`sort_parcels!`) completed into a tree (`complete_staircase!`). The masses of the parcels and of the rows do
+not depend on the state's motion, so every tree of the simplex is a feasible placement, and the decrease of the cost is
+the underestimate of E_P - E_* by the sort.
 """
-function rearrange!(ref::AnelasticLorenzReference{F, ExactRearrangement}, model::AN2D) where F
+function rearrange!(ref::AnelasticLorenzReference{<:Any, ExactRearrangement}, model::AN2D)
+    column = ref.column
     sort_parcels!(ref, model)
-    complete_staircase!(ref.placement, ref.order)
-    cost(n, k) = anelastic_cost(model, ref, n, k)
-    price!() = reduced_costs!(ref, model)
-    tolerance = certificate_tolerance(F, length(ref.slot_mass), model.space.g, model.space.Lz)
-    ref.pricing_passes, ref.sorted_energy_excess =
-        optimal_placement!(ref.placement, ref.workspace, ref.slot_dual, ref.u, ref.reduced_cost, ref.best_slot, cost, price!,
-                           tolerance, ref.method.passes_per_slot * length(ref.slot_mass))
-    ref.pivots = ref.workspace.pivots
-    return ref
-end
-
-"""
-    ref = rearrange!(ref::CompressibleLorenzReference{<:Any, SortedRearrangement}, model::FC2D)
-
-The sorted rearrangement of FC2D (`sort_parcels!`); the top pressure P_top of the column follows from its volume
-(`top_pressure!`), the duals ψ_k and u_n [J kg⁻¹] along the staircase of the placement (`staircase_duals!`) with the
-costs at the slot pressures P_k, and the reduced costs from one pass over the pairs (`reduced_costs!`).
-"""
-function rearrange!(ref::CompressibleLorenzReference{<:Any, SortedRearrangement}, model::FC2D)
-    sort_parcels!(ref, model)
-    top_pressure!(ref, model)
-    staircase_duals!(ref.slot_dual, ref.u, ref.placement, ref.order, (n, k) -> compressible_cost(model, ref, n, k))
-    reduced_costs!(ref, model)
-    ref.pivots, ref.pricing_passes, ref.top_pressure_iterations, ref.sorted_energy_excess = 0, 1, 1, 0
+    complete_staircase!(column.placement, column.order)
+    column.pivots = 0
+    column.pricing_passes, column.sorted_energy_excess = simplex!(ref, model, column.method.passes_per_slot * length(ref.slots.mass))
+    column.top_pressure_iterations = 1
     return ref
 end
 
@@ -117,34 +118,29 @@ The exact rearrangement of FC2D, the saddle point of the energy of the column G(
 P_top L_x L_z, the least over the placements x of its greatest value over P_top, which is where the column fills the
 box. From the sorted placement (`sort_parcels!`) completed into a tree (`complete_staircase!`), two steps alternate:
 1. P_top at fixed placement (`top_pressure!`);
-2. the least-cost placement at fixed P_top by the transportation simplex (`optimal_placement!`), from the tree of the
-   previous one, with the costs `compressible_cost` at the slot pressures P_k(P_top) and the passes `reduced_costs!`;
+2. the least-cost placement at fixed P_top by the transportation simplex (`simplex!`), from the tree of the previous one,
+   with the costs at the slot pressures P_k(P_top);
 until the placement no longer changes (no pivot moves mass), at most `max_top_iterations` times: the last placement is
 then only priced, and its certificate fails.
 """
-function rearrange!(ref::CompressibleLorenzReference{F, ExactRearrangement}, model::FC2D) where F
-    (; space) = model
-    tree = ref.workspace
+function rearrange!(ref::CompressibleLorenzReference{<:Any, ExactRearrangement}, model::FC2D)
+    column = ref.column
+    (; max_top_iterations, passes_per_slot) = column.method
     sort_parcels!(ref, model)
-    complete_staircase!(ref.placement, ref.order)
+    complete_staircase!(column.placement, column.order)
     top_pressure!(ref, model)
     G_sorted = column_energy(ref, model)
-    cost(n, k) = compressible_cost(model, ref, n, k)
-    price!() = reduced_costs!(ref, model)
-    tolerance = certificate_tolerance(F, length(ref.slot_mass), space.g, space.Lz)
-    ref.pivots, ref.pricing_passes = 0, 0
-    for iteration in 1:ref.method.max_top_iterations+1
+    column.pivots, column.pricing_passes = 0, 0
+    for iteration in 1:max_top_iterations+1
         # the last iteration only prices the placement
-        max_passes = iteration > ref.method.max_top_iterations ? 1 : ref.method.passes_per_slot * length(ref.slot_mass)
-        passes, _ = optimal_placement!(ref.placement, tree, ref.slot_dual, ref.u, ref.reduced_cost, ref.best_slot, cost,
-                                       price!, tolerance, max_passes)
-        ref.pivots += tree.pivots
-        ref.pricing_passes += passes
-        ref.top_pressure_iterations = iteration
-        tree.mass_pivots == 0 && break
+        max_passes = iteration > max_top_iterations ? 1 : passes_per_slot * length(ref.slots.mass)
+        passes, _ = simplex!(ref, model, max_passes)
+        column.pricing_passes += passes
+        column.top_pressure_iterations = iteration
+        column.workspace.mass_pivots == 0 && break
         top_pressure!(ref, model)
     end
-    ref.sorted_energy_excess = G_sorted - column_energy(ref, model)
+    column.sorted_energy_excess = G_sorted - column_energy(ref, model)
     return ref
 end
 
@@ -152,74 +148,41 @@ end
     G = column_energy(ref::CompressibleLorenzReference, model::FC2D)
 
 The energy of the column of the placement of `ref` at its top pressure P_top, G = Σ_nk x_nk c_nk - P_top L_x L_z
-[J m⁻¹], with the costs c_nk = h(P_k, ϑ_n, q_n) - h(p_n, ϑ_n, q_n) (`compressible_cost`): the reference energy E_*, up to
-terms that do not depend on the placement.
+[J m⁻¹], with the costs c_nk = h(P_k, ϑ_n, q_n) - h(p_n, ϑ_n, q_n) (`parcel_cost`): the reference energy E_*, up to terms
+that do not depend on the placement.
 """
 function column_energy(ref::CompressibleLorenzReference, model::FC2D)
-    (; placement) = ref
+    (; placement) = ref.column
     G = -ref.p_top * model.space.Lx * model.space.Lz
     for e in 1:placement.count
-        G += placement.mass[e] * compressible_cost(model, ref, placement.parcel[e], placement.slot[e])
+        G += placement.mass[e] * parcel_cost(ref, model, placement.parcel[e], placement.slot[e])
     end
     return G
 end
 
 """
-    ref = reduced_costs!(ref::AnelasticLorenzReference, model::AN2D)
+    ref = reduced_costs!(ref, model)
 
-The smallest reduced cost c_nk - u_n - ψ_k of each parcel over the slots (`ref.reduced_cost`) [J kg⁻¹], and the slot
-where it is least (`ref.best_slot`), with the duals `ref.u` and `ref.slot_dual` and the costs from the parcel's own row o,
-c_nk = h(P_R(z_k), ϑ_n, q_n) - h(P_R(z_o), ϑ_n, q_n) + g (z_k - z_o), by the model's manager (vectorised over the
-parcels of a row). All N K pairs: the certificate of the placement, and the pricing of the transportation simplex.
+The smallest reduced cost c_nk - u_n - ψ_k of each parcel over the slots (`ref.column.reduced_cost`) [J kg⁻¹], and the
+slot where it is least (`ref.column.best_slot`), with the duals of `ref.column` and the costs from the parcel's own
+pressure p_n and height z_n (`slot_cost`), c_nk = h(P_k, ϑ_n, q_n) - h(p_n, ϑ_n, q_n) (+ g (z_k - z_n) for AN2D), by
+the model's manager (vectorised over the parcels of a row). All N K pairs: the certificate of the placement, and the
+pricing of the transportation simplex.
 """
-function reduced_costs!(ref::AnelasticLorenzReference{F}, model::AN2D) where F
+function reduced_costs!(ref::AbstractLorenzReference{F}, model) where F
     (; mgr, domain, fluid, space) = model
-    (; consvar, q, u, slot_pressure, slot_height, slot_dual, reduced_cost, best_slot) = ref
+    (; consvar, q, pressure, height) = ref.parcels
+    (; parcel_dual, slot_dual, reduced_cost, best_slot) = ref.column
     g = space.g
-    K = length(slot_pressure)
-    Hz = halo_size(domain)[2]
+    K = length(slot_dual)
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
             n = parcel_index(domain, i, j)
-            ϑ_n, q_n, u_n = consvar[n], q[n], u[n]
-            o = Hz + K + 1 - j                                      # the slot of the parcel's own row
-            P_own, z_own = slot_pressure[o], slot_height[o]
-            reduced = enthalpy_difference(fluid, P_own, slot_pressure[1] - P_own, ϑ_n, q_n) + g * (slot_height[1] - z_own) - u_n - slot_dual[1]
+            ϑ_n, q_n, u_n, p_n, z_n = consvar[n], q[n], parcel_dual[n], pressure[n], height[n]
+            reduced = slot_cost(ref, fluid, g, p_n, z_n, ϑ_n, q_n, 1) - u_n - slot_dual[1]
             best = zero(reduced) + 1                                # a float, as `reduced`, so that it is vectorised
             for k in 2:K
-                c = enthalpy_difference(fluid, P_own, slot_pressure[k] - P_own, ϑ_n, q_n) + g * (slot_height[k] - z_own)
-                r = c - u_n - slot_dual[k]
-                best = ifelse(r < reduced, F(k), best)              # ifelse, not ? :, so that it is vectorised
-                reduced = min(reduced, r)
-            end
-            reduced_cost[n] = reduced
-            best_slot[n] = best
-        end
-    end
-    return ref
-end
-
-"""
-    ref = reduced_costs!(ref::CompressibleLorenzReference, model::FC2D)
-
-The smallest reduced cost c_nk - u_n - ψ_k of each parcel over the slots (`ref.reduced_cost`) [J kg⁻¹], and the slot
-where it is least (`ref.best_slot`), with the duals `ref.u` and `ref.slot_dual` and the costs from the parcel's own
-pressure, c_nk = h(P_k, ϑ_n, q_n) - h(p_n, ϑ_n, q_n), by the model's manager (vectorised over the parcels of a row). All
-N K pairs: the certificate of the placement, and the pricing of the transportation simplex.
-"""
-function reduced_costs!(ref::CompressibleLorenzReference{F}, model::FC2D) where F
-    (; mgr, domain, fluid) = model
-    (; consvar, q, u, parcel_pressure, slot_pressure, slot_dual, reduced_cost, best_slot) = ref
-    K = length(slot_pressure)
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            n = parcel_index(domain, i, j)
-            ϑ_n, q_n, u_n, p_n = consvar[n], q[n], u[n], parcel_pressure[n]
-            reduced = enthalpy_difference(fluid, p_n, slot_pressure[1] - p_n, ϑ_n, q_n) - u_n - slot_dual[1]
-            best = zero(reduced) + 1                                # a float, as `reduced`, so that it is vectorised
-            for k in 2:K
-                c = enthalpy_difference(fluid, p_n, slot_pressure[k] - p_n, ϑ_n, q_n)
-                r = c - u_n - slot_dual[k]
+                r = slot_cost(ref, fluid, g, p_n, z_n, ϑ_n, q_n, k) - u_n - slot_dual[k]
                 best = ifelse(r < reduced, F(k), best)              # ifelse, not ? :, so that it is vectorised
                 reduced = min(reduced, r)
             end
@@ -242,23 +205,24 @@ stops when |R| ≤ 16 eps L_x L_z or |R| no longer decreases.
 function top_pressure!(ref::CompressibleLorenzReference{F}, model::FC2D) where F
     (; fluid, space, dz) = model
     (; g, Lx, Lz) = space
-    (; placement, slot_pressure) = ref
+    (; parcels, slots) = ref
+    (; placement) = ref.column
     Mx, Mz = dims(model.domain)
-    K = length(ref.slot_mass)
+    K = length(slots.mass)
     # the first guess, from the parcels of the top row, n = M_x (M_z - 1) + 1 .. M_x M_z
-    ref.p_top = sum(n -> ref.parcel_pressure[n] - g * dz / (2 * ref.parcel_volume[n]), Mx*(Mz-1)+1:Mx*Mz) / Mx
+    ref.p_top = sum(n -> parcels.pressure[n] - g * dz / (2 * parcels.volume[n]), Mx*(Mz-1)+1:Mx*Mz) / Mx
     box_volume = Lx * Lz
     residual = F(Inf)
     for _ in 1:50
         above = zero(F)                                             # the mass above slot k
         for k in 1:K
-            slot_pressure[k] = ref.p_top + g * (above + ref.slot_mass[k] / 2) / Lx
-            above += ref.slot_mass[k]
+            slots.pressure[k] = ref.p_top + g * (above + slots.mass[k] / 2) / Lx
+            above += slots.mass[k]
         end
         R, ∂R = -box_volume, zero(F)
         for e in 1:placement.count
             n, k = placement.parcel[e], placement.slot[e]
-            v, ∂v_∂p, _, _ = fluid(:p, :consvar, :q).volume_functions(slot_pressure[k], ref.consvar[n], ref.q[n])
+            v, ∂v_∂p, _, _ = fluid(:p, :consvar, :q).volume_functions(slots.pressure[k], parcels.consvar[n], parcels.q[n])
             R += placement.mass[e] * v
             ∂R += placement.mass[e] * ∂v_∂p
         end

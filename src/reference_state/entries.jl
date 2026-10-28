@@ -53,15 +53,15 @@ function reference_state_entries(model::Union{AN2D{F}, FC2D{F}}, ref, out) where
         background_potential_energy = entry("background potential energy ∫ρ (P - Π) dV", "J m⁻¹", (),
             (integrated_potential_energy, integrated_AE) -> integrated_potential_energy - integrated_AE),
         certificate_violations = entry("number of parcels with a negative reduced cost", "1", (),
-            reference_state -> F(reference_state.certificate_violations)),
+            reference_state -> F(reference_state.column.certificate_violations)),
         # the transportation simplex of ExactRearrangement (no pivots and one pass for SortedRearrangement)
-        pivots = entry("number of pivots of the transportation simplex", "1", (), reference_state -> F(reference_state.pivots)),
+        pivots = entry("number of pivots of the transportation simplex", "1", (), reference_state -> F(reference_state.column.pivots)),
         pricing_passes = entry("number of passes over the parcel-slot pairs", "1", (),
-            reference_state -> F(reference_state.pricing_passes)),
+            reference_state -> F(reference_state.column.pricing_passes)),
         # the cost of the sorted placement less that of the placement, zero for SortedRearrangement: Σ_nk x_nk c_nk (AN2D),
         # G = Σ_nk x_nk c_nk - P_top L_x L_z (FC2D)
         sorted_energy_excess = entry("underestimate of E_P - E_* by the sorted placement", "J m⁻¹", (),
-            reference_state -> reference_state.sorted_energy_excess),
+            reference_state -> reference_state.column.sorted_energy_excess),
     )
     model isa FC2D || return entries
     # the top of the reference column of FC2D
@@ -71,7 +71,7 @@ function reference_state_entries(model::Union{AN2D{F}, FC2D{F}}, ref, out) where
         volume_residual = entry("relative excess of the height of the reference column over L_z", "1", (),
             reference_state -> reference_state.volume_residual),
         top_pressure_iterations = entry("number of placements alternating with the top pressure", "1", (),
-            reference_state -> F(reference_state.top_pressure_iterations)),
+            reference_state -> F(reference_state.column.top_pressure_iterations)),
     ))
 end
 

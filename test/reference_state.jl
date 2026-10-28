@@ -5,7 +5,7 @@ using CFAnelastics, CFCompressible, CookBooks
 using TraceableEnergetics
 using CFBoxes: Cell, cellpoint, ncells, interior_cells, dims, halo_size
 using CFTimeSchemes: tendencies!
-using TraceableEnergetics: interior, anelastic_cost, buoyancy_residual, stratification, reference_heights!,
+using TraceableEnergetics: interior, parcel_cost, buoyancy_residual, stratification, reference_heights!,
                            available_compressible_energy!, available_potential_energy!, parcel_integral,
                            rearrangement_energy, available_compressible_energy, enthalpy_difference, hermite
 
@@ -88,7 +88,7 @@ end
 # scales of the tolerances: the energy g L_z and the specific enthalpy Cp0 T0 per unit mass, and the mass of the box
 energy_scale(model) = model.space.g * model.space.Lz
 enthalpy_scale(model) = model.fluid.Cp0 * model.fluid.T0
-box_mass(ref) = sum(ref.mass)
+box_mass(ref) = sum(ref.parcels.mass)
 
 # the change of Π over half a row of a parcel that expands upwards in a column of constant v_*: ∫ r dz over Δz/2, with
 # r ≈ g ρ |∂v/∂p| g ρ (z - z_row) (the error of AN2D before v_* followed the end slots' parcels beyond the end rows)
@@ -104,13 +104,13 @@ at_wall(model, energy) = map(z -> z == 0 || z == model.space.Lz, parcel_values(m
 # f(ref, fluid, g, ϑ, q, z_*) at the reference height of each parcel: the LNB residual, N_*²
 function at_reference_height(f, ref, model, energy)
     z_star = parcel_values(model, energy.z_star)
-    return map(n -> f(ref, model.fluid, model.space.g, ref.consvar[n], ref.q[n], z_star[n]), eachindex(ref.mass))
+    return map(n -> f(ref, model.fluid, model.space.g, ref.parcels.consvar[n], ref.parcels.q[n], z_star[n]), eachindex(ref.parcels.mass))
 end
 
 # whether each parcel is placed, unsplit, in the slot of its own row: every entry of the placement with a mass is
 # there (the entries of a parcel add up to its mass), for a sorted or an exact placement
-in_own_rows(ref) = all(1:ref.placement.count) do e
-    ref.placement.mass[e] == 0 || ref.placement.slot[e] == ref.row[ref.placement.parcel[e]]
+in_own_rows(ref) = all(1:ref.column.placement.count) do e
+    ref.column.placement.mass[e] == 0 || ref.column.placement.slot[e] == ref.parcels.row[ref.column.placement.parcel[e]]
 end
 
 ## Tests of AN2D
@@ -126,7 +126,7 @@ end
     energy = reference_energy!(ref, model, resting(model))
     @test in_own_rows(ref)
     @test energy.ΔE == 0
-    @test ref.certificate_violations == 0
+    @test ref.column.certificate_violations == 0
     z_star, Π = interior(model.domain, energy.z_star), interior(model.domain, energy.AE)
     @test z_star[:, 2:end-1] ≈ heights(model)[:, 2:end-1] rtol = 1e-6
     @test all(abs.(z_star[:, [1, end]] .- heights(model)[:, [1, end]]) .<= model.dz / 2)
@@ -145,7 +145,7 @@ function mixed_energy(model)
     ref = lorenz(model)
     energy = reference_energy!(ref, model, mixed(model))
     @test abs(energy.ΔE) <= 1e-13 * enthalpy_scale(model) * box_mass(ref)
-    @test ref.certificate_violations == 0
+    @test ref.column.certificate_violations == 0
     @test all(>=(0), interior(model.domain, energy.AE))
     N2 = at_reference_height(stratification, ref, model, energy)
     # |N_*²| against the scale of its two cancelling terms, g² ρ² |∂v/∂p|
@@ -184,7 +184,7 @@ end
     expected = sum(r -> M * f[destination[r]] * (p_R[destination[r]] - p_R[r]), 1:Mz)
     @test expected > 0
     @test energy.ΔE ≈ expected rtol = 1e-6
-    @test ref.certificate_violations == 0
+    @test ref.column.certificate_violations == 0
 end
 
 # assignment of N parcels of equal mass to N places of least cost, by dynamic programming over the subsets of the places
@@ -222,15 +222,15 @@ noise(n) = mod(sin(12.9898n) * 43758.5453, 1)
     ref = lorenz(model)
     energy = reference_energy!(ref, model, tracer_state(model, (x, z) -> θ(index(x, z)), (x, z) -> q(index(x, z))))
     # place u of the 8 is in row (u - 1) ÷ 2 + 1 from the top
-    C = [anelastic_cost(model, ref, n, (u - 1) ÷ 2 + 1) for n in 1:8, u in 1:8]
-    own = sum(n -> anelastic_cost(model, ref, n, ref.row[n]), 1:8)
-    least = ref.mass[1] * (own - least_assignment(C))       # E_P - E_* of the exact optimum
+    C = [parcel_cost(ref, model, n, (u - 1) ÷ 2 + 1) for n in 1:8, u in 1:8]
+    own = sum(n -> parcel_cost(ref, model, n, ref.parcels.row[n]), 1:8)
+    least = ref.parcels.mass[1] * (own - least_assignment(C))       # E_P - E_* of the exact optimum
     if γ == 0
         @test energy.ΔE ≈ least rtol = 1e-6
-        @test ref.certificate_violations == 0
+        @test ref.column.certificate_violations == 0
     else
         @test energy.ΔE < least - 1e-3 * abs(least)
-        @test ref.certificate_violations > 0
+        @test ref.column.certificate_violations > 0
     end
 end
 
@@ -239,13 +239,13 @@ end
     model = an_box(Float64; Mx = 1)
     ref = lorenz(model)
     energy = reference_energy!(ref, model, active(model))
-    (; placement) = ref
+    (; placement) = ref.column
     entries = 1:placement.count
-    for n in eachindex(ref.mass)
-        @test sum(e -> placement.mass[e], filter(e -> placement.parcel[e] == n, entries)) ≈ ref.mass[n] rtol = 1e-14
+    for n in eachindex(ref.parcels.mass)
+        @test sum(e -> placement.mass[e], filter(e -> placement.parcel[e] == n, entries)) ≈ ref.parcels.mass[n] rtol = 1e-14
     end
-    for k in eachindex(ref.slot_mass)
-        @test sum(e -> placement.mass[e], filter(e -> placement.slot[e] == k, entries)) ≈ ref.slot_mass[k] rtol = 1e-12
+    for k in eachindex(ref.slots.mass)
+        @test sum(e -> placement.mass[e], filter(e -> placement.slot[e] == k, entries)) ≈ ref.slots.mass[k] rtol = 1e-12
     end
     @test all(isfinite, energy.z_star) && all(isfinite, energy.AE) && all(isfinite, ref.p_star)
     @test all(>=(0), interior(model.domain, energy.AE))
@@ -263,10 +263,10 @@ end
     reference_state!(ref, model, perturbed(0.0))
     (; z, y) = ref.potential
     K = length(z) - 2
-    v, P = ref.slot_volume, ref.node_pressure
+    v, P = ref.slots.volume, ref.level_pressure
     step(c) = -(v[K+3-c] + v[K+2-c]) / 2 * (P[c] - P[c-1]) - model.space.g * (z[c] - z[c-1])
     @test all(c -> isapprox(y[c] - y[c-1], step(c); rtol = 64eps()), 3:K+1)
-    @test abs(sum(k -> ref.slot_mass[k] * y[K+2-k], 1:K)) <= 64eps() * sum(ref.slot_mass) * maximum(abs, y)
+    @test abs(sum(k -> ref.slots.mass[k] * y[K+2-k], 1:K)) <= 64eps() * sum(ref.slots.mass) * maximum(abs, y)
     # the change of π_* per unit ε, at three sizes of ε above round-off
     rates = map(ε -> maximum(abs, profile(perturbed(ε)).y .- y) / ε, (1e-3, 1e-4, 1e-5))
     @test maximum(rates) <= 2 * minimum(rates)
@@ -306,11 +306,11 @@ end
     ref = lorenz(model)
     energy = reference_energy!(ref, model, active(model))
     @test energy.ΔE > 0
-    @test ref.certificate_violations == 0
+    @test ref.column.certificate_violations == 0
     @test energy.ΣmAE >= energy.ΔE
-    on_rows = sum(eachindex(ref.mass)) do n
-        k = ref.row[n]
-        ref.mass[n] * (anelastic_cost(model, ref, n, k) - ref.u[n] - ref.slot_dual[k])
+    on_rows = sum(eachindex(ref.parcels.mass)) do n
+        k = ref.parcels.row[n]
+        ref.parcels.mass[n] * (parcel_cost(ref, model, n, k) - ref.column.parcel_dual[n] - ref.column.slot_dual[k])
     end
     @test on_rows ≈ energy.ΔE rtol = 1e-6
 end
@@ -328,7 +328,7 @@ end
         ref = lorenz(model)
         energy = reference_energy!(ref, model, resting(model))
         @test in_own_rows(ref)
-        @test ref.certificate_violations == 0
+        @test ref.column.certificate_violations == 0
         @test abs(energy.ΔE) <= 1e-14 * box_mass(ref) * energy_scale(model)
         Π = interior(model.domain, energy.AE)
         @test all(Π .>= 0) && maximum(Π) <= 64eps() * enthalpy_scale(model)
@@ -346,7 +346,7 @@ end
     ref = lorenz(model)
     energy = reference_energy!(ref, model, tracer_state(model, (x, z) -> T0, (x, z) -> q0))
     @test abs(energy.ΔE) <= 1e-14 * box_mass(ref) * energy_scale(model)
-    @test ref.certificate_violations == 0
+    @test ref.column.certificate_violations == 0
     Π = interior(model.domain, energy.AE)
     @test all(Π .>= 0) && maximum(Π) <= expansion_bound(model)
     N2 = at_reference_height(stratification, ref, model, energy)
@@ -360,13 +360,13 @@ end
                                                                 ("strongly compressible", fc_box(Float64; fluid = reference_fluid(Float64; α_p = 1e-4))))
     ref = lorenz(model)
     energy = reference_energy!(ref, model, active(model))
-    (; placement) = ref
+    (; placement) = ref.column
     entries = 1:placement.count
-    for n in eachindex(ref.mass)
-        @test sum(e -> placement.mass[e], filter(e -> placement.parcel[e] == n, entries)) ≈ ref.mass[n] rtol = 1e-14
+    for n in eachindex(ref.parcels.mass)
+        @test sum(e -> placement.mass[e], filter(e -> placement.parcel[e] == n, entries)) ≈ ref.parcels.mass[n] rtol = 1e-14
     end
-    for k in eachindex(ref.slot_mass)
-        @test sum(e -> placement.mass[e], filter(e -> placement.slot[e] == k, entries)) ≈ ref.slot_mass[k] rtol = 1e-12
+    for k in eachindex(ref.slots.mass)
+        @test sum(e -> placement.mass[e], filter(e -> placement.slot[e] == k, entries)) ≈ ref.slots.mass[k] rtol = 1e-12
     end
     @test all(isfinite, energy.z_star) && all(isfinite, energy.AE) && all(isfinite, ref.p_star)
     @test all(>=(0), interior(model.domain, energy.AE))
@@ -407,7 +407,7 @@ end
     ref = lorenz(model)
     energy = reference_energy!(ref, model, active(model))
     @test energy.ΔE > 0
-    @test ref.certificate_violations == 0
+    @test ref.column.certificate_violations == 0
     @test energy.ΣmAE >= energy.ΔE
 end
 
@@ -442,14 +442,14 @@ end
     energy = reference_energy!(ref, model, active(model))
     Π₁, Π₂, Π = parcel_values(model, energy.ACE), parcel_values(model, energy.APE), parcel_values(model, energy.AE)
     z, z_star = vec(heights(model)), parcel_values(model, energy.z_star)
-    direct = map(eachindex(ref.mass)) do n
-        ϑ, q = ref.consvar[n], ref.q[n]
+    direct = map(eachindex(ref.parcels.mass)) do n
+        ϑ, q = ref.parcels.consvar[n], ref.parcels.q[n]
         if model isa AN2D
             P, P_star = hermite(ref.pressure, z[n])[1], hermite(ref.pressure, z_star[n])[1]          # P_R(z), P_R(z_*)
             Δπ = hermite(ref.potential, z[n])[1] - hermite(ref.potential, z_star[n])[1]           # π_*(z) - π_*(z_*)
             enthalpy_difference(fluid, P_star, P - P_star, ϑ, q) + Δπ + space.g * (z[n] - z_star[n])
         else
-            p, v = ref.parcel_pressure[n], ref.parcel_volume[n]
+            p, v = ref.parcels.pressure[n], ref.parcels.volume[n]
             P, P_star = hermite(ref.pressure, z[n])[1], hermite(ref.pressure, z_star[n])[1]          # P_*(z), P_*(z_*)
             enthalpy_difference(fluid, P_star, p - P_star, ϑ, q) + space.g * (z[n] - z_star[n]) - (p - P) * v
         end
@@ -484,9 +484,9 @@ end
     end
     serial = first(energies)
     for (; ref, energy) in energies[2:end]
-        @test ref.order == serial.ref.order
-        @test ref.reduced_cost ≈ serial.ref.reduced_cost atol = 1e-9
-        @test ref.certificate_violations == serial.ref.certificate_violations
+        @test ref.column.order == serial.ref.column.order
+        @test ref.column.reduced_cost ≈ serial.ref.column.reduced_cost atol = 1e-9
+        @test ref.column.certificate_violations == serial.ref.column.certificate_violations
         @test energy.z_star ≈ serial.energy.z_star atol = 1e-8 * Lz
         @test energy.AE ≈ serial.energy.AE atol = 1e-9
         @test energy.ΔE == serial.energy.ΔE
@@ -515,7 +515,7 @@ struct UnimplementedRearrangement <: AbstractRearrangement end
 @testset "methods of the rearrangement, $M" for (M, make, Reference) in (("AN2D", an_box, AnelasticLorenzReference),
                                                                          ("FC2D", fc_box, CompressibleLorenzReference))
     model = make(Float64)
-    @test lorenz(model).method isa SortedRearrangement
+    @test lorenz(model).column.method isa SortedRearrangement
     ref = Reference(model, UnimplementedRearrangement())
     @test_throws MethodError reference_state!(ref, model, active(model))
 end
@@ -524,17 +524,17 @@ end
 #     E_P = Σ_n m_n (h(p_n, ϑ_n, q_n) + g (z_n - z0)) - p_n Δx Δz,
 # with p_n = P_R(z_n) in AN2D, the parcel's own pressure in FC2D
 function parcel_potential_energy(model::AN2D, ref)
-    return sum(eachindex(ref.mass)) do n
-        k = ref.row[n]
-        h = model.fluid(:p, :consvar, :q).specific_enthalpy(ref.slot_pressure[k], ref.consvar[n], ref.q[n])
-        ref.mass[n] * (h + model.space.g * (ref.slot_height[k] - model.space.z0)) - ref.slot_pressure[k] * model.dx * model.dz
+    return sum(eachindex(ref.parcels.mass)) do n
+        k = ref.parcels.row[n]
+        h = model.fluid(:p, :consvar, :q).specific_enthalpy(ref.slots.pressure[k], ref.parcels.consvar[n], ref.parcels.q[n])
+        ref.parcels.mass[n] * (h + model.space.g * (ref.slots.height[k] - model.space.z0)) - ref.slots.pressure[k] * model.dx * model.dz
     end
 end
 function parcel_potential_energy(model::FC2D, ref)
-    return sum(eachindex(ref.mass)) do n
-        p = ref.parcel_pressure[n]
-        h = model.fluid(:p, :consvar, :q).specific_enthalpy(p, ref.consvar[n], ref.q[n])
-        ref.mass[n] * (h + model.space.g * (ref.height[n] - model.space.z0)) - p * model.dx * model.dz
+    return sum(eachindex(ref.parcels.mass)) do n
+        p = ref.parcels.pressure[n]
+        h = model.fluid(:p, :consvar, :q).specific_enthalpy(p, ref.parcels.consvar[n], ref.parcels.q[n])
+        ref.parcels.mass[n] * (h + model.space.g * (ref.parcels.height[n] - model.space.z0)) - p * model.dx * model.dz
     end
 end
 

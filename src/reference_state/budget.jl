@@ -51,12 +51,13 @@ potential of the available compressible energy. Zero for AN2D, whose potentials 
 compression_potential!(ΔΣ, model::AN2D, ref::AnelasticLorenzReference, c) = fill!(ΔΣ, 0)
 function compression_potential!(ΔΣ, model::FC2D, ref::CompressibleLorenzReference, c)
     (; mgr, domain, fluid) = model
-    (; consvar, q, parcel_pressure, p_star) = ref
+    (; consvar, q, pressure) = ref.parcels
+    (; p_star) = ref
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
             n = parcel_index(domain, i, j)
             # from P_*(z) to the parcel's own pressure p
-            ΔΣ[i, j] = potential_difference(fluid, p_star[j], parcel_pressure[n] - p_star[j], consvar[n], q[n], c)
+            ΔΣ[i, j] = potential_difference(fluid, p_star[j], pressure[n] - p_star[j], consvar[n], q[n], c)
         end
     end
     return fill_halo!(domain, ΔΣ, ZeroGradient())
@@ -76,7 +77,7 @@ function displacement_potential!(ΔΣ, model, ref, z_star, c)
             n = parcel_index(domain, i, j)
             P = intermediate_pressure(model, ref, j)                # P_*(z), or P_R(z) for AN2D
             P_ref = hermite(ref.pressure, z_star[i, j])[1]          # P_*(z_*), or P_R(z_*) for AN2D
-            ΔΣ[i, j] = potential_difference(fluid, P_ref, P - P_ref, ref.consvar[n], ref.q[n], c)
+            ΔΣ[i, j] = potential_difference(fluid, P_ref, P - P_ref, ref.parcels.consvar[n], ref.parcels.q[n], c)
         end
     end
     return fill_halo!(domain, ΔΣ, ZeroGradient())
@@ -135,20 +136,22 @@ b₂ = g ρ_R (v(ϑ, q, P_R) - v_*) (AN2D). C_b,1* = ρ b₁ w and C_b,2* = ρ b
 compression_buoyancy!(b₁, model::AN2D, ref::AnelasticLorenzReference) = fill!(b₁, 0)
 function compression_buoyancy!(b₁, model::FC2D, ref::CompressibleLorenzReference)
     (; mgr, domain, fluid, space) = model
-    (; consvar, q, parcel_volume, p_star, v_star) = ref
+    (; consvar, q, volume) = ref.parcels
+    (; p_star, v_star) = ref
     g = space.g
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
             n = parcel_index(domain, i, j)
             ṽ = fluid(:p, :consvar, :q).specific_volume(p_star[j], consvar[n], q[n])    # v(ϑ, q, P_*(z))
-            b₁[i, j] = g * (parcel_volume[n] - ṽ) / v_star[j]
+            b₁[i, j] = g * (volume[n] - ṽ) / v_star[j]
         end
     end
     return fill_halo!(domain, b₁, ZeroGradient())
 end
 function displacement_buoyancy!(b₂, model::FC2D, ref::CompressibleLorenzReference)
     (; mgr, domain, fluid, space) = model
-    (; consvar, q, p_star, v_star) = ref
+    (; consvar, q) = ref.parcels
+    (; p_star, v_star) = ref
     g = space.g
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
@@ -160,15 +163,15 @@ function displacement_buoyancy!(b₂, model::FC2D, ref::CompressibleLorenzRefere
     return fill_halo!(domain, b₂, ZeroGradient())
 end
 function displacement_buoyancy!(b₂, model::AN2D, ref::AnelasticLorenzReference)
-    (; mgr, domain, fluid, space) = model
-    (; ρ_R, p_R) = model.reference
-    (; consvar, q, v_star) = ref
+    (; mgr, domain, space) = model
+    (; ρ_R) = model.reference
+    (; volume) = ref.parcels                                       # v(ϑ, q, P_R(z))
+    (; v_star) = ref
     g = space.g
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
             n = parcel_index(domain, i, j)
-            v = fluid(:p, :consvar, :q).specific_volume(p_R[j], consvar[n], q[n])        # v(ϑ, q, P_R(z))
-            b₂[i, j] = g * ρ_R[j] * (v - v_star[j])
+            b₂[i, j] = g * ρ_R[j] * (volume[n] - v_star[j])
         end
     end
     return fill_halo!(domain, b₂, ZeroGradient())
@@ -216,7 +219,8 @@ with ρ_R(z_*) = -∂_z P_R(z_*)/g), with ∂ₜP_*(z_*) from `∂ₜP_at_z_star
 compression_reference_term!(R₁, model::AN2D, ref::AnelasticLorenzReference) = fill!(R₁, 0)
 function compression_reference_term!(R₁, model::FC2D, ref::CompressibleLorenzReference)
     (; mgr, domain, fluid, dx, dz) = model
-    (; mass, consvar, q, p_star, p_star_tendency) = ref
+    (; mass, consvar, q) = ref.parcels
+    (; p_star, p_star_tendency) = ref
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
             n = parcel_index(domain, i, j)
@@ -229,7 +233,8 @@ function compression_reference_term!(R₁, model::FC2D, ref::CompressibleLorenzR
 end
 function displacement_reference_term!(R₂, model::FC2D, ref::CompressibleLorenzReference, z_star, ∂ₜP_at_z_star)
     (; mgr, domain, fluid, dx, dz) = model
-    (; mass, consvar, q, p_star, p_star_tendency) = ref
+    (; mass, consvar, q) = ref.parcels
+    (; p_star, p_star_tendency) = ref
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         for j in jrange, i in irange
             n = parcel_index(domain, i, j)

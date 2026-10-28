@@ -100,7 +100,7 @@ function fc_study(F; Mz = 16, ε = 1.0)
     top = (r₊.p_top - r₋.p_top) / 2F(ε)
     scale = maximum(abs, ref.p_star_tendency)
     @printf("\nFC2D %s, M_z = %d, ε = %g (placement %s): max|∂ₜP_*| = %.3e Pa/s, ∂ₜP_top %.6e (difference %.6e)\n", F, Mz, ε,
-            r₊.order == r₋.order ? "fixed" : "changed", scale, ref.p_top_tendency, top)
+            r₊.column.order == r₋.column.order ? "fixed" : "changed", scale, ref.p_top_tendency, top)
     for (name, zs) in pairs(sets)
         difference = [(hermite(r₊.pressure, z)[1] - hermite(r₋.pressure, z)[1]) / 2F(ε) for z in zs]
         formula = [reference_pressure_tendency(ref, model, z) for z in zs]
@@ -116,21 +116,21 @@ function wall_study(; Mz = 16, γ)
     (; fluid) = model
     state, rates = state_and_rates(model)
     ref = reference_tendency!(reference_state!(lorenz(model), model, state), model, rates...)
-    K = length(ref.slot_mass)
+    K = length(ref.slots.mass)
     ε = 1e-2
     r₊, r₋ = perturbed_reference(model, state, rates, ε), perturbed_reference(model, state, rates, -ε)
     scale = maximum(abs, ref.potential_tendency.y)
     @printf("\nAN2D, M_z = %d, γ = %.0e Pa⁻¹ (placement %s): max|∂ₜπ_*| = %.3e J kg⁻¹ s⁻¹\n", Mz, γ,
-            r₊.order == r₋.order ? "fixed" : "changed", scale)
+            r₊.column.order == r₋.column.order ? "fixed" : "changed", scale)
     neglected = zeros(2)
     for (side, (wall, row, e)) in enumerate(((1, 2, K), (K + 2, K + 1, 1)))
         # the increment of π_* from the end row to the wall, by differences and by the formula with the plain mean of the
         # end slot (the differences are at a fixed placement), and the neglected term -∂ₜb_e ΔP²/2
         difference = ((r₊.potential.y[wall] - r₊.potential.y[row]) - (r₋.potential.y[wall] - r₋.potential.y[row])) / 2ε
-        ΔP = hermite(ref.pressure, ref.potential.z[wall])[1] - ref.slot_pressure[e]
+        ΔP = hermite(ref.pressure, ref.potential.z[wall])[1] - ref.slots.pressure[e]
         formula = -ref.slot_means.plain_volume_rate[e] * ΔP
-        ḃ_e = sum(i -> ref.placement.slot[i] == e ? ref.placement.mass[i] * fluid.v0 * fluid.α_T * γ * ref.consvar_rate[ref.placement.parcel[i]] : 0.0,
-                  1:ref.placement.count) / ref.slot_mass[e]
+        ḃ_e = sum(i -> ref.column.placement.slot[i] == e ? ref.column.placement.mass[i] * fluid.v0 * fluid.α_T * γ * ref.parcels.consvar_rate[ref.column.placement.parcel[i]] : 0.0,
+                  1:ref.column.placement.count) / ref.slots.mass[e]
         neglected[side] = -ḃ_e * ΔP^2 / 2
         @printf("  %s wall: difference - formula = %.3e, -∂ₜb_e ΔP²/2 = %.3e, relative to max|∂ₜπ_*| %.2e, to the increment %.2e\n",
                 side == 1 ? "bottom" : "top", difference - formula, neglected[side], abs(neglected[side]) / scale,
@@ -143,12 +143,12 @@ function wall_study(; Mz = 16, γ)
     before = R₂(ref)
     for (side, (wall, e)) in enumerate(((1, K), (K + 2, 1)))
         P_wall, ∂P_wall, _ = hermite(ref.pressure, ref.potential.z[wall])
-        ΔP = P_wall - ref.slot_pressure[e]
+        ΔP = P_wall - ref.slots.pressure[e]
         ref.potential_tendency.y[wall] += neglected[side]
         ref.potential_tendency.d[wall] += 2neglected[side] / ΔP * ∂P_wall
     end
     after = R₂(ref)
-    ends = map(z -> z < ref.slot_height[K] || z > ref.slot_height[1], interior(model.domain, z_star))
+    ends = map(z -> z < ref.slots.height[K] || z > ref.slots.height[1], interior(model.domain, z_star))
     change = interior(model.domain, after .- before)
     @printf("  R_Π₂: max change %.2e of max|R_Π₂| (parcels with z_* in the end half rows: %d); ∫R_Π₂ %.4e -> %.4e, ∫|R_Π₂| %.4e W m⁻¹\n",
             maximum(abs, change) / maximum(abs, interior(model.domain, before)), count(ends),

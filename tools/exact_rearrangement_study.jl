@@ -71,8 +71,8 @@ for Mz in (32, 64, 128)
         state = initialize(model, setup(an_grid; θ = θ_lock, q = q_lock); (model isa FC2D ? (; pref = 1e5) : (;))...)
         sorted, exact = both_methods(model, state)
         @printf("  %s M_z = %3d: sort %.2e s, %d violations; exact %.2e s, %d pivots, %d passes, %d violations; underestimate of E_P - E_* by the sort %.2e of it\n",
-                nameof(typeof(model)), Mz, sorted.time, sorted.ref.certificate_violations, exact.time, exact.ref.pivots,
-                exact.ref.pricing_passes, exact.ref.certificate_violations, exact.ref.sorted_energy_excess / exact.ΔE)
+                nameof(typeof(model)), Mz, sorted.time, sorted.ref.column.certificate_violations, exact.time, exact.ref.column.pivots,
+                exact.ref.column.pricing_passes, exact.ref.column.certificate_violations, exact.ref.column.sorted_energy_excess / exact.ΔE)
     end
 end
 
@@ -102,11 +102,11 @@ for key in keys(models)
     end
     pick(f) = map(f, rows)
     @printf("  %s: sort violations up to %d; exact: pivots up to %d, passes up to %d, time %.2e s at most (sort %.2e s), violations up to %d\n",
-            key, maximum(pick(r -> r.sorted.ref.certificate_violations)), maximum(pick(r -> r.exact.ref.pivots)),
-            maximum(pick(r -> r.exact.ref.pricing_passes)), maximum(pick(r -> r.exact.time)), maximum(pick(r -> r.sorted.time)),
-            maximum(pick(r -> r.exact.ref.certificate_violations)))
+            key, maximum(pick(r -> r.sorted.ref.column.certificate_violations)), maximum(pick(r -> r.exact.ref.column.pivots)),
+            maximum(pick(r -> r.exact.ref.column.pricing_passes)), maximum(pick(r -> r.exact.time)), maximum(pick(r -> r.sorted.time)),
+            maximum(pick(r -> r.exact.ref.column.certificate_violations)))
     @printf("    underestimate of E_P - E_* by the sort: up to %.2e of it; max |P_*,exact - P_*,sorted| up to %.2e Pa\n",
-            maximum(pick(r -> r.exact.ref.sorted_energy_excess / r.exact.ΔE)), maximum(pick(r -> r.Δp)))
+            maximum(pick(r -> r.exact.ref.column.sorted_energy_excess / r.exact.ΔE)), maximum(pick(r -> r.Δp)))
     @printf("    roughness in time of E_P - E_*: sort %.3f, exact %.3f; of P_* (worst row): sort %.3f, exact %.3f\n",
             roughness(pick(r -> r.sorted.ΔE)), roughness(pick(r -> r.exact.ΔE)),
             maximum(j -> roughness(pick(r -> r.sorted.ref.p_star[j])), 2:length(rows[1].sorted.ref.p_star)-1),
@@ -148,19 +148,19 @@ function weights_errors(; K, per, γ = 1.3e-4, ε = 0.02, method = ExactRearrang
     ref, ref₊, ref₋ = (method_reference(model, method) for _ in 1:3)
     reference_state!(ref₊, model, state(ε))
     reference_state!(ref₋, model, state(-ε))
-    difference = (ref₊.slot_volume .- ref₋.slot_volume) ./ 2ε
+    difference = (ref₊.slots.volume .- ref₋.slots.volume) ./ 2ε
     reference_state!(ref, model, state(0.0))
     reference_tendency!(ref, model, consvar_rate, q_rate)
     inner = K÷8+1:K-K÷8
     scale = sum(abs, difference[inner]) / length(inner)
     error(mean) = sqrt(sum(abs2, (mean .- difference)[inner]) / length(inner)) / scale
-    return (; weighted = error(ref.slot_volume_tendency), plain = error(ref.slot_means.plain_volume_rate),
-            pivots = ref.pivots, passes = ref.pricing_passes, violations = ref.certificate_violations)
+    return (; weighted = error(ref.slots.volume_tendency), plain = error(ref.slot_means.plain_volume_rate),
+            pivots = ref.column.pivots, passes = ref.column.pricing_passes, violations = ref.column.certificate_violations)
 end
 for (K, per) in ((20, 5), (40, 5), (80, 10))
     r = weights_errors(; K, per)
     @printf("  K = %2d, %4d parcels: error of the weighted mean %.3f, of the plain mean %.3f (exact: %d pivots, %d passes, %d violations)\n",
-            K, 2per * K, r.weighted, r.plain, r.pivots, r.passes, r.violations)
+            K, 2per * K, r.weighted, r.plain, r.column.pivots, r.passes, r.violations)
 end
 
 #####
@@ -189,7 +189,7 @@ for γ in (1e-6, 1e-5, 1e-4, 3e-4, 1e-3)
         end
         ref = method_reference(model, ExactRearrangement())
         reference_state!(ref, model, (; m))
-        (ref.workspace.mass_pivots, ref.sorted_energy_excess)
+        (ref.column.workspace.mass_pivots, ref.column.sorted_energy_excess)
     end
     @printf("  γ = %.0e Pa⁻¹: Float32 %3d pivots moving mass (excess %.2e J m⁻¹), Float64 %3d (excess %.2e J m⁻¹)\n",
             γ, counts[1][1], counts[1][2], counts[2][1], counts[2][2])

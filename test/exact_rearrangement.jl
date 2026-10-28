@@ -7,10 +7,12 @@ exact(model::AN2D; changes...) = AnelasticLorenzReference(model, ExactRearrangem
 exact(model::FC2D; changes...) = CompressibleLorenzReference(model, ExactRearrangement(; changes...))
 
 # the masses of the placement of `ref` in each parcel and each slot
-parcel_masses(ref) = [sum(e -> ref.placement.parcel[e] == n ? ref.placement.mass[e] : zero(eltype(ref.mass)), 1:ref.placement.count)
-                      for n in eachindex(ref.mass)]
-slot_masses(ref) = [sum(e -> ref.placement.slot[e] == k ? ref.placement.mass[e] : zero(eltype(ref.mass)), 1:ref.placement.count)
-                    for k in eachindex(ref.slot_mass)]
+parcel_masses(ref) = let (; parcel, mass, count) = ref.column.placement
+    [sum(e -> parcel[e] == n ? mass[e] : zero(eltype(mass)), 1:count) for n in eachindex(ref.parcels.mass)]
+end
+slot_masses(ref) = let (; slot, mass, count) = ref.column.placement
+    [sum(e -> slot[e] == k ? mass[e] : zero(eltype(mass)), 1:count) for k in eachindex(ref.slots.mass)]
+end
 
 # Without thermobaricity (γ = 0) the sort is the optimum: the exact rearrangement moves no mass (its pivots, if any, are
 # degenerate, from the duals of its tree), and gives the same E_P - E_* and profile
@@ -19,9 +21,9 @@ slot_masses(ref) = [sum(e -> ref.placement.slot[e] == k ? ref.placement.mass[e] 
     sorted, ref = lorenz(model), exact(model)
     energy_sorted = reference_energy!(sorted, model, active(model))
     energy = reference_energy!(ref, model, active(model))
-    @test ref.certificate_violations == 0
-    @test ref.workspace.mass_pivots == 0
-    @test ref.sorted_energy_excess == 0
+    @test ref.column.certificate_violations == 0
+    @test ref.column.workspace.mass_pivots == 0
+    @test ref.column.sorted_energy_excess == 0
     @test energy.ΔE ≈ energy_sorted.ΔE rtol = 1e-14
     @test ref.p_star ≈ sorted.p_star rtol = 1e-14
 end
@@ -40,13 +42,13 @@ end
     sorted, ref = lorenz(model), exact(model)
     energy_sorted = reference_energy!(sorted, model, state)
     energy = reference_energy!(ref, model, state)
-    C = [anelastic_cost(model, ref, n, (u - 1) ÷ 2 + 1) for n in 1:8, u in 1:8]
-    own = sum(n -> anelastic_cost(model, ref, n, ref.row[n]), 1:8)
-    @test energy.ΔE ≈ ref.mass[1] * (own - least_assignment(C)) rtol = 1e-12
-    @test ref.certificate_violations == 0
-    @test sorted.certificate_violations > 0
+    C = [parcel_cost(ref, model, n, (u - 1) ÷ 2 + 1) for n in 1:8, u in 1:8]
+    own = sum(n -> parcel_cost(ref, model, n, ref.parcels.row[n]), 1:8)
+    @test energy.ΔE ≈ ref.parcels.mass[1] * (own - least_assignment(C)) rtol = 1e-12
+    @test ref.column.certificate_violations == 0
+    @test sorted.column.certificate_violations > 0
     # the sort underestimates E_P - E_* by the excess
-    @test energy.ΔE - energy_sorted.ΔE ≈ ref.sorted_energy_excess rtol = 1e-10
+    @test energy.ΔE - energy_sorted.ΔE ≈ ref.column.sorted_energy_excess rtol = 1e-10
 end
 
 # Strong thermobaricity (γ = 3e-4 Pa⁻¹) on the active state: the sort fails its certificate, the exact rearrangement
@@ -59,24 +61,25 @@ end
     sorted, ref = lorenz(model), exact(model)
     energy_sorted = reference_energy!(sorted, model, state)
     energy = reference_energy!(ref, model, state)
-    @test sorted.certificate_violations > 0
-    @test ref.certificate_violations == 0
-    @test ref.pivots > 0
+    @test sorted.column.certificate_violations > 0
+    @test ref.column.certificate_violations == 0
+    @test ref.column.pivots > 0
     @test energy.ΔE > energy_sorted.ΔE
     # (FC2D: the excess is a difference of the energies of the column G = Σ x c - P_top L_x L_z, of round-off about
     # eps P_top L_x L_z, 1e-11 J m⁻¹ here)
-    @test energy.ΔE - energy_sorted.ΔE ≈ ref.sorted_energy_excess rtol = model isa AN2D ? 1e-8 : 1e-6
+    @test energy.ΔE - energy_sorted.ΔE ≈ ref.column.sorted_energy_excess rtol = model isa AN2D ? 1e-8 : 1e-6
     @test energy.ΣmAE >= energy.ΔE
-    @test all(>=(0), ref.placement.mass[1:ref.placement.count])
-    @test parcel_masses(ref) ≈ ref.mass rtol = 1e-14
-    @test slot_masses(ref) ≈ ref.slot_mass rtol = 1e-12
+    @test all(>=(0), ref.column.placement.mass[1:ref.column.placement.count])
+    @test parcel_masses(ref) ≈ ref.parcels.mass rtol = 1e-14
+    @test slot_masses(ref) ≈ ref.slots.mass rtol = 1e-12
     if model isa AN2D
-        on_rows = sum(n -> ref.mass[n] * (anelastic_cost(model, ref, n, ref.row[n]) - ref.u[n] - ref.slot_dual[ref.row[n]]),
-                      eachindex(ref.mass))
+        (; mass, row) = ref.parcels
+        (; parcel_dual, slot_dual) = ref.column
+        on_rows = sum(n -> mass[n] * (parcel_cost(ref, model, n, row[n]) - parcel_dual[n] - slot_dual[row[n]]), eachindex(mass))
         @test on_rows ≈ energy.ΔE rtol = 1e-8
     else
         @test abs(ref.volume_residual) < 1e-14
-        @test 1 < ref.top_pressure_iterations <= ref.method.max_top_iterations
+        @test 1 < ref.column.top_pressure_iterations <= ref.column.method.max_top_iterations
     end
     columns = interior_cells(model.domain, 1)
     shifted = (; m = copy(state.m))
@@ -95,9 +98,9 @@ end
     model = make(Float64; Mx, fluid = reference_fluid(Float64; γ = 3e-4))
     ref = exact(model)
     energy = reference_energy!(ref, model, tracer_state(model, fields...))
-    @test ref.certificate_violations == 0
-    @test parcel_masses(ref) ≈ ref.mass rtol = 1e-14
-    @test slot_masses(ref) ≈ ref.slot_mass rtol = 1e-12
+    @test ref.column.certificate_violations == 0
+    @test parcel_masses(ref) ≈ ref.parcels.mass rtol = 1e-14
+    @test slot_masses(ref) ≈ ref.slots.mass rtol = 1e-12
     @test all(isfinite, energy.AE) && all(>=(0), interior(model.domain, energy.AE))
 end
 
@@ -105,10 +108,10 @@ end
 @testset "exact rearrangement, pass cap, $M" for (M, make) in (("AN2D", an_box), ("FC2D", fc_box))
     model = make(Float64; Mx = 16, Mz = 16, fluid = reference_fluid(Float64; γ = 3e-4))
     ref = exact(model)
-    @test ref.method.passes_per_slot == 10
+    @test ref.column.method.passes_per_slot == 10
     reference_state!(ref, model, active(model))
-    @test ref.certificate_violations == 0
-    @test ref.pricing_passes <= ref.method.passes_per_slot * length(ref.slot_mass)
+    @test ref.column.certificate_violations == 0
+    @test ref.column.pricing_passes <= ref.column.method.passes_per_slot * length(ref.slots.mass)
 end
 
 # The same exact rearrangement with a vectorised, threaded manager as with a serial one, and no allocation after its
@@ -121,7 +124,7 @@ state_allocations(ref, model, state) = @allocated reference_state!(ref, model, s
     ref_serial, ref_threaded = exact(serial), exact(threaded)
     reference_state!(ref_serial, serial, state)
     reference_state!(ref_threaded, threaded, state)
-    @test ref_threaded.placement.mass == ref_serial.placement.mass
+    @test ref_threaded.column.placement.mass == ref_serial.column.placement.mass
     @test ref_threaded.p_star == ref_serial.p_star
     state_allocations(ref_serial, serial, state)
     @test state_allocations(ref_serial, serial, state) == 0
@@ -161,14 +164,14 @@ end
     for (ref, ref₊, ref₋) in ((exact(model), exact(model), exact(model)), (lorenz(model), lorenz(model), lorenz(model)))
         reference_state!(ref₊, model, state(ε))
         reference_state!(ref₋, model, state(-ε))
-        difference = (ref₊.slot_volume .- ref₋.slot_volume) ./ 2ε
+        difference = (ref₊.slots.volume .- ref₋.slots.volume) ./ 2ε
         reference_state!(ref, model, state(0))
         reference_tendency!(ref, model, consvar_rate, q_rate)
         scale = sum(abs, difference[inner]) / length(inner)
         error(mean) = sqrt(sum(abs2, (mean .- difference)[inner]) / length(inner)) / scale
-        if ref.method isa ExactRearrangement
-            @test ref.certificate_violations == 0
-            @test error(ref.slot_volume_tendency) < 0.1
+        if ref.column.method isa ExactRearrangement
+            @test ref.column.certificate_violations == 0
+            @test error(ref.slots.volume_tendency) < 0.1
             @test error(ref.slot_means.plain_volume_rate) > 0.3
         else
             @test error(ref.slot_means.plain_volume_rate) < 1e-6

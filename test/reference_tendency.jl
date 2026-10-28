@@ -50,10 +50,10 @@ test_heights = vcat(range(0.0, Lz, 37), [1e-3, 0.02, Lz - 0.02, Lz - 1e-3])
     ε = 0.01
     r₊ = reference_state!(lorenz(model), model, perturbed_state(model, state, rates, ε))
     r₋ = reference_state!(lorenz(model), model, perturbed_state(model, state, rates, -ε))
-    @test r₊.order == r₋.order == ref.order
+    @test r₊.column.order == r₋.column.order == ref.column.order
     difference(f) = (f(r₊) .- f(r₋)) ./ 2ε
     @test ref.plain_weight_slots == 0
-    @test difference(r -> r.slot_volume) ≈ ref.slot_volume_tendency rtol = 1e-6
+    @test difference(r -> r.slots.volume) ≈ ref.slots.volume_tendency rtol = 1e-6
     scale = maximum(abs, ref.p_star_tendency)
     @test scale > 0
     @test maximum(abs, difference(r -> r.p_star) .- ref.p_star_tendency) <= 1e-5 * scale
@@ -112,7 +112,7 @@ end
     state = make_state(model, rest_fields)
     rates, _, _ = diabatic_rates(model, state)
     ref = reference_tendency!(reference_state!(lorenz(model), model, state), model, rates...)
-    @test abs(sum(ref.slot_mass .* ref.slot_volume_tendency)) <= 16 * eps() * sum(abs, ref.slot_mass .* ref.slot_volume_tendency)
+    @test abs(sum(ref.slots.mass .* ref.slots.volume_tendency)) <= 16 * eps() * sum(abs, ref.slots.mass .* ref.slots.volume_tendency)
     @test ref.edge_height_tendency[1] == 0
     @test abs(ref.edge_height_tendency[end]) <= 16 * eps() * maximum(abs, ref.edge_height_tendency)
 end
@@ -161,13 +161,14 @@ end
     state = make_state(model, (; consvar = θ, q, u = z -> 0.0, ψ = (X, Z) -> 0.0))
     rates, _, _ = diabatic_rates(model, state)
     ref = reference_tendency!(reference_state!(lorenz(model), model, state), model, rates...)
-    (; placement, slot_means) = ref
-    K = length(ref.slot_mass)
+    (; slot_means) = ref
+    (; placement) = ref.column
+    K = length(ref.slots.mass)
     lowest, highest = fill(Inf, K), fill(-Inf, K)
     for e in 1:placement.count
         n, k = placement.parcel[e], placement.slot[e]
-        _, _, ∂v_∂ϑ, ∂v_∂q = model.fluid(:p, :consvar, :q).volume_functions(ref.slot_pressure[k], ref.consvar[n], ref.q[n])
-        v̇ = ∂v_∂ϑ * ref.consvar_rate[n] + ∂v_∂q * ref.q_rate[n]
+        _, _, ∂v_∂ϑ, ∂v_∂q = model.fluid(:p, :consvar, :q).volume_functions(ref.slots.pressure[k], ref.parcels.consvar[n], ref.parcels.q[n])
+        v̇ = ∂v_∂ϑ * ref.parcels.consvar_rate[n] + ∂v_∂q * ref.parcels.q_rate[n]
         lowest[k], highest[k] = min(lowest[k], v̇), max(highest[k], v̇)
     end
     margin = 1e-12 * maximum(abs, vcat(lowest, highest))
@@ -189,10 +190,9 @@ end
     (; slot_means) = ref
     # make slot 3 unstable for all its parcels: ∂_z v_* below -g ρ ∂v/∂p
     slot_means.volume_gradient[3] = -1
-    count = slot_means!(slot_means, ref.placement, ref.slot_mass, ref.slot_pressure, model.fluid, model.space.g, ref.consvar,
-                        ref.q, ref.consvar_rate, ref.q_rate)
+    count = slot_means!(ref, model.fluid, model.space.g)
     @test count == 1
-    @test slot_means.unstable == (1:length(ref.slot_mass) .== 3)
+    @test slot_means.unstable == (1:length(ref.slots.mass) .== 3)
     @test slot_means.volume_rate[3] == slot_means.plain_volume_rate[3]
 end
 

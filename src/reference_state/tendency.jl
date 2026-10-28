@@ -14,18 +14,43 @@
 # nodes of π_* in AN2D, of the slot edges in FC2D, from which follows ∂ₜP_* at fixed height.
 
 """
-    count = slot_means!(means::SlotMeans, placement, slot_mass, slot_pressure, fluid, g, consvar, q, consvar_rate, q_rate)
+    ref = parcel_rates!(ref, model, consvar_rate, q_rate)
+
+The diabatic rates of the parcels of `ref`, ϑ̇_n = (ρ Dϑ/Dt)/ρ [consvar s⁻¹] and q̇_n = (ρ Dq/Dt)/ρ [s⁻¹], from the rates
+per unit volume on the cells, ρ Dϑ/Dt = σ_ϑ - ∇·J_ϑ (`consvar_rate`) and ρ Dq/Dt = -∇·J_q (`q_rate`), with
+ρ = m_n/(Δx Δz) (ρ_R for AN2D), by the model's manager.
+"""
+function parcel_rates!(ref::AbstractLorenzReference, model, consvar_rate, q_rate)
+    (; mgr, domain, dx, dz) = model
+    (; mass) = ref.parcels
+    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
+        @inbounds @vec for i in irange, j in jrange
+            n = parcel_index(domain, i, j)
+            volume = dx * dz / mass[n]                                  # 1/ρ
+            ref.parcels.consvar_rate[n] = consvar_rate[i, j] * volume
+            ref.parcels.q_rate[n] = q_rate[i, j] * volume
+        end
+    end
+    return ref
+end
+
+"""
+    count = slot_means!(ref, fluid, g)
 
 The means over the parcels of each slot k, weighted by the inverse of their stratification at the slot,
     ⟨a⟩_k = Σ_n w_nk a_nk / Σ_n w_nk,   w_nk = x_nk/N²_nk,   N²_nk = g ρ_k (∂_z v_*(z_k) + g ρ_k ∂v/∂p_nk),
 of the rate of change of the specific volume at the slot pressure P_k, v̇_nk = ∂v/∂ϑ ϑ̇_n + ∂v/∂q q̇_n [m³ kg⁻¹ s⁻¹], and of
 the compressibility ∂v/∂p_nk [m³ kg⁻¹ Pa⁻¹], with v and its derivatives at (P_k, ϑ_n, q_n), the parcel rates ϑ̇_n, q̇_n
-(`consvar_rate`, `q_rate`), and ρ_k and ∂_z v_*(z_k) from `means`. A parcel that is weakly stratified at its level moves
-further for a given change of its volume, and displaces more of the others. Where N²_nk ≤ 0 for a parcel of the slot,
-the weights are undefined and the slot takes the plain means, w_nk = x_nk. Returns the number of such slots.
+(`parcel_rates!`), the placement of `ref`, and ρ_k and ∂_z v_*(z_k) set in `ref.slot_means`, which holds the means. A
+parcel that is weakly stratified at its level moves further for a given change of its volume, and displaces more of the
+others. Where N²_nk ≤ 0 for a parcel of the slot, the weights are undefined and the slot takes the plain means,
+w_nk = x_nk. Returns the number of such slots.
 """
-function slot_means!(means::SlotMeans{F}, placement, slot_mass, slot_pressure, fluid, g, consvar, q, consvar_rate, q_rate) where F
-    (; density, volume_gradient, weight, volume_rate, compressibility, plain_volume_rate, plain_compressibility, unstable) = means
+function slot_means!(ref::AbstractLorenzReference, fluid, g)
+    (; density, volume_gradient, weight, volume_rate, compressibility, plain_volume_rate, plain_compressibility, unstable) = ref.slot_means
+    (; consvar, q, consvar_rate, q_rate) = ref.parcels
+    (; placement) = ref.column
+    slot_mass, slot_pressure = ref.slots.mass, ref.slots.pressure
     foreach(a -> fill!(a, 0), (weight, volume_rate, compressibility, plain_volume_rate, plain_compressibility))
     fill!(unstable, false)
     for e in 1:placement.count
@@ -60,7 +85,7 @@ The tendency of the Lorenz reference state `ref` of AN2D (computed by `reference
 ρ_R Dϑ/Dt = σ_ϑ - ∇·J_ϑ (`consvar_rate`, [kg m⁻³ s⁻¹ × consvar]) and ρ_R Dq/Dt = -∇·J_q (`q_rate`, [kg m⁻³ s⁻¹]) on the
 cells. With the rates of the parcels ϑ̇_n, q̇_n, it computes
 - ∂ₜv_*,k = ⟨v̇⟩_k [m³ kg⁻¹ s⁻¹], the mean over the parcels of slot k weighted by 1/N²_nk (`slot_means!`), with v̇ and
-  ∂v/∂p at P_R(z_k), ρ_k = ρ_R(z_k), and N²_nk = g ρ_R (∂_z v_* + g ρ_R ∂v/∂p) (`slot_volume_tendency`);
+  ∂v/∂p at P_R(z_k), ρ_k = ρ_R(z_k), and N²_nk = g ρ_R (∂_z v_* + g ρ_R ∂v/∂p) (`slots.volume_tendency`);
 - ∂ₜπ_*(z) [J kg⁻¹ s⁻¹] (`potential_tendency`) at the nodes of π_*, by the rule of π_*: the slopes g ρ_R ∂ₜv_*,k and the
   values from the trapezoidal rule in P_R, ∂ₜπ_*(z_c) - ∂ₜπ_*(z_c-1) = -(∂ₜv_*,c-1 + ∂ₜv_*,c)/2 (P_R(z_c) - P_R(z_c-1)),
   with a zero mean over the mass of the rows; between the end rows and the walls, from ∂ₜv_* = ∂ₜv_e, the tendency of the
@@ -68,58 +93,52 @@ cells. With the rates of the parcels ϑ̇_n, q̇_n, it computes
 - ∂ₜP_* = ρ_R ∂ₜπ_* [Pa s⁻¹] at the cell centres of the z axis (`p_star_tendency`);
 - the number of slots with plain weights (`plain_weight_slots`), where N² ≤ 0 for one of their parcels.
 """
-function reference_tendency!(ref::AnelasticLorenzReference{F}, model::AN2D, consvar_rate, q_rate) where F
-    (; mgr, domain, fluid, space) = model
+function reference_tendency!(ref::AnelasticLorenzReference, model::AN2D, consvar_rate, q_rate)
+    (; domain, fluid, space) = model
     (; ρ_R) = model.reference
     g = space.g
-    K = length(ref.slot_mass)
+    (; slots) = ref
+    K = length(slots.mass)
     Hz = halo_size(domain)[2]
 
     # 1. The rates of the parcels, ϑ̇_n = (ρ_R Dϑ/Dt)/ρ_R and q̇_n = (ρ_R Dq/Dt)/ρ_R
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            n = parcel_index(domain, i, j)
-            ref.consvar_rate[n] = consvar_rate[i, j] / ρ_R[j]
-            ref.q_rate[n] = q_rate[i, j] / ρ_R[j]
-        end
-    end
+    parcel_rates!(ref, model, consvar_rate, q_rate)
 
     # 2. The density and the gradient of v_* at each slot: from v_* = (∂_z π_*/g + 1)/ρ_R = -(∂_z π_* + g)/∂_z P_R,
     # ∂_z v_* = -(∂²_z π_* ∂_z P_R - (∂_z π_* + g) ∂²_z P_R)/(∂_z P_R)²
     (; slot_means) = ref
     for k in 1:K
-        _, ∂P, ∂²P = hermite(ref.pressure, ref.slot_height[k])
-        _, ∂π, ∂²π = hermite(ref.potential, ref.slot_height[k])
+        _, ∂P, ∂²P = hermite(ref.pressure, slots.height[k])
+        _, ∂π, ∂²π = hermite(ref.potential, slots.height[k])
         slot_means.density[k] = ρ_R[Hz+K+1-k]
         slot_means.volume_gradient[k] = -(∂²π * ∂P - (∂π + g) * ∂²P) / ∂P^2
     end
 
     # 3. ∂ₜv_*,k = ⟨v̇⟩_k, with v̇ at P_R(z_k)
-    ref.plain_weight_slots = slot_means!(slot_means, ref.placement, ref.slot_mass, ref.slot_pressure, fluid, g, ref.consvar,
-                                         ref.q, ref.consvar_rate, ref.q_rate)
-    ref.slot_volume_tendency .= slot_means.volume_rate
+    ref.plain_weight_slots = slot_means!(ref, fluid, g)
+    slots.volume_tendency .= slot_means.volume_rate
 
     # 4. The nodes of ∂ₜπ_*, by the rule of the nodes of π_*: node K + 2 - k is slot k
     (; z, y, d) = ref.potential_tendency
     for k in 1:K
-        d[K+2-k] = g * ρ_R[Hz+K+1-k] * ref.slot_volume_tendency[k]
+        d[K+2-k] = g * ρ_R[Hz+K+1-k] * slots.volume_tendency[k]
     end
     y[2] = 0
     for c in 3:K+1
-        v̇₋, v̇₊ = ref.slot_volume_tendency[K+3-c], ref.slot_volume_tendency[K+2-c]    # ∂ₜv_* of the rows of nodes c - 1 and c
-        y[c] = y[c-1] - (v̇₋ + v̇₊) / 2 * (ref.node_pressure[c] - ref.node_pressure[c-1])
+        v̇₋, v̇₊ = slots.volume_tendency[K+3-c], slots.volume_tendency[K+2-c]    # ∂ₜv_* of the rows of nodes c - 1 and c
+        y[c] = y[c-1] - (v̇₋ + v̇₊) / 2 * (ref.level_pressure[c] - ref.level_pressure[c-1])
     end
     # the constant of ∂ₜπ_*, which changes no budget term, keeps the mean of π_* over the mass of the rows zero
-    mean_π̇ = sum(k -> ref.slot_mass[k] * y[K+2-k], 1:K) / sum(ref.slot_mass)
+    mean_π̇ = sum(k -> slots.mass[k] * y[K+2-k], 1:K) / sum(slots.mass)
     for c in 2:K+1
         y[c] -= mean_π̇
     end
     # between the end rows and the walls, π_*(z) = π_*(z_e) - v_e ΔP - b_e ΔP²/2 - g (z - z_e), with ΔP = P_R(z) - P_R(z_e):
     # with b_e held fixed, ∂ₜπ_*(z) = ∂ₜπ_*(z_e) - ∂ₜv_e ΔP and ∂_z ∂ₜπ_* = -∂ₜv_e ∂_z P_R
     for (wall, row, e) in ((1, 2, K), (K + 2, K + 1, 1))
-        v̇_e = ref.slot_volume_tendency[e]
+        v̇_e = slots.volume_tendency[e]
         P_wall, ∂P_wall, _ = hermite(ref.pressure, z[wall])
-        y[wall] = y[row] - v̇_e * (P_wall - ref.slot_pressure[e])
+        y[wall] = y[row] - v̇_e * (P_wall - slots.pressure[e])
         d[wall] = -v̇_e * ∂P_wall
     end
 
@@ -151,7 +170,7 @@ at fixed slot masses. With the rates of the parcels ϑ̇_n, q̇_n and the means 
 1/N²_nk (`slot_means!`), with v̇ and ∂v/∂p at the slot pressure P_k, ρ_k = 1/v_*,k and N²_nk = g ρ_k (∂_z v_* + g ρ_k ∂v/∂p),
 it computes
 - ∂ₜP_top = -Σ_k M_k ⟨v̇⟩_k / Σ_k M_k ⟨∂v/∂p⟩_k [Pa s⁻¹], so that the column still fills the box (`p_top_tendency`);
-- ∂ₜv_*,k = ⟨v̇⟩_k + ⟨∂v/∂p⟩_k ∂ₜP_top [m³ kg⁻¹ s⁻¹] at fixed mass coordinate (`slot_volume_tendency`), with
+- ∂ₜv_*,k = ⟨v̇⟩_k + ⟨∂v/∂p⟩_k ∂ₜP_top [m³ kg⁻¹ s⁻¹] at fixed mass coordinate (`slots.volume_tendency`), with
   Σ_k M_k ∂ₜv_*,k = 0;
 - the motion of the slot edges, ∂ₜz_e = Σ_{k below e} M_k ∂ₜv_*,k/L_x [m s⁻¹] (`edge_height_tendency`), zero at both
   walls, whose pressures change at ∂ₜP_top;
@@ -160,37 +179,29 @@ it computes
 - ∂ₜP_* [Pa s⁻¹] at fixed height at the cell centres of the z axis (`p_star_tendency`);
 - the number of slots with plain weights (`plain_weight_slots`), where N² ≤ 0 for one of their parcels.
 """
-function reference_tendency!(ref::CompressibleLorenzReference{F}, model::FC2D, consvar_rate, q_rate) where F
-    (; mgr, domain, fluid, space, dx, dz) = model
+function reference_tendency!(ref::CompressibleLorenzReference, model::FC2D, consvar_rate, q_rate)
+    (; domain, fluid, space, dz) = model
     (; g, Lx) = space
-    K = length(ref.slot_mass)
+    (; slots) = ref
+    K = length(slots.mass)
 
     # 1. The rates of the parcels, ϑ̇_n = (ρ Dϑ/Dt)/ρ and q̇_n = (ρ Dq/Dt)/ρ, with ρ = m_n/(Δx Δz)
-    (; mass) = ref
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for i in irange, j in jrange
-            n = parcel_index(domain, i, j)
-            volume = dx * dz / mass[n]                                  # 1/ρ
-            ref.consvar_rate[n] = consvar_rate[i, j] * volume
-            ref.q_rate[n] = q_rate[i, j] * volume
-        end
-    end
+    parcel_rates!(ref, model, consvar_rate, q_rate)
 
     # 2. The density and the gradient of v_* at the centre of each slot: from v_* = -g/∂_z P_*, ∂_z v_* = g ∂²_z P_*/(∂_z P_*)²
     (; slot_means) = ref
     for k in 1:K
-        _, ∂P, ∂²P = hermite(ref.pressure, ref.slot_height[k])
-        slot_means.density[k] = 1 / ref.slot_volume[k]
+        _, ∂P, ∂²P = hermite(ref.pressure, slots.height[k])
+        slot_means.density[k] = 1 / slots.volume[k]
         slot_means.volume_gradient[k] = g * ∂²P / ∂P^2
     end
 
     # 3. ⟨v̇⟩_k and ⟨∂v/∂p⟩_k at P_k, ∂ₜP_top and ∂ₜv_*,k
-    ref.plain_weight_slots = slot_means!(slot_means, ref.placement, ref.slot_mass, ref.slot_pressure, fluid, g, ref.consvar,
-                                         ref.q, ref.consvar_rate, ref.q_rate)
-    ref.p_top_tendency = -sum(k -> ref.slot_mass[k] * slot_means.volume_rate[k], 1:K) /
-                          sum(k -> ref.slot_mass[k] * slot_means.compressibility[k], 1:K)
+    ref.plain_weight_slots = slot_means!(ref, fluid, g)
+    ref.p_top_tendency = -sum(k -> slots.mass[k] * slot_means.volume_rate[k], 1:K) /
+                          sum(k -> slots.mass[k] * slot_means.compressibility[k], 1:K)
     for k in 1:K
-        ref.slot_volume_tendency[k] = slot_means.volume_rate[k] + slot_means.compressibility[k] * ref.p_top_tendency
+        slots.volume_tendency[k] = slot_means.volume_rate[k] + slot_means.compressibility[k] * ref.p_top_tendency
     end
 
     # 4. The nodes of P_* as dual numbers, value + ε × tendency: edge e, below slot K + 1 - e, moves at ∂ₜz_e, the sum of the
@@ -200,8 +211,8 @@ function reference_tendency!(ref::CompressibleLorenzReference{F}, model::FC2D, c
     edge_height_tendency[1] = 0
     for e in 1:K
         k = K + 1 - e                                               # the slot above edge e
-        edge_height_tendency[e+1] = edge_height_tendency[e] + ref.slot_mass[k] * ref.slot_volume_tendency[k] / Lx
-        dual_secant[e] = Dual{ReferenceTendencyTag}(ref.secant[e], g * ref.slot_volume_tendency[k] / ref.slot_volume[k]^2)
+        edge_height_tendency[e+1] = edge_height_tendency[e] + slots.mass[k] * slots.volume_tendency[k] / Lx
+        dual_secant[e] = Dual{ReferenceTendencyTag}(ref.secant[e], g * slots.volume_tendency[k] / slots.volume[k]^2)
     end
     for e in 1:K+1
         dual_pressure.z[e] = Dual{ReferenceTendencyTag}(ref.pressure.z[e], edge_height_tendency[e])
