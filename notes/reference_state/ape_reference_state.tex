@@ -1,0 +1,725 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage[hidelinks]{hyperref}
+\newcommand{\doi}[1]{\href{https://doi.org/#1}{doi:#1}}
+\setlength{\emergencystretch}{4em}
+
+% --- notation shared with traceable_energetics.tex ----------------------------------
+\newcommand{\vt}{\vartheta}
+\newcommand{\code}[1]{\texttt{#1}}
+% this note
+\newcommand{\Mtot}{M_{\rm tot}}
+\newcommand{\Ptop}{P_{\rm top}}
+\newcommand{\zs}{z_{*}}
+
+\title{The Lorenz reference state of available energy\\ in AN2D and FC2D: physics and algorithms}
+\author{Notes on the \code{TraceableEnergetics} code}
+\date{}
+
+\begin{document}
+\maketitle
+\tableofcontents
+
+\bigskip
+\noindent\textbf{Scope.}
+This note describes how \code{TraceableEnergetics} computes the Lorenz reference state of a snapshot of AN2D or FC2D, the
+available energy of each parcel, the tendency of the reference state and the budgets of the available energy
+(\code{src/reference\_state/}, with the numerical routines in \code{src/numerics/}). The available energy and its budget are
+derived in the energy-budget notes (\code{energy\_budget/energy.tex}, ``the energy notes''); notation follows
+\code{models/traceable\_energetics.tex} (``the main note''). Appendix~\ref{app:future} lists what was specified or considered
+but is not implemented.
+
+\paragraph{Notation.} $\vt$ is the conserved variable (\code{consvar}), $q$ the solute fraction, $h(P,\vt,q)$ the specific
+enthalpy with $\partial h/\partial P=v$ the specific volume, and $\Phi=g(z-z_0)$. The box is $[0,L_x]\times[0,L_z]$ with
+$M_x\times M_z$ interior cells of size $\Delta x\times\Delta z$; masses are per unit length along $y$. AN2D has the reference
+profiles $\rho_R(z)$, $P_R(z)$ with $\partial_zP_R=-g\rho_R$. Reference-state quantities carry a subscript $*$: the reference
+pressure $P_*(z,t)$, the reference specific volume $v_*(z,t)$ (density $\rho_*=1/v_*$), the reference height $\zs$ of a
+parcel, and in AN2D the reduced reference pressure $\pi_*=(P_*-P_R)/\rho_R$.
+
+% =====================================================================================
+\section{Available energy and the reference state}\label{sec:theory}
+The static energy of a parcel at height $z$ and pressure $P$ is
+\begin{equation}
+  \Sigma(\vt,q,z,P)=\begin{cases}
+    h(P,\vt,q)+\Phi(z) & \text{FC2D},\\[2pt]
+    h(P_R(z),\vt,q)+\dfrac{P-P_R(z)}{\rho_R(z)}+\Phi(z) & \text{AN2D},
+  \end{cases}
+  \qquad \Sigma_P=\begin{cases}v & \text{FC2D},\\ 1/\rho_R & \text{AN2D}.\end{cases}
+  \label{eq:Sigma}
+\end{equation}
+Given a reference pressure $P_*(z,t)$, the available energy (AE) of a parcel is
+\begin{equation}
+  \Pi=\Sigma(\vt,q,z,P)-\Sigma\left(\vt,q,\zs,P_*(\zs)\right)-\left(P-P_*(z)\right)\Sigma_P(\vt,q,z,P)=\Pi_1+\Pi_2,
+  \label{eq:A}
+\end{equation}
+the sum of the available compressible energy (ACE), the compression from $P_*(z)$ to $P$ at fixed height,
+\begin{equation}
+  \Pi_1=\Sigma(\vt,q,z,P)-\Sigma(\vt,q,z,P_*(z))-\left(P-P_*(z)\right)\Sigma_P(\vt,q,z,P)\ \ge0,
+\end{equation}
+zero in AN2D, where $\Sigma$ is linear in $P$, and nonnegative in FC2D, where $h$ is concave in $P$ ($\partial_Pv<0$); and the
+available potential energy (APE), the displacement from $\zs$ to $z$ through the reference state,
+\begin{equation}
+  \Pi_2=S(z)-S(\zs),\qquad S(z)=\Sigma\left(\vt,q,z,P_*(z)\right),
+  \label{eq:Pi2}
+\end{equation}
+with $S$ the static energy of the parcel along the reference profile. The reference profile defines $v_*$ by
+\begin{equation}
+  v_*\,\partial_zP_*=-g\quad\text{(FC2D)},\qquad \partial_z\pi_*=g\left(\rho_Rv_*-1\right)\quad\text{(AN2D)}.
+  \label{eq:vstar}
+\end{equation}
+The energy notes require of the reference state:
+\begin{enumerate}
+  \item \textbf{Level of neutral buoyancy (LNB).} $S'(\zs)=0$, i.e.\ $v(P_*(\zs),\vt,q)=v_*(\zs)$ (FC2D) or
+        $v(P_R(\zs),\vt,q)=v_*(\zs)$ (AN2D), with $N_*^2=S''(\zs)\ge0$;
+  \item \textbf{Volume constraint.} The reference state fills the box level by level: for every $f$,
+        \begin{equation*}
+          \int f(\zs)\,\Sigma_P(\vt,q,\zs,P_*(\zs))\,\mathrm{d}m=\int f(z)\,\mathrm{d}V .
+        \end{equation*}
+\end{enumerate}
+These are the stationarity conditions of $\int\Pi\,\mathrm{d}m$ with respect to $\zs$ and $P_*$.
+
+\paragraph{Potential energies.} The potential energy of a state is that of the energetics of the model, the integral of
+$\rho\,(h-P/\rho+\Phi)$, the internal plus gravitational energy (per unit length along $y$):
+\begin{equation}
+  E_P=\begin{cases}
+    \displaystyle\int\left[\rho\left(h(P,\vt,q)+\Phi\right)-P\right]\mathrm{d}A & \text{FC2D},\\[8pt]
+    \displaystyle\int\left[\rho_R\left(h(P_R,\vt,q)+\Phi\right)-P_R\right]\mathrm{d}A & \text{AN2D},
+  \end{cases}
+  \label{eq:EP}
+\end{equation}
+where AN2D evaluates the thermodynamics at the reference pressure $P_R(z)$, as its energy does. The \textbf{reference
+energy} $E_*$ is the same integral for the reference state: every fluid element of the actual state, of mass
+$\mathrm{d}m=\rho\,\mathrm{d}A$ and conserved $(\vt,q)$, moved adiabatically to its reference height $\zs(\vt,q)$, at rest
+under the reference pressure. Written over the mass, with the reference state filling the box (the volume constraint),
+\begin{equation}
+  E_*=\begin{cases}
+    \displaystyle\int\left[h\left(P_*(\zs),\vt,q\right)+\Phi(\zs)\right]\mathrm{d}m-L_x\int_0^{L_z}P_*(z)\,\mathrm{d}z & \text{FC2D},\\[10pt]
+    \displaystyle\int\left[h\left(P_R(\zs),\vt,q\right)+\Phi(\zs)\right]\mathrm{d}m-L_x\int_0^{L_z}P_R(z)\,\mathrm{d}z & \text{AN2D},
+  \end{cases}
+  \label{eq:Estar}
+\end{equation}
+the integrals in $\mathrm{d}m$ over the fluid (each element at its own $\zs$), the pressure integrals over the box. In FC2D,
+$P_*$ is hydrostatic with the density $\rho_*$ of the rearranged fluid, $\partial_zP_*=-g\rho_*$; integrating by parts,
+$L_x\int_0^{L_z}P_*\,\mathrm{d}z=\Ptop L_xL_z+\int\Phi(\zs)\,\mathrm{d}m+gz_0\Mtot$, so
+\begin{equation}
+  E_*=\int h\left(P_*(\zs),\vt,q\right)\mathrm{d}m-\Ptop L_xL_z-gz_0\Mtot\qquad\text{(FC2D)},
+\end{equation}
+with $\Ptop=P_*(L_z)$. In AN2D the mass per unit height of the reference state is that of the model, $L_x\rho_R(z)$, and the
+pressure term is the same in $E_P$ and $E_*$.
+
+The \textbf{Lorenz reference state} is the rearrangement (the map of the fluid elements to their heights $\zs$, with the
+volume constraint, and in FC2D with $P_*$ hydrostatic with it) that minimises $E_*$. Then
+$E_P-E_*\ge0$ (exactly in AN2D, up to an $O(\Delta z^4)$ discretisation difference in FC2D, \S\ref{sec:slots}) is the
+potential energy that any adiabatic rearrangement can release, the available potential energy of the whole box in the
+sense of Lorenz. It is a number for the box, not a sum of parcel energies. When the volume constraint holds,
+\begin{equation}
+  \int\Pi\,\mathrm{d}m=E_P-E_* ,
+  \label{eq:PiE}
+\end{equation}
+since, from \eqref{eq:A}, the terms of $\Pi$ at the actual state give $E_P$ plus $\int P\,\mathrm{d}V$ (FC2D; $\int P_R\,\mathrm{d}A$
+plus $\int(P-P_R)\,\mathrm{d}A$ in AN2D), those at the reference state $E_*$ plus $L_x\int P_*\,\mathrm{d}z$, and the
+pressure term $-\int(P-P_*(z))\,\Sigma_P\,\mathrm{d}m=-\int(P-P_*(z))\,\mathrm{d}V$ cancels the rest. For any other profile
+with the global minimisers $\zs$, $\int\Pi\,\mathrm{d}m\ge E_P-E_*$ of the Lorenz state (\S\ref{sec:dual}). The diagnostic
+\code{background\_potential\_energy} is $E_P-\int\Pi\,\mathrm{d}m$, which is $E_*$ when \eqref{eq:PiE} holds. The discrete
+$E_P$ and $E_*$ are given in \S\ref{sec:slots}.
+
+The code takes
+$\zs$ to be the \emph{global} minimiser of $S$ on $[0,L_z]$ (\S\ref{sec:lnb}): it maximises the parcel's $\Pi$, depends on
+$(\vt,q,t)$ only, gives $\Pi_2\ge0$, and makes the terms in $\partial_t\zs$ drop out of the budgets.
+
+Discretely (\S\ref{sec:problem}) the Lorenz reference state is a placement of the parcels into the levels of a column, whose constraints are the
+discrete volume constraint and whose dual potentials are the discrete $P_*$.
+
+% =====================================================================================
+\section{The rearrangement problem}\label{sec:problem}
+\subsection{Parcels}
+Each interior cell is a parcel $n=1,\dots,N$, $N=M_xM_z$, numbered row by row from the bottom. It keeps its mass and
+conserved properties,
+\begin{equation}
+  m_n=\rho\,\Delta x\Delta z,\qquad \vt_n=\frac{(\rho\vt)_{ij}}{\rho},\qquad q_n=\frac{(\rho q)_{ij}}{\rho},
+\end{equation}
+with $\rho=\rho_R(z_j)$ in AN2D and the cell density in FC2D. It also has its own pressure $p_n$ ($P_R(z_n)$ in AN2D; in FC2D
+the pressure $p(v_n,\vt_n,q_n)$ of the equation of state at $v_n=1/\rho$) and height $z_n$, the centre of its row.
+
+\subsection{Slots and costs}\label{sec:slots}
+The reference column has $K=M_z$ \emph{slots}, the model rows, numbered from the top, of masses $M_k$ ($\sum_kM_k=\Mtot$). A
+placement $x_{nk}\ge0$ is the mass of parcel $n$ in slot $k$; the Lorenz state is the least-cost placement,
+\begin{equation}
+  \min_{x\ge0}\ \sum_{n,k}x_{nk}\,c_{nk}\qquad\text{subject to}\qquad \sum_kx_{nk}=m_n\ \ \forall n,\qquad \sum_nx_{nk}=M_k\ \ \forall k ,
+  \label{eq:tp}
+\end{equation}
+the transportation problem (Hitchcock 1941). It generalises the linear assignment problem of Hieronymus \& Nycander (2015)
+(equal masses, $K=N$) and the minimum-cost flow problem of Su \& Ingersoll (2016) (equal masses, $K\ll N$ levels): the
+parcels have unequal masses here, and may be split between slots. The costs are energies per unit mass measured from the
+parcel's own state, so that a constant per parcel, which changes neither the placement nor the slot duals, cancels:
+\begin{itemize}
+  \item \textbf{AN2D.} The slots are the rows at the fixed pressures $P_k=P_R(z_k)$, of masses $M_k=M_x\rho_R(z_k)\Delta x\Delta z$.
+        These are the states anelastic flow can reach ($\nabla\cdot(\rho_R\mathbf u)=0$ preserves $\rho_R\,\mathrm{d}A$). The
+        cost is
+        \begin{equation}
+          c_{nk}=h(P_R(z_k),\vt_n,q_n)-h(P_R(z_n),\vt_n,q_n)+g\,(z_k-z_n),
+          \label{eq:an-cost}
+        \end{equation}
+        zero in the parcel's own row. The discrete energies \eqref{eq:EP} of the state and of a placement are
+        \begin{equation}
+          E_P=\sum_n\left[m_n\left(h(P_R(z_n),\vt_n,q_n)+\Phi(z_n)\right)-P_R(z_n)\,\Delta x\Delta z\right],
+        \end{equation}
+        \begin{equation}
+          E_*=\sum_{nk}x_{nk}\left(h(P_R(z_k),\vt_n,q_n)+\Phi(z_k)\right)-\sum_kM_x\,P_R(z_k)\,\Delta x\Delta z ,
+        \end{equation}
+        $E_P$ being the integrated potential energy of the energetics. The rows keep their masses, so the pressure terms
+        are equal, and $E_P-E_*=-\sum_{nk}x_{nk}c_{nk}$ exactly. The actual state is the feasible placement ``each
+        parcel in its own row'', so $E_*\le E_P$ to round-off for the optimal placement, with equality for a state at rest
+        and stably stratified.
+  \item \textbf{FC2D.} The slots are the rows with the masses $M_k$ of the rows of the state, so that a state at rest is its
+        own reference state. The column is hydrostatic in mass, and slot $k$ is at the pressure
+        \begin{equation}
+          P_k=\Ptop+\frac{g}{L_x}\Big(\sum_{l<k}M_l+\tfrac12M_k\Big),\qquad c_{nk}=h(P_k,\vt_n,q_n)-h(p_n,\vt_n,q_n),
+          \label{eq:fc-cost}
+        \end{equation}
+        with the top pressure $\Ptop$ set by the condition that the column fills the box (\S\ref{sec:fc}). Slot $k$ has the
+        volume $V_k=\sum_nx_{nk}v(P_k,\vt_n,q_n)$ and the thickness $V_k/L_x$, stacked from the bottom. Integrating
+        $\rho gz$ by parts in the column, $\sum_kM_kgz_k-\sum_kP_kV_k=-\Ptop L_xL_z$. The discrete energies \eqref{eq:EP}
+        of the state and of the column are then
+        \begin{equation}
+          E_P=\sum_n\left[m_n\left(h(p_n,\vt_n,q_n)+\Phi(z_n)\right)-p_n\,\Delta x\Delta z\right],
+        \end{equation}
+        \begin{equation}
+          \begin{aligned}
+            E_*&=\sum_{nk}x_{nk}\left(h(P_k,\vt_n,q_n)+\Phi(z_k)\right)-\sum_kP_kV_k\\
+               &=\sum_{nk}x_{nk}\,h(P_k,\vt_n,q_n)-gz_0\Mtot-\Ptop L_xL_z ,
+          \end{aligned}
+        \end{equation}
+        the geopotential of the column independent of the placement at fixed $\Ptop$, and
+        \begin{equation}
+          E_P-E_*=\sum_n\left[m_ngz_n-(p_n-\Ptop)\Delta x\Delta z\right]-\sum_{nk}x_{nk}c_{nk}.
+        \end{equation}
+        For each placement, $\Ptop$ is the pressure at which its column fills the box, and the Lorenz state is the
+        placement of least $E_*$ (the saddle point of \S\ref{sec:fc}).
+        For a state at rest, $E_P-E_*$ is the difference between the model's discrete hydrostatic balance and that of the
+        column, $O(\Delta z^4)$ (about $10^{-18}\Mtot gL_z$ at $M_z=8$).
+\end{itemize}
+The enthalpy differences are integrals of $v$ by three-point Gauss--Legendre quadrature,
+$h(P+\Delta P)-h(P)=\int v\,\mathrm{d}P$ (exact for the equation of state of the main note, linear in $P$). This keeps the
+relative precision of the float type: the difference of two values of $h\approx10^6$\,J\,kg$^{-1}$ would carry
+$2\times10^{-10}$\,J\,kg$^{-1}$ of round-off in Float64, far above the tolerance of the certificate below.
+
+\subsection{Duals and the certificate}\label{sec:dual}
+The dual of \eqref{eq:tp} has a potential $u_n$ per parcel and $\psi_k$ per slot. A placement is optimal if and only if
+there are duals with
+\begin{equation}
+  c_{nk}-u_n-\psi_k\ge0\ \ \forall n,k,\qquad\text{with equality wherever }x_{nk}>0
+  \label{eq:dual}
+\end{equation}
+(weak duality and complementary slackness; e.g.\ Bertsimas \& Tsitsiklis 1997, ch.~4). The code checks the first condition
+for all $NK$ pairs after every placement, the second holding by construction: \code{certificate\_violations} counts the
+parcels whose least reduced cost $\min_k(c_{nk}-u_n-\psi_k)$ is below $-16(K+1)\,\epsilon\,gL_z$, the round-off of duals that
+accumulate $K$ cost differences of size up to $gL_z$ ($\epsilon$ the machine epsilon of the float type). This pass costs
+$NK$ evaluations of the cost, threaded and vectorised over the parcels of a row, and is also the pricing of the exact method
+(\S\ref{sec:exact}).
+
+The duals are the discrete reference pressure. In AN2D, $S(z_k)=c_{nk}+\pi_*(z_k)$ up to a constant per parcel, so a parcel's
+optimal slots minimise $c_{nk}-\psi_k$ and $\pi_{*,k}=-\psi_k$ up to a constant; in FC2D the duals give $-\Phi(z_k)$. Dual
+feasibility with complementary slackness is the discrete LNB condition in global form, and $\psi$ is the multiplier of the
+slot constraints, the discrete volume constraint. By weak duality, for \emph{any} reference profile, $\int\Pi\,\mathrm{d}m$ with
+the global minimiser $\zs$ is at least $E_P-E_*$ of the Lorenz state (cf.\ Tailleux 2013), with equality in AN2D for the optimal
+duals with $\zs$ restricted to the row centres. The code uses the duals only to certify the placement; the profile comes from
+the slot volumes (\S\ref{sec:profile}).
+
+\subsection{When the sort is exact}\label{sec:why}
+The equation of state of the main note (Appendix A there) is
+\begin{equation}
+  v = v_0\left[1+\alpha_T\left(1+\gamma(P-P_0)\right)(\vt-T_0)-\alpha_q(q-q_0)-\alpha_P(P-P_0)+\tfrac12\alpha_{TT}(\vt-T_0)^2\right].
+  \label{eq:eos}
+\end{equation}
+If $v$ is additively separable, $v=f(\vt,q)+w(P)$, then $h(P,\vt,q)=h(P_0,\vt,q)+f(\vt,q)(P-P_0)+\int_{P_0}^Pw$, and only
+$\sum f_nP_k$ depends on the placement. With the parcels ordered by $f$ and the slots by pressure the costs have the Monge
+property, for which filling the slots in order (the north-west corner rule) is optimal, with unequal masses and split
+parcels (Hoffman 1963). In FC2D the slot pressures depend on $\Ptop$ but their order does not. So \textbf{the sort by specific
+volume is the exact Lorenz state iff $\gamma=0$}: compressibility, haline contraction and cabbeling keep $v$ separable,
+thermobaricity does not. With $\gamma\ne0$ the order of two parcels can depend on the pressure at which they are compared,
+and the sort is approximate. In the Boussinesq limit (uniform $\rho_R$, equal masses) and with $\gamma=0$ it is the sort of
+Winters et al.\ (1995).
+
+% =====================================================================================
+\section{Algorithms of the placement}\label{sec:algorithms}
+The method is a type parameter of the reference state: \code{SortedRearrangement()} (the default of the constructors) or
+\code{ExactRearrangement()} (used by the examples). Both start from the sort, so the two can be compared on the same state.
+
+\subsection{Sorted rearrangement}\label{sec:sort}
+\begin{enumerate}
+  \item The sort key of each parcel is its specific volume at a key pressure, $v(P_{\rm key},\vt_n,q_n)$: $P_R(L_z/2)$ in AN2D,
+        the mean pressure of the parcels in FC2D. With $\gamma=0$ every $P_{\rm key}$ gives the same order.
+  \item The parcels, lightest first, fill the slots from the top, a parcel split across a slot boundary where needed. The
+        entries of the placement form a staircase.
+  \item FC2D: $\Ptop$ for this placement (\S\ref{sec:fc}).
+  \item The duals along the staircase: $\psi_1=0$, and across the boundary between slots $k$ and $k+1$ the step of $\psi$ is
+        $c_{a,k+1}-c_{a,k}$ for the parcel $a$ split there; at a degenerate boundary (no split parcel), the middle of the
+        interval allowed by the last parcel of slot $k$ and the first of slot $k+1$, a reproducible choice. Then
+        $u_n=c_{nk}-\psi_k$ on any slot of parcel $n$.
+  \item One pass over the pairs: the certificate.
+\end{enumerate}
+Cost: $O(N\log N)$ for the sort, $O(NK)$ for the certificate.
+
+\subsection{Exact rearrangement: the transportation simplex}\label{sec:exact}
+A transportation simplex (Dantzig 1951), in the network form of Ahuja, Magnanti \& Orlin (1993, ch.~11), written in Julia
+(\code{src/numerics/transportation.jl}). The network has $N+K$ nodes, the parcels and the slots, with an arc from each parcel
+to each slot carrying $x_{nk}$; a basis is a spanning tree of $N+K-1$ arcs, some of which may carry no mass.
+\begin{enumerate}
+  \item \textbf{Start.} The sorted placement, completed into a spanning tree: at a degenerate boundary between slots $k$ and
+        $k+1$, the first parcel of slot $k+1$ gets an entry of zero mass in slot $k$.
+  \item \textbf{Duals.} At the start of each pass, $\psi_1=0$ and $u_n+\psi_k=c_{nk}$ on the arcs of the tree, by a
+        breadth-first walk from the first slot, in $O(N+K)$ with the cost of each arc kept.
+  \item \textbf{Pricing.} A pass over all $NK$ pairs (the certificate pass of \S\ref{sec:dual}) gives each parcel's least
+        reduced cost and its slot. The parcels below $-16(K+1)\epsilon gL_z$ are the candidates, sorted once, most negative first
+        (the lower index first among equals). Each is priced again with the current duals, one cost evaluation, and enters
+        the tree if still negative. Taking the most favourable arc of each node as a candidate is the candidate-queue pricing
+        of large network simplex codes (Bradley, Brown \& Graves 1977; see also Grigoriadis 1986). The passes repeat until
+        one finds no candidate: that pass is the certificate.
+  \item \textbf{Pivot.} The entering pair $(n,k)$ closes a cycle in the tree, from $n$ up to the apex (the deepest common
+        ancestor of $n$ and $k$) and down to $k$. A mass $\theta$ moves round it, $+\theta$ on the arcs oriented as the entering
+        one and $-\theta$ on the others; $\theta$ is the least mass of these, so masses stay exactly nonnegative in floating
+        point. The leaving arc is the last arc that blocks $\theta$ met going round the cycle from the apex in the direction
+        of the entering arc.
+  \item \textbf{Update of the tree.} Only the subtree that hung from the leaving arc changes: it now hangs from the entering
+        arc, rerooted at the end $q$ of that arc that it holds, and its depths and duals change, in a time of the size of
+        the subtree rather than $O(N+K)$ (as with the threaded indices of Glover, Klingman \& Stutz 1974; here with lists of
+        children). With $r$ the reduced cost of the entering pair, the duals of the subtree shift by $u\to u+r$,
+        $\psi\to\psi-r$ if $q$ is the parcel, and $u\to u-r$, $\psi\to\psi+r$ if $q$ is the slot. Step 2 recomputes the duals
+        from the costs at each pass, so the certificate carries the round-off of the costs only.
+\end{enumerate}
+The tree is rooted at the first slot and kept \emph{strongly feasible} (Cunningham 1976): every arc of zero mass goes from a
+parcel up to its parent slot, which the completed staircase satisfies and the leaving rule preserves. A pivot that moves no
+mass, frequent from the degenerate staircase, then still makes progress, and the method cannot cycle. The optimum is global:
+\eqref{eq:tp} is a linear programme, and the certificate proves it. The pivots give the decrease of the cost,
+$\sum\theta\,|c_{nk}-u_n-\psi_k|$, by which the sort underestimates $E_P-E_*$ (\code{sorted\_energy\_excess}).
+
+The number of passes grows with how far the sort is from the optimum: one where it is optimal, a few where it fails for a few
+nearly tied parcels, about $K$ where every parcel is misplaced, as each pass moves a misplaced parcel about one slot nearer its
+level. The passes are capped at $10K$ (\code{passes\_per\_slot}), which only guards against round-off; a placement cut short
+fails its certificate.
+
+\subsection{FC2D: the top pressure}\label{sec:fc}
+For a placement $x$, let $G(x,\Ptop)=\sum x_{nk}c_{nk}(\Ptop)-\Ptop L_xL_z$, the energy of the column up to terms independent
+of both. Then $\partial G/\partial\Ptop=\sum x_{nk}v(P_k,\vt_n,q_n)-L_xL_z$ is the volume excess and
+$\partial^2G/\partial\Ptop^2=\sum x_{nk}\partial_Pv<0$: $G$ is concave in $\Ptop$, with its maximum where the column fills the
+box. The reference state is the saddle point
+\begin{equation}
+  \min_x\ \max_{\Ptop}\ G(x,\Ptop)=\max_{\Ptop}\ \min_x\ G(x,\Ptop)
+  \label{eq:saddle}
+\end{equation}
+($G$ is linear in $x$ over a compact convex set and concave in $\Ptop$; Sion's minimax theorem), the discrete counterpart of
+the statement of the energy notes that $\int\Pi\,\mathrm{d}m$ is a minimum with respect to $P_*$, and of the free-surface
+optimal transport of Egan et al.\ (2025).
+\begin{itemize}
+  \item \textbf{$\Ptop$ at fixed placement} (\code{top\_pressure!}): Newton's method on the volume residual
+        $R(\Ptop)=\sum x_{nk}v(P_k)-L_xL_z$, with $R'=\sum x_{nk}\partial_Pv(P_k)$, from the mean over the top row of
+        $p_n-g\Delta z/(2v_n)$. It stops when $|R|\le16\epsilon L_xL_z$ or $|R|$ no longer decreases.
+  \item \textbf{Sorted method:} the placement does not depend on $\Ptop$ when $\gamma=0$, so $\Ptop$ is computed once.
+  \item \textbf{Exact method:} from the sorted placement, $\Ptop$ at fixed placement and the simplex at fixed $\Ptop$ (from the
+        previous tree) alternate until a simplex moves no mass, at most 20 times (\code{max\_top\_iterations}); the last
+        placement is then only priced, and its certificate fails. At the end both conditions hold: the placement is optimal
+        at $\Ptop$, and $\Ptop$ fills the box with it, which is the saddle point.
+\end{itemize}
+
+\subsection{Complexity}\label{sec:complexity}
+\paragraph{Of the problem.} \eqref{eq:tp} is a transportation problem, an uncapacitated minimum-cost flow problem on
+$N+K$ nodes and $NK$ arcs, so it is solvable in strongly polynomial time, in a number of operations bounded by a polynomial
+in $N$ and $K$ alone (Tardos 1985). Orlin's (1993) algorithm solves uncapacitated minimum-cost flow on $n$ nodes and $m$ arcs
+in $O(n\log n\,(m+n\log n))$, here $O(N^2K\log N)$; Kleinschmidt \& Schannath (1995) give a strongly polynomial algorithm for
+the transportation problem itself. With few demand points, $K\ll N$, Tokuyama \& Nakano (1995) solve it in expected
+$O(KN)$, which is optimal, when $N=\Omega(K^{4+\varepsilon})$ and the ratio of the largest to the smallest parcel mass is
+polynomial in $N$; our grids ($N=2048$, $K=32$) are far from that regime. Without thermobaricity the costs are Monge
+(\S\ref{sec:why}) and the problem is a sort, $O(N\log N)$. Equal masses with $K=N$ is linear assignment, $O(N^3)$.
+
+\paragraph{Of the algorithm used.} The primal network simplex with a strongly feasible tree terminates (Cunningham 1976),
+but no polynomial bound on the number of its pivots is known for pricing rules such as ours, the most negative reduced cost
+of each parcel; with the closely related rule of Dantzig, the most negative reduced cost overall, network simplex methods take
+exponentially many pivots on some networks (Zadeh 1973).
+Polynomial pivot rules exist (Orlin 1997). The observed cost is (passes)$\,\times NK$ cost evaluations, plus small
+per-pivot terms (\S\ref{sec:exact}): one pass where the sort is optimal, a few where it fails for a few nearly tied parcels,
+and at most about $K$ in the cases tested (1.0 to $1.3K$ where every parcel is misplaced, as each pass moves a misplaced parcel
+about one slot nearer its level), i.e.\ $O(NK^2)$ evaluations. This is an observation on our states, not a theorem. The
+certificate proves each result optimal however it was found, so a solver with a guaranteed bound could replace or back the
+simplex without changing anything else (Appendix~\ref{app:future}).
+
+% =====================================================================================
+\section{The reference profile}\label{sec:profile}
+The profile is built from the slot-mean specific volume and compressibility of the parcels of each slot,
+\begin{equation}
+  v_{*,k}=\frac1{M_k}\sum_nx_{nk}\,v(P_k,\vt_n,q_n),\qquad b_k=\frac1{M_k}\sum_nx_{nk}\,\partial_Pv(P_k,\vt_n,q_n),
+\end{equation}
+which change continuously with the state, unlike the duals (\S\ref{sec:decisions}). The pressure is interpolated, and $v_*$
+derived from the interpolant, so that $\Pi$, $v_*$, $N_*^2$ and the LNB residual come from one profile and $\zs$ is an exact
+minimiser of the $S$ in $\Pi$.
+\begin{itemize}
+  \item \textbf{AN2D.} $P_R$ is the $C^1$ cubic Hermite interpolant through the cell centres with the slopes $-g\rho_R$. $\pi_*$
+        is a cubic Hermite interpolant with nodes at the row centres and both walls. At the row centres its slopes are
+        $g(\rho_Rv_{*,k}-1)$ and its values follow from $\partial_z\pi_*=-v_*\partial_zP_R-g$ with $v_*$ linear in $P_R$
+        between the rows (the trapezoidal rule in the pressure),
+        \begin{equation}
+          \pi_{*,c}-\pi_{*,c-1}=-\tfrac12(v_{*,c-1}+v_{*,c})\left(P_R(z_c)-P_R(z_{c-1})\right)-g(z_c-z_{c-1}),
+        \end{equation}
+        exact when $v$ is linear in $P$, so that the static energy of a neutral fluid is flat at the nodes. Between the end
+        row $e$ and the wall, $v_*$ follows the compression of the parcels of the end slot, $v_*=v_{*,e}+b_e(P_R-P_R(z_e))$,
+        which gives the wall nodes
+        $\pi_*=\pi_{*,e}-v_{*,e}\Delta P-\tfrac12b_e\Delta P^2-g(z-z_e)$, $\Delta P=P_R(z)-P_R(z_e)$. (A constant $v_*$ there
+        lowered the static energy of these parcels towards the walls by $\tfrac12|b_e|(g\rho_R\Delta z/2)^2$ and made a wall
+        the reference height of every parcel of a neutral fluid.) $\pi_*$ is defined up to a constant, which changes neither
+        $\zs$ nor $\Pi$; its mean over the mass of the rows is zero. On the model rows, $P_*=P_R+\rho_R\pi_*$ and
+        $v_*=(\partial_z\pi_*/g+1)/\rho_R$.
+  \item \textbf{FC2D.} The slots are stacked from the bottom with the thicknesses $V_k/L_x$; edge $e$ has the pressure $\Ptop$
+        plus $g/L_x$ times the mass above it. $P_*$ is the monotone $C^1$ cubic (PCHIP: Fritsch--Carlson slopes with
+        Brodlie's weights, three-point end slopes) through the edge pressures, with the secants $-g/v_{*,k}$, so that the
+        slot density $M_k/V_k$ is exactly the mean of $-\partial_zP_*/g$ across the slot. On the model rows,
+        $v_*=-g/\partial_zP_*$. The column fills the box to the round-off of $\Ptop$ (\code{volume\_residual}).
+\end{itemize}
+
+% =====================================================================================
+\section{Reference heights}\label{sec:lnb}
+The reference height of a parcel is the global minimiser of its static energy along the profile,
+\begin{equation}
+  \zs=\arg\min_{0\le z\le L_z}S(z),\qquad
+  r(z)=-S'(z)=\begin{cases}
+    g\rho_R\left(v(P_R(z),\vt,q)-v_*(z)\right) & \text{AN2D},\\[2pt]
+    g\left(\rho_*v(P_*(z),\vt,q)-1\right) & \text{FC2D},
+  \end{cases}
+  \label{eq:zstar}
+\end{equation}
+with $r$ the LNB residual, $-(v\,\partial_zP_R+g+\partial_z\pi_*)$ in AN2D and $-(v\,\partial_zP_*+g)$ in FC2D before
+\eqref{eq:vstar} is used ($r>0$: the parcel is lighter than the reference state at $z$), and
+$N_*^2=S''=\partial_Pv\,(\partial_zP)^2+v\,\partial_z^2P+\partial_z^2\pi_*$ (no $\pi_*$ in FC2D), which depends on the parcel
+through $(\vt,q)$ (Tailleux 2013, Appendix A). $S$ is measured from the parcel's own pressure and height, with the enthalpy
+differences by quadrature. For each parcel, by the model's manager:
+\begin{enumerate}
+  \item \textbf{Coarse search}, vectorised over the parcels of a row: $S$ at the levels of the profile, both walls and the
+        row centres in AN2D, both walls and the interior slot edges in FC2D, and the lowest (the lowest level among equal
+        values).
+  \item \textbf{Refinement} next to that level: if $r$ changes sign towards a neighbouring level, its root, found by the
+        bracketing method of Alefeld, Potra \& Shi (1995) to within $\sqrt\epsilon\,L_z$ (which leaves $S$ at round-off), is
+        kept if $S$ is lower there. A wall is the minimum where $r$ has the outward sign.
+  \item \textbf{The parcel's own height} is the reference height if $S$ is lower still there (in FC2D it is not a level, and
+        in a well-mixed fluid, where $S$ is flat to round-off, it can be the lowest point found).
+\end{enumerate}
+A local minimum next to another level is not refined; it can be lower than the one found only if the two differ by less than
+the change of $S$ between two levels. Multiple minima arise only through thermobaricity. The global minimiser (rather than
+the nearest root of Tailleux 2013, \S3.1) makes $\zs$ independent of the parcel's height, so $\Pi$ does not jump when a parcel
+crosses a local maximum of $S$; $S(\zs)$ is continuous in $(\vt,q,t)$ even where $\zs$ jumps between two minima. The number of
+parcels at a wall is a diagnostic (\code{wall\_minima}).
+
+For a parcel in a slot that holds a mixture, $\zs$ can differ from its placement by up to a slot thickness, as $v_*$ is a slot
+average: $\zs$ satisfies the LNB condition, which the local budgets need, and the placement the volume constraint.
+
+% =====================================================================================
+\section{Available energy}\label{sec:ae}
+On the cells: $\Pi_2=S(z_n)-S(\zs)\ge0$, with both values measured from the parcel's own state as in the search, so that
+$\Pi_2\ge0$ holds exactly; $\Pi_1=0$ in AN2D; in FC2D
+\begin{equation}
+  \Pi_1=h(p)-h(P_*(z))-(p-P_*(z))\,v(p)=-\int_{P_*(z)}^{p}(s-P_*(z))\,\partial_Pv(s,\vt,q)\,\mathrm{d}s\ \ge0,
+\end{equation}
+by quadrature, with $P_*(z)$ at the centre of the parcel's row. Their integrals are $\sum_nm_n\Pi_n$; the background potential
+energy is $E_P-\sum_nm_n\Pi_n$, with $E_P$ the integrated potential energy of the energetics.
+
+% =====================================================================================
+\section{Tendency of the reference state}\label{sec:dtpstar}
+The budgets need $\partial_tP_*$ on the model rows and at each $\zs$. The Lorenz state depends only on the distribution of mass
+over $(\vt,q)$, which advection does not change, so $P_*$ changes only through the diabatic rates (Winters et al.\ 1995;
+Winters \& D'Asaro 1996)
+\begin{equation}
+  \dot\vt=\frac{\sigma_\vt-\nabla\cdot\mathbf J_\vt}{\rho},\qquad \dot q=-\frac{\nabla\cdot\mathbf J_q}{\rho},\qquad
+  \dot v=\partial_\vt v\,\dot\vt+\partial_qv\,\dot q\ \ \text{(at fixed pressure)},
+\end{equation}
+which the model provides ($\rho=\rho_R$ in AN2D). The tendency is computed from a single snapshot (\code{reference\_tendency!}).
+
+\paragraph{Derivation.} Follow a parcel at its reference level and differentiate the LNB condition. In FC2D, in the mass
+coordinate $m$ (the mass above a level), $P_*(m,t)=\Ptop(t)+gm/L_x$, and with $N_*^2=g\rho_*^2(v_*\partial_zv_*+gv_P)$,
+\begin{equation}
+  \frac{N_*^2}{g\rho_*^2L_x}\,\frac{Dm_*}{Dt}=\partial_tv_*|_m-\dot v-v_P\,\partial_t\Ptop .
+\end{equation}
+The mass above a level stays the same, so the mass-weighted mean of $Dm_*/Dt$ over the parcels at a level vanishes:
+\begin{equation}
+  \partial_tv_*|_m=\frac{\langle(\dot v+v_P\,\partial_t\Ptop)/N_*^2\rangle}{\langle1/N_*^2\rangle},\qquad
+  \int_0^{\Mtot}\partial_tv_*|_m\,\mathrm{d}m=0,
+\end{equation}
+the second because the box stays full, which fixes $\partial_t\Ptop$. In AN2D the levels are fixed and there is no lid:
+$\partial_tv_*=\langle\dot v/N_*^2\rangle/\langle1/N_*^2\rangle$, $\partial_z(\partial_t\pi_*)=g\rho_R\partial_tv_*$,
+$\partial_tP_*=\rho_R\partial_t\pi_*$. The weights $1/N_*^2$ differ between the parcels of a level only through $v_P$
+(thermobaricity): a weakly stratified parcel moves further for a given change of volume and displaces more of its neighbours.
+The plain mean, which a derivative at fixed placement gives, is exact only for a separable $v$.
+
+\paragraph{Discrete form.} The parcels at a level are those of a slot, with the masses of the placement (entries of zero mass
+skipped). For parcel $n$ in slot $k$, with $\dot v$ and $v_P$ at $(P_k,\vt_n,q_n)$,
+\begin{equation}
+  N^2_{nk}=g\rho_k\left(\partial_zv_*(z_k)+g\rho_kv_{P,nk}\right),\qquad w_{nk}=\frac{x_{nk}}{N^2_{nk}},\qquad
+  \langle a\rangle_k=\frac{\sum_nw_{nk}a_{nk}}{\sum_nw_{nk}},
+\end{equation}
+with $\rho_k=\rho_R(z_k)$ (AN2D) or $1/v_{*,k}$ (FC2D) and $\partial_zv_*$ from the profile. A slot with $N^2_{nk}\le0$ for one
+of its parcels takes the plain weights $w_{nk}=x_{nk}$ and is counted (\code{plain\_weight\_slots}).
+\begin{itemize}
+  \item \textbf{AN2D:} $\partial_tv_{*,k}=\langle\dot v\rangle_k$, and $\partial_t\pi_*$ by the rule of $\pi_*$: slopes
+        $g\rho_R\partial_tv_{*,k}$, values by the trapezoidal rule in $P_R$, zero mean over the mass of the rows. Between the
+        end rows and the walls only $\partial_tv_{*,e}$ is kept: $\partial_tb_e$ needs the mixed derivatives
+        $\partial^2v/\partial P\partial\vt$, $\partial^2v/\partial P\partial q$, which the equation of state does not provide.
+        The neglected term of $\partial_t\pi_*$, $-\tfrac12\partial_tb_e\Delta P^2$, is at most $2.6\times10^{-3}$ of
+        $\max|\partial_t\pi_*|$ for $\gamma=3\times10^{-4}$\,Pa$^{-1}$ at $M_z=16$ (\code{tools/reference\_tendency\_study.jl}).
+  \item \textbf{FC2D:}
+        \begin{equation}
+          \partial_t\Ptop=-\frac{\sum_kM_k\langle\dot v\rangle_k}{\sum_kM_k\langle v_P\rangle_k},\qquad
+          \partial_tv_{*,k}=\langle\dot v\rangle_k+\langle v_P\rangle_k\,\partial_t\Ptop ,
+        \end{equation}
+        at fixed slot masses. The slot edges move at $\partial_tz_e=L_x^{-1}\sum_{k\text{ below }e}M_k\partial_tv_{*,k}$, zero at
+        both walls, and their pressures at $\partial_t\Ptop$. $\partial_tP_*$ at fixed height is the derivative of the
+        monotone cubic $P_*$ with respect to these motions of its nodes, by dual numbers (value $+\,\varepsilon\times$
+        tendency for the heights, pressures and secants of the edges, through the same slopes and cubic as $P_*$); at an
+        edge it is $\partial_t\Ptop+g\rho_*\partial_tz_e$.
+\end{itemize}
+$\int R_\Pi\,\mathrm{d}V$ (the exchange of the terms in $\partial_tP_*$ with the rest) vanishes to the resolution of the slots,
+as the reference heights of the parcels of a mixed slot differ from their placement by up to a slot thickness.
+
+% =====================================================================================
+\section{Budgets of ACE and APE}\label{sec:budgets}
+The budgets of $\rho\Pi_1$ and $\rho\Pi_2$ of the energy notes are diagnosed as the budget of $\rho P$ of the energetics is,
+from the fluxes of the tendencies and the operators of the model (\code{src/reference\_state/budget.jl}). The derivatives
+$\Sigma_\vt$, $\Sigma_q$ of the static energy are evaluated at three states of a parcel: the state itself $(z,p)$; the
+intermediate state $(z,P_*(z))$, marked with a tilde ($\tilde\Sigma_\vt$); and the reference state $(\zs,P_*(\zs))$, marked
+with a star ($\Sigma^*_\vt$). With
+$\Delta_1\Sigma_\vt=\Sigma_\vt-\tilde\Sigma_\vt$ (zero in AN2D), $\Delta_2\Sigma_\vt=\tilde\Sigma_\vt-\Sigma^*_\vt$ (likewise for
+$q$, by quadrature of $\partial_\vt v$, $\partial_qv$ in the pressure), at a fixed reference state
+\begin{equation}
+  \partial_t(\rho\Pi_i)=B_i\,\partial_t\rho+\Delta_i\Sigma_\vt\,\partial_t(\rho\vt)+\Delta_i\Sigma_q\,\partial_t(\rho q),
+\end{equation}
+with
+\begin{equation}
+  B_1=\Pi_1+(p-P_*)\Sigma_P-\vt\Delta_1\Sigma_\vt-q\Delta_1\Sigma_q,\qquad B_2=\Pi_2-\vt\Delta_2\Sigma_\vt-q\Delta_2\Sigma_q .
+\end{equation}
+In Bernoulli form, with the reversible flux $\mathbf J^{\rm rev}=\rho\mathbf u\,\Im(B)+\rho\vt\mathbf u\,\Im(\Delta\Sigma_\vt)+
+\rho q\mathbf u\,\Im(\Delta\Sigma_q)$, the irreversible flux $\mathbf J^{\rm irr}=\Im(\Delta\Sigma_\vt)\mathbf J_\vt+
+\Im(\Delta\Sigma_q)\mathbf J_q$, the conversion $C_B=-\rho\mathbf u\cdot\nabla B-\rho\vt\mathbf u\cdot\nabla\Delta\Sigma_\vt
+-\rho q\mathbf u\cdot\nabla\Delta\Sigma_q$ to kinetic energy, and the heatings $Q_\vt=-\mathbf J_\vt\cdot\nabla\Sigma_\vt$,
+$Q_q=-\mathbf J_q\cdot\nabla\Sigma_q$, $Q=\Sigma_\vt\sigma_\vt$ at each state, the product rule of the operators,
+$\delta(\Im(a)b)=a\,\delta b+\Im(b\,\delta a)$, closes at each cell to round-off (in AN2D up to the divergence of $\rho_R\mathbf u$)
+\begin{align}
+  \partial_t(\rho\Pi_1)&=-\nabla\cdot(\mathbf J^{\rm rev}_{\rm ACE}+\mathbf J^{\rm irr}_{\rm ACE})-C_{\rm ACE}
+     -(Q_\vt-\tilde Q_\vt)-(Q_q-\tilde Q_q)+Q-\tilde Q+R_{\Pi_1},\\
+  \partial_t(\rho\Pi_2)&=-\nabla\cdot(\mathbf J^{\rm rev}_{\rm APE}+\mathbf J^{\rm irr}_{\rm APE})-C_{\rm APE}
+     -(\tilde Q_\vt-Q^*_\vt)-(\tilde Q_q-Q^*_q)+\tilde Q-Q^*+R_{\Pi_2},
+\end{align}
+with the terms in $\partial_tP_*$ of the energy notes,
+$R_{\Pi_1}=\rho\left(\Sigma_P(z,p)-\Sigma_P(z,P_*(z))\right)\partial_tP_*(z)$ (zero in AN2D) and
+$R_{\Pi_2}=\rho\,\Sigma_P(z,P_*(z))\,\partial_tP_*(z)-\rho\,\Sigma_P(\zs,P_*(\zs))\,\partial_tP_*(\zs)$. The residuals of both
+budgets are diagnostics. So are the continuous forms of the energy notes, $\mathbf J^{\rm rev}_{\rm ACE}=\rho\Pi_1\mathbf u+
+\mathbf J_C^*$, $C_{\rm ACE}=C_{b,1}^*+C_D^*-\nabla\cdot\mathbf J_C^*$, $C_{\rm APE}=C_{b,2}^*$, with $\mathbf J_C^*=(p-P_*)\mathbf u$,
+the buoyancy conversions $C_{b,1}^*=\rho g\rho_*(v-\tilde v)w$, $C_{b,2}^*=\rho g\rho_*(\tilde v-v_*)w$ ($\tilde v=v(P_*(z))$;
+in AN2D $C_{b,1}^*=0$, $C_{b,2}^*=\rho_Rg\rho_R(v(P_R)-v_*)w$) and the pressure dilatation $C_D^*=(p-P_*)\nabla\cdot\mathbf u$ (zero in
+AN2D), with the residuals of these manipulations, which converge with the grid. The conversion $C$ from $P$ to $K$ of the
+energetics is $C_{\rm ACE}+C_{\rm APE}+C_{\rm bg}$, with the background conversion $C_{\rm bg}$ zero in the continuous equations.
+
+% =====================================================================================
+\section{Diagnostics}\label{sec:outputs}
+The reference state is computed once per diagnostics session (\code{diagnostics(model; reference\_state)}), and its
+diagnostics are entries of the book:
+\begin{itemize}
+  \item \textbf{On the cells:} $\zs$; ACE, APE, AE; the potentials at the intermediate and reference states and their
+        differences; $B_1$, $B_2$; the fluxes, their divergences, conversions, heatings and buoyancy terms of the budgets;
+        the diabatic rates; $\partial_tP_*(\zs)$; $R_{\Pi_1}$, $R_{\Pi_2}$; $\partial_t(\rho\Pi_1)$, $\partial_t(\rho\Pi_2)$ and the
+        residuals.
+  \item \textbf{Profiles on the $z$ axis:} $P_*$, $v_*$, $\partial_tP_*$.
+  \item \textbf{Numbers:} $\int\rho\Pi_1$, $\int\rho\Pi_2$, $\int\rho\Pi$; the background potential energy; the certificate
+        violations; the pivots, pricing passes and \code{sorted\_energy\_excess}; the parcels at a wall; the slots with
+        plain weights; in FC2D $\Ptop$, its tendency, the volume residual and the iterations of the top pressure.
+\end{itemize}
+
+% =====================================================================================
+\section{Verification and cost}\label{sec:tests}
+The tests (\code{test/reference\_state.jl}, \code{transportation.jl}, \code{exact\_rearrangement.jl},
+\code{reference\_tendency.jl}, \code{available\_energy\_budget.jl}) check, on small grids and for both models:
+\begin{itemize}
+  \item \textbf{Exact cases:} a state at rest is its own reference state (each parcel in its own row, $E_*=E_P$, $\Pi$ at
+        round-off); a fully mixed fluid has $E_P-E_*$ and $\Pi$ at round-off (AN2D, uniform $\rho_R$) or $O(\Delta z^4)$; the
+        analytic $E_P-E_*$ of a rearranged column with a separable equation of state; brute force over all assignments of
+        8 parcels, separable and thermobaric.
+  \item \textbf{The simplex:} on random cost matrices with unequal masses, feasibility and optimality checked independently
+        of the solver; the linear assignment case against brute force; degenerate problems, including one on which a
+        simplex without a strongly feasible tree can cycle; with $\gamma=0$ the exact method moves no mass; with strong
+        thermobaricity it passes the certificate the sort fails and releases more energy.
+  \item \textbf{Properties:} mass conservation of every parcel and slot; the column fills the box (FC2D); invariance under a
+        periodic shift and under the origin of the geopotential; weak duality; $r(\zs)=0$ and $N_*^2\ge0$ at interior minima,
+        $\Pi_1,\Pi_2\ge0$; the same results on serial and threaded managers; no state-sized allocations.
+  \item \textbf{Tendency:} with $\gamma=0$ it matches centred differences of the reference state under $\pm\varepsilon$ times the
+        diabatic rates; the tendencies of $\rho\Pi_1$, $\rho\Pi_2$ with the $R$ terms match differences with the reference
+        state recomputed; without diffusion it vanishes; $\sum_kM_k\partial_tv_{*,k}=0$ (FC2D); $|\int R_\Pi|/\int|R_\Pi|$
+        converges at first order ($2\times10^{-2}$ to $2\times10^{-3}$ from $M_z=8$ to $64$).
+  \item \textbf{Weights under thermobaricity:} two density-compensated families mixed in every row, one heated: the
+        $N_*^{-2}$-weighted mean is $26\%$, $8.5\%$ and $5.7\%$ from centred differences of the exact rearrangement at
+        $K=20$, 40, 80, the plain mean $35\%$ (\code{tools/exact\_rearrangement\_study.jl} at full size).
+  \item \textbf{Budgets:} the budgets of ACE and APE close at each cell to round-off, with and without the $R$ terms.
+\end{itemize}
+
+\paragraph{Measured} (\code{tools/exact\_rearrangement\_study.jl}, 2026-10-27 and 2026-10-31).
+\begin{itemize}
+  \item Thermohaline lock exchange ($\gamma=10^{-7}$\,Pa$^{-1}$, $64\times32$): the sort fails the certificate for at most 3
+        nearly tied parcels, fixed by 2 or 3 pivots; the exact method changes $E_P-E_*$ by at most $9\times10^{-10}$ of it and
+        $P_*$ by at most $2\times10^{-8}$\,Pa, with the same roughness in time. There the sort is the Lorenz state to
+        round-off. \code{reference\_state!} takes 0.4--0.6\,ms.
+  \item Every parcel misplaced by the sort (two compensated families, $\gamma=1.3\times10^{-4}$\,Pa$^{-1}$): 315, 1114 and
+        7405 pivots in 21, 38 and 104 passes at $K=20$, 40, 80; 50\,ms at $K=80$, $N=1600$, of which pricing is two thirds.
+  \item Float32 sees no thermobaric reordering for $\gamma$ up to $10^{-3}$\,Pa$^{-1}$, where Float64 makes 95 pivots that
+        move mass: the reduced costs are below its tolerance. The exact method needs Float64.
+\end{itemize}
+
+% =====================================================================================
+\section{Decisions}\label{sec:decisions}
+Taken with the user, and governing the implementation:
+\begin{itemize}
+  \item \textbf{Exact solver:} a transportation simplex written in Julia, generic in the float type, started from the sorted
+        placement at each snapshot (2026-10-27). The sort and the exact method stay separate methods, to be compared; the sort
+        is the default, the examples use the exact one. The tree is updated in place after each pivot (2026-10-31).
+  \item \textbf{Lorenz profile} from the slot-mean specific volumes, in both models; the duals certify the placement only
+        (2026-10-27). The dual profile changes abruptly when the parcel split between two slots changes, and a split parcel has
+        the same static energy at both slots along it, so its $\zs$ jumps between them; both made the budgets rough in time
+        and space (the generation by two orders of magnitude in the lock exchange).
+  \item \textbf{Reference height:} the global minimiser of $S$, not the nearest root of Tailleux (2013) nor the placement.
+  \item \textbf{AN2D beyond the end rows:} $v_*$ follows the compression of the parcels of the end slot (2026-10-26);
+        $\partial_tb_e$ is neglected, with its size measured (2026-10-27).
+  \item \textbf{Tendency of the reference state} from the diabatic tendencies with $N_*^{-2}$ weights, valid for any equation of
+        state.
+  \item \textbf{FC2D $\partial_tP_*$ at fixed height} as the derivative of the monotone cubic with respect to its nodes, by dual
+        numbers (2026-10-27). A hand-written tangent agreed to round-off at the same cost; applying
+        $\partial_tP_*=\partial_t\Ptop+g\rho_*\partial_tz|_m$ between the edges with $\partial_tz|_m$ linear is not the derivative of
+        the $P_*$ of $\Pi$ (off by 0.4 to 0.7\%).
+  \item \textbf{FC2D reference heights in an exactly neutral layer} (2026-10-26, no change): identical parcels with $N_*^2=0$
+        have an $S$ flat up to the wiggles of the monotone cubic, about $10^{-10}$\,J\,kg$^{-1}$ at $M_z=32$; the coarse search
+        then takes the lowest tied level, the bottom wall. Their $\Pi_2$ is about $6\times10^{-10}$\,J\,kg$^{-1}$, and the ties
+        vanish after the first time step.
+\end{itemize}
+
+% =====================================================================================
+\appendix
+\section{Not implemented, and future work}\label{app:future}
+
+\subsection{Speedups of the exact rearrangement (deferred)}
+\begin{itemize}
+  \item \textbf{Banded pricing:} price the pairs within $|k-k_n|\le B$ slots of the sorted slot before the full pass. Pricing is
+        two thirds of the time where every parcel is misplaced, so this is the next lever there.
+  \item \textbf{Warm start from the previous snapshot.} The parcels are the cells, so after advection the previous placement has
+        no direct relation to the new state; in AN2D it stays feasible (fixed masses), in FC2D the flows would need recomputing.
+  \item \textbf{Warm start of the sort} from the previous order (insertion sort), with a fallback to the full sort when the flow
+        overturns. At most about 1\,ms of 16\,ms per call at $256\times128$.
+  \item \textbf{A starting interval for the Hermite search} in the refinement of $\zs$, which evaluates the profile in one
+        bracket. Estimated 20--40\% of an evaluation; not measured.
+\end{itemize}
+
+\subsection{Other solvers}
+\begin{itemize}
+  \item \textbf{Greedy filling with repair.} Fill the slots from the top with the parcels of largest $v(P_k)$ at each slot
+        pressure (Huang 2005; Wong et al.\ 2016; the discrete counterpart of Saenz et al.\ 2015), or bottom-up, or by divide and
+        conquer at the pressure of the boundary that halves the mass (Stansifer et al.\ 2017), then repair by pairwise
+        exchanges within a band of slots. No optimality guarantee: unrepaired heuristics can give $E_P-E_*<0$ (Harris \&
+        Tailleux 2018), and 2-opt can stall (Hieronymus \& Nycander 2015). Not needed while the exact method is fast enough.
+  \item \textbf{Histogram reduction} (Tseng \& Ferziger 2001; Saenz et al.\ 2015): bin the parcels in $(\vt,q)$ and solve for the
+        bins. Averaging $(\vt,q)$ in a bin biases the energy under a nonlinear equation of state, and a resting stratified state no
+        longer has zero available energy exactly; worthwhile only for much larger grids or long series.
+  \item \textbf{Dual ascent:} maximise the concave piecewise-linear dual
+        $D(\psi)=\sum_kM_k\psi_k+\sum_nm_n\min_k(c_{nk}-\psi_k)$ in $K$ variables, whose supergradient is the volume residual of each
+        slot, by bundle or subgradient methods or entropic smoothing; the discrete counterpart of the semi-discrete optimal
+        transport of Egan et al.\ (2025). Ties need a small flow among the tied slots.
+  \item \textbf{Linear assignment} (Hungarian, Jonker--Volgenant) for equal masses with $K=N$: $O(N^3)$, and $10^3$--$10^5$ times
+        slower than minimum-cost flow on the problem of Su \& Ingersoll (2016).
+  \item \textbf{A guaranteed bound} (\S\ref{sec:complexity}): a polynomial pivot rule for the network simplex (Orlin 1997), or a
+        strongly polynomial minimum-cost flow algorithm (Orlin 1993), with the same certificate. Likely slower on our states,
+        where the sort is nearly optimal and the simplex needs 1 to 4 passes; worth it only if states appear on which the
+        number of passes grows beyond about $K$.
+\end{itemize}
+
+\subsection{Other reference states}
+\begin{itemize}
+  \item \textbf{Horizontal-mean reference state:} $P_*$ hydrostatic with the row mean of the density (FC2D, by the model's
+        discrete hydrostatic rule, anchored at one level) or of $v$ at $P_R$ (AN2D), with $\zs$ by the same LNB search. Not a
+        rearrangement: $\int R_\Pi\,\mathrm{d}V\ne0$ and $\int\Pi\,\mathrm{d}m$ exceeds $E_P-E_*$ of the Lorenz state. Cheap, and
+        local. Its tendency would follow from the model's full tendencies, as it changes under advection too. It was
+        implemented with the first version of the Lorenz state and removed with the user (2026-10-26), as it is not a goal
+        of the project.
+  \item \textbf{Eddy-size constrained reference state} (Su \& Ingersoll 2016): forbid moves beyond a horizontal distance, which
+        turns the problem back into a sparse assignment problem.
+\end{itemize}
+
+\subsection{Resolution and outputs}
+\begin{itemize}
+  \item \textbf{Slot resolution other than the rows} ($K\ne M_z$; $s$ slots per row in AN2D, equal-mass slots in FC2D), which
+        the first design made a required input. With $K\ne M_z$ the actual state is no longer a placement with exactly the
+        model's energy, and a state at rest gets $E_P-E_*=O(\Delta z^2)$.
+  \item \textbf{Refinement of every near-lowest local minimum} of $S$, with a count of the parcels with two minima within a
+        tolerance, where $\zs$ can jump.
+  \item \textbf{Placement height} $\hat z_n=\sum_kx_{nk}z_k/m_n$ (or the sub-row height in sort order, the analogue of the
+        Winters et al.\ height), as a check of $\zs$, and the reference static energy and $N_*^2$ per parcel as outputs.
+  \item \textbf{$\partial_tP_*$ from differences of successive snapshots,} as a diagnostic. The tendency from the diabatic rates
+        excludes the changes of the reference state caused by the discretisation of advection, and the differences include
+        them, so their difference measures spurious mixing locally, the counterpart of the background potential energy of
+        Il{\i}cak et al.\ (2012). Snapshot intervals must be long compared with $\Delta x/|\mathbf u|$, short compared with the
+        diabatic evolution of $P_*$.
+  \item \textbf{FC2D slot masses under advection:} the tendency holds the slot masses (the row masses of the state) fixed,
+        although advection changes them.
+  \item \textbf{$\partial_tb_e$ beyond the AN2D end rows,} once the equation of state provides the mixed second derivatives.
+\end{itemize}
+
+% =====================================================================================
+\section*{References}
+\begin{itemize}\small
+  \item Ahuja, Magnanti \& Orlin (1993), \emph{Network Flows: Theory, Algorithms, and Applications}, Prentice Hall,
+        ISBN 978-0-13-617549-0 (no DOI).
+  \item Alefeld, Potra \& Shi (1995), Algorithm 748: enclosing zeros of continuous functions, ACM Trans.\ Math.\ Softw.\ 21,
+        327--344, \doi{10.1145/210089.210111}.
+  \item Bertsimas \& Tsitsiklis (1997), \emph{Introduction to Linear Optimization}, Athena Scientific, ISBN 978-1-886529-19-9
+        (no DOI).
+  \item Bradley, Brown \& Graves (1977), Design and implementation of large scale primal transshipment algorithms,
+        Management Sci.\ 24, 1--34, \doi{10.1287/mnsc.24.1.1}.
+  \item Cunningham (1976), A network simplex method, Math.\ Programming 11, 105--116, \doi{10.1007/BF01580379}.
+  \item Dantzig (1951), Application of the simplex method to a transportation problem, in T.\ C.\ Koopmans (ed.),
+        \emph{Activity Analysis of Production and Allocation}, Cowles Commission Monograph 13, Wiley, 359--373 (no DOI;
+        \href{https://cowles.yale.edu/research/cfm-13-activity-analysis-production-and-allocation}{Cowles Foundation}).
+  \item Egan, Methven, Bourne \& Cullen (2025), A definition of the background state of the atmosphere using optimal
+        transport, arXiv:2504.11141.
+  \item Glover, Klingman \& Stutz (1974), Augmented threaded index method for network optimization, INFOR 12, 293--298,
+        \doi{10.1080/03155986.1974.11731583}.
+  \item Grigoriadis (1986), An efficient implementation of the network simplex method, Math.\ Programming Study 26, 83--111,
+        \doi{10.1007/BFb0121089}.
+  \item Harris \& Tailleux (2018), Assessment of algorithms for computing moist available potential energy, QJRMS 144, 1501--1510.
+  \item Hieronymus \& Nycander (2015), Finding the minimum potential energy state by adiabatic parcel rearrangements with a
+        nonlinear equation of state: an exact solution in polynomial time, JPO 45, 1843--1857, \doi{10.1175/JPO-D-14-0174.1}.
+  \item Hitchcock (1941), The distribution of a product from several sources to numerous localities, J.\ Math.\ Phys.\ 20,
+        224--230, \doi{10.1002/sapm1941201224}.
+  \item Hoffman (1963), On simple linear programming problems, in \emph{Convexity}, Proc.\ Symp.\ Pure Math.\ 7, AMS,
+        317--327, \doi{10.1090/pspum/007/0157778}.
+  \item Huang (2005), Available potential energy in the world's oceans, J.\ Mar.\ Res.\ 63, 141--158.
+  \item Il{\i}cak, Adcroft, Griffies \& Hallberg (2012), Spurious dianeutral mixing and the role of momentum closure, Ocean
+        Modelling 45--46, 37--58.
+  \item Kleinschmidt \& Schannath (1995), A strongly polynomial algorithm for the transportation problem, Math.\ Programming
+        68, 1--13, \doi{10.1007/BF01585755}.
+  \item Orlin (1993), A faster strongly polynomial minimum cost flow algorithm, Oper.\ Res.\ 41, 338--350,
+        \doi{10.1287/opre.41.2.338}.
+  \item Orlin (1997), A polynomial time primal network simplex algorithm for minimum cost flows, Math.\ Programming 78,
+        109--129, \doi{10.1007/BF02614365}.
+  \item Saenz, Tailleux, Butler, Hughes \& Oliver (2015), Estimating Lorenz's reference state in an ocean with a nonlinear
+        equation of state for seawater, JPO 45, 1242--1257.
+  \item Stansifer, O'Gorman \& Holt (2017), Accurate computation of moist available potential energy with the Munkres
+        algorithm, QJRMS 143, 288--292.
+  \item Su \& Ingersoll (2016), On the minimum potential energy state and the eddy size-constrained APE density, JPO 46,
+        2663--2674, \doi{10.1175/JPO-D-16-0074.1}.
+  \item Tardos (1985), A strongly polynomial minimum cost circulation algorithm, Combinatorica 5, 247--255,
+        \doi{10.1007/BF02579369}.
+  \item Tailleux (2013), Available potential energy density for a multicomponent Boussinesq fluid with arbitrary nonlinear
+        equation of state, JFM 735, 499--518.
+  \item Tokuyama \& Nakano (1995), Efficient algorithms for the Hitchcock transportation problem, SIAM J.\ Comput.\ 24,
+        563--578, \doi{10.1137/S0097539792236729}.
+  \item Tseng \& Ferziger (2001), Mixing and available potential energy in stratified flows, Phys.\ Fluids 13, 1281--1293.
+  \item Winters, Lombard, Riley \& D'Asaro (1995), Available potential energy and mixing in density-stratified fluids,
+        JFM 289, 115--128, \doi{10.1017/S002211209500125X}.
+  \item Winters \& D'Asaro (1996), Diascalar flux and the rate of fluid mixing, JFM 317, 179--193.
+  \item Wong, Tailleux \& Gray (2016), The computation of reference state and APE production by diabatic processes in an
+        idealized tropical cyclone, QJRMS 142, 2646--2657.
+  \item Zadeh (1973), A bad network problem for the simplex method and other minimum cost flow algorithms, Math.\ Programming
+        5, 255--266, \doi{10.1007/BF01580132}.
+\end{itemize}
+
+\end{document}

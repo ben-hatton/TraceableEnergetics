@@ -32,11 +32,11 @@ JuliaLocalPreferences.toml
 .CondaPkg/
 
 # LaTeX build files of the notes (the .tex sources and the PDFs are tracked)
-notes/*.aux
-notes/*.log
-notes/*.toc
-notes/*.fls
-notes/*.fdb_latexmk
+notes/**/*.aux
+notes/**/*.log
+notes/**/*.toc
+notes/**/*.fls
+notes/**/*.fdb_latexmk
 
 # Experiment output (videos, data)
 examples/*/output/

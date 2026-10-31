@@ -20,7 +20,11 @@ examples/          scripts that run the models, each writing to its own output/ 
   kelvin_helmholtz_budget/   the energy budget of a Kelvin-Helmholtz shear layer in both models
   thermohaline_lock_exchange/ the budgets of the available energy of a thermohaline lock exchange in both models
 tools/             helpers shared by scripts (setup.jl, budget figures, scales, stratification) and studies
-notes/             the specifications of the models, the energy budget and the APE reference state
+notes/             specifications and plans (index in notes/README.md):
+  models/            the two models (traceable_energetics.tex)
+  energy_budget/     the energy budget and available energy (energy.tex)
+  reference_state/   the APE reference state: specification, implementation plan, Python prototypes
+  experiments/       the plan of tutorials, verification tests and validation experiments
 test/              setups tests, canonical setups, diagnostics and outputs on both models; cross-model tests
 ```
 

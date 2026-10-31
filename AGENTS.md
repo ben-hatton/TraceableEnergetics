@@ -17,8 +17,11 @@ equations, using energy-consistent finite-volume discretisations of both models 
   `traceable-energetics` through [sources] in Project.toml.
 - examples/, tools/: the science that uses the packages. Experiment-specific code (I/O, plotting,
   setups) lives here or in src/, never in the packages.
-- notes/: the specifications. traceable_energetics.tex specifies the models; ape_reference_state.tex specifies the
-  algorithms for the reference state of available potential energy and records the decisions taken with the user.
+- notes/: the specifications and plans, one subfolder per subject (index in notes/README.md).
+  models/traceable_energetics.tex specifies the models; energy_budget/energy.tex the energy budget;
+  reference_state/ape_reference_state.tex specifies the algorithms for the reference state of available potential
+  energy and records the decisions taken with the user (implementation plan and Python prototypes alongside);
+  experiments/experiment_plan.md is the plan of tutorials, verification tests and validation experiments in examples/.
 
 ## MANAGING THE PACKAGES
 - CFAnelastics and CFCompressible are ClimFlows packages like the others: the rules for upstream ClimFlows packages
@@ -97,8 +100,12 @@ change in this repository.
   energy Π = Π₁ + Π₂ (AE, ACE = Π₁, APE = Π₂, notation of the energy notes); 2, the exact rearrangement
   (`ExactRearrangement`, a transportation simplex, src/numerics/transportation.jl), used by the examples; 3, ∂ₜP_* from
   the diabatic tendencies (src/reference_state/tendency.jl); 4, the budgets of ACE and APE, with the R terms in ∂ₜP_*.
-  Deferred speedups (sort warm start, Hermite interval hint, previous-snapshot warm start of the simplex, banded pricing,
-  incremental tree updates) are to be offered to the user with fresh timings. See notes/reference_state_plan.md.
+  The simplex updates its tree in place after each pivot (2026-10-31). Deferred speedups (sort warm start, Hermite
+  interval hint, previous-snapshot warm start of the simplex, banded pricing) are to be offered to the user with fresh
+  timings. See the appendix of notes/reference_state/ape_reference_state.tex; the history is in
+  notes/reference_state/reference_state_plan.md.
+- Tests and validation experiments: the plan is notes/experiments/experiment_plan.md (start with its section
+  "Implementation guide for agents"). Nothing of it is implemented yet.
 
 ## WORKING WITH THE USER
 Check in with the user:
