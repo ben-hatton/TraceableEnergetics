@@ -25,6 +25,17 @@
     @test kh.consvar(0.0, 0.5) ≈ 300.0 && kh.u(0.5) == 0
     bubble = rising_bubble(model; θ₀ = 300.0, Δθ = 0.5, q₀ = 0.0)
     @test bubble.consvar(1.0, 0.25) ≈ 300.5 && bubble.consvar(0.1, 0.9) ≈ 300.0
+    # stratified bubble, for any equation of state: N² = (g/v) ∂v/∂consvar ∂consvar/∂z of the background at the bottom
+    # (consvar linear in z, so the one-sided difference is exact), and Δθ at the centre
+    N², g, p0 = 1e-4, model.space.g, params.p0
+    for fluid in (fluid_θ, fluid_s)
+        bubble = rising_bubble((; model..., fluid); θ₀ = 300.0, Δθ = 0.5, q₀ = 0.035, N²)
+        v, _, ∂v_∂consvar, _ = fluid(:p, :consvar, :q).volume_functions(p0, bubble.consvar(0.1, 0.0), 0.035)
+        @test g / v * ∂v_∂consvar * (bubble.consvar(0.1, 0.9) - bubble.consvar(0.1, 0.0)) / 0.9 ≈ N²
+        θ(x, z) = fluid(:p, :consvar, :q).potential_temperature(p0, bubble.consvar(x, z), bubble.q(x, z))
+        θ_flat = rising_bubble((; model..., fluid); θ₀ = 300.0, Δθ = 0.0, q₀ = 0.035, N²)
+        @test θ(1.0, 0.25) - fluid(:p, :consvar, :q).potential_temperature(p0, θ_flat.consvar(1.0, 0.25), 0.035) ≈ 0.5
+    end
     rest = setup(model; θ = 300.0, q = 0.035)
     @test rest.u(0.3) == 0 && rest.ψ(0.5, 0.5) == 0 && rest.q(0.1, 0.2) == 0.035
 end

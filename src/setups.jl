@@ -118,13 +118,29 @@ end
     fields = rising_bubble(model; θ₀, Δθ, q₀, Δq = 0, r = Lz/5, xc = Lx/2, zc = Lz/4, N² = 0)
 
 Warm (Δθ > 0) or cold, possibly fresh/salty (Δq), bubble of radius r centred at (xc, zc) with a smooth (cosine) edge, in a
-background of uniform stratification N² (θ = θ₀ (1 + N² z / g), z the height above the bottom).
+background of composition q₀ and buoyancy frequency squared N² [s⁻²] (N² > 0 stable), for any equation of state. With
+the conservative variable consvar entropic and q uniform, N² = (g / v) (∂v/∂consvar)_{p,q} ∂consvar/∂z, so the background
+is linear in consvar,
+    consvar(z) = consvar₀ + N² z v / (g ∂v/∂consvar),
+from consvar₀ = consvar(θ₀, q₀) at the bottom (z the height above the bottom), with v and ∂v/∂consvar evaluated at the
+reference pressure p0 of the fluid, θ₀ and q₀: N² is exact at the bottom, and varies with height as the expansion
+coefficient (1/v) ∂v/∂consvar does. For an ideal gas, (1/v) ∂v/∂θ = 1/θ and the background is θ = θ₀ (1 + N² z / g).
+The bubble adds Δθ to the potential temperature of the background.
 """
 function rising_bubble(model; θ₀, Δθ, q₀, Δq = zero(q₀), r = model.space.Lz / 5, xc = model.space.Lx / 2,
                        zc = model.space.Lz / 4, N² = zero(θ₀))
-    (; g) = model.space
+    (; fluid, space) = model
+    (; g) = space
     shape(x, z) = cos(π / 2 * min(hypot(x - xc, z - zc) / r, 1))^2      # 1 at the centre, 0 outside the radius
-    return setup(model; θ = (x, z) -> θ₀ * (1 + N² * z / g) + Δθ * shape(x, z), q = (x, z) -> q₀ + Δq * shape(x, z))
+    # consvar₀ = consvar(p0, θ₀, q₀) at the bottom (independent of pressure, consvar being entropic)
+    consvar₀ = fluid(:p, :theta, :q).conservative_variable(fluid.p0, θ₀, q₀)
+    # v and (∂v/∂consvar)_{p,q} at (p0, consvar₀, q₀)
+    v, _, ∂v_∂consvar, _ = fluid(:p, :consvar, :q).volume_functions(fluid.p0, consvar₀, q₀)
+    # ∂consvar/∂z = N² v / (g ∂v/∂consvar), the uniform gradient of the background
+    ∂consvar_∂z = N² * v / (g * ∂v_∂consvar)
+    # θ(z) of the background, the potential temperature of consvar₀ + z ∂consvar/∂z at composition q₀
+    θ_background(z) = fluid(:p, :consvar, :q).potential_temperature(fluid.p0, consvar₀ + ∂consvar_∂z * z, q₀)
+    return setup(model; θ = (x, z) -> θ_background(z) + Δθ * shape(x, z), q = (x, z) -> q₀ + Δq * shape(x, z))
 end
 
 """
