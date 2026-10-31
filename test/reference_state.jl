@@ -552,7 +552,8 @@ active_setup(model::FC2D) = initialize(model, (; consvar = θ_active, q = q_acti
     ref = lorenz(model)
     info = diagnostic_info(model; reference_state = ref)
     @test info.p_star.location == (nothing, Cell()) && info.z_star.location == (Cell(), Cell())
-    session = open(diagnostics(model; reference_state = ref); state, dstate, scratch, model)
+    # the reference state of the manipulated conversion, which FC2D does not have: that of the matching AN2D
+    session = open(diagnostics(model; reference = an_box(Float64).reference, reference_state = ref); state, dstate, scratch, model)
     # the energies and the available energy, separate diagnostics of the reference state
     energy = reference_energy!(lorenz(model), model, state)
     E_P = CookBooks.get(session, :integrated_potential_energy)
@@ -565,7 +566,11 @@ active_setup(model::FC2D) = initialize(model, (; consvar = θ_active, q = q_acti
     @test CookBooks.get(session, :integrated_ACE) == parcel_integral(model, ref, energy.ACE)
     @test CookBooks.get(session, :integrated_APE) == parcel_integral(model, ref, energy.APE)
     @test CookBooks.get(session, :wall_minima) == count(at_wall(model, energy))
-    names = model isa FC2D ? (:z_star, :ACE, :AE, :integrated_APE, :p_star, :background_potential_energy, :wall_minima, :p_top,
+    # every diagnostic of the book is computed, and finite
+    for name in keys(info)
+        @test all(isfinite, CookBooks.get(session, name))
+    end
+    names =model isa FC2D ? (:z_star, :ACE, :AE, :integrated_APE, :p_star, :background_potential_energy, :wall_minima, :p_top,
                               :APE_flux_rev_z, :conversion_APE) :
                              (:z_star, :ACE, :AE, :integrated_APE, :p_star, :background_potential_energy, :wall_minima,
                               :APE_flux_rev_z, :conversion_APE)

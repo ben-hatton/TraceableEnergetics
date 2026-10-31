@@ -99,29 +99,31 @@ displacement_bernoulli!(B₂, model, APE, (; consvar, q), Δϑ, Δq) =
 
 """
     C = bernoulli_conversion!(C, model, faces, (mass_flux_x, mass_flux_z), (mu, mw), k, B, Δϑ, Δq)
+    F = face_bernoulli_product!(F, model, dir, mass_flux, tracer_flux, k, B, Δϑ, Δq)
 
 The conversion C_B = -ρu·∇B - ρϑu·∇(Δ Σ_ϑ) - ρqu·∇(Δ Σ_q) [W m⁻³] at the interior cells: on the faces,
 F = -(ρu δB + ρϑu δ(Δ Σ_ϑ) + ρqu δ(Δ Σ_q))/Δ along each direction, with the mass flux and the tracer fluxes
-`mu[:, :, k]` (ϑ) and `mu[:, :, k + 1]` (q) of the tendencies, averaged to the cells. With the Bernoulli coefficient B
-and the potentials of the ACE or the APE, it is C_ACE or C_APE.
+`mu[:, :, k]` (ϑ) and `mu[:, :, k + 1]` (q) of the tendencies (`face_bernoulli_product!`, on the faces of direction
+`dir`), averaged to the cells. With the Bernoulli coefficient B and the potentials of the ACE or the APE, it is C_ACE or
+C_APE.
 """
 function bernoulli_conversion!(C, model, (Fx, Fz), (mass_flux_x, mass_flux_z), (mu, mw), k, B, Δϑ, Δq)
-    (; mgr, domain, inv_dx, inv_dz, spatial_scheme) = model
-    (; δ) = operators(spatial_scheme)
-    @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for I in irange, j in jrange
-            Fx[I, j] = - inv_dx * (mass_flux_x[I, j] * δ(B, (1,), (Face(),), I, j) + mu[I, j, k] * δ(Δϑ, (1,), (Face(),), I, j) +
-                                   mu[I, j, k+1] * δ(Δq, (1,), (Face(),), I, j))
-        end
-    end
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
-        @inbounds @vec for i in irange, J in jrange
-            Fz[i, J] = - inv_dz * (mass_flux_z[i, J] * δ(B, (2,), (Face(),), i, J) + mw[i, J, k] * δ(Δϑ, (2,), (Face(),), i, J) +
-                                   mw[i, J, k+1] * δ(Δq, (2,), (Face(),), i, J))
-        end
-    end
-    periodize!(domain, (Fx, Fz))
+    face_bernoulli_product!(Fx, model, Val(1), mass_flux_x, mu, k, B, Δϑ, Δq)
+    face_bernoulli_product!(Fz, model, Val(2), mass_flux_z, mw, k, B, Δϑ, Δq)
     return faces_to_cells!(C, model, Fx, Fz)
+end
+function face_bernoulli_product!(F, model, dir, mass_flux, tracer_flux, k, B, Δϑ, Δq)
+    (; mgr, domain, spatial_scheme) = model
+    (; δ) = operators(spatial_scheme)
+    inv_Δ = inv_spacing(model, dir)
+    @with mgr, let (irange, jrange) = face_ranges(domain, dir)
+        @inbounds @vec for i in irange, j in jrange
+            F[i, j] = - inv_Δ * (mass_flux[i, j] * δ(B, along(dir), (Face(),), i, j) +
+                                 tracer_flux[i, j, k] * δ(Δϑ, along(dir), (Face(),), i, j) +
+                                 tracer_flux[i, j, k+1] * δ(Δq, along(dir), (Face(),), i, j))
+        end
+    end
+    return periodize!(domain, F)
 end
 
 """

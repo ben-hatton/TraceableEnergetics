@@ -132,33 +132,33 @@ available_energy_budget_entries(model, out, faces) = let (; mgr) = model, cells 
         # reversible fluxes, J_ACE^rev = ρu B₁ + ρϑu Δ₁Σ_ϑ + ρqu Δ₁Σ_q (= ρΠ₁u + J_C*) and J_APE^rev (= ρΠ₂u)
         ACE_flux_rev_x = entry("reversible flux of ACE along x, ρu B₁ + ρϑu Δ₁Σ_ϑ + ρqu Δ₁Σ_q", "W m⁻²", x_faces,
             (model, scratch, mass_flux_x, bernoulli_potential_ACE, conjugate_variable_ACE, modified_chemical_potential_ACE) ->
-                potential_flux_rev_x!(out(:ACE_flux_rev_x), model, mass_flux_x, scratch.advection.mu, k, bernoulli_potential_ACE,
-                                      conjugate_variable_ACE, modified_chemical_potential_ACE)),
+                potential_flux_rev!(out(:ACE_flux_rev_x), model, Val(1), mass_flux_x, scratch.advection.mu, k, bernoulli_potential_ACE,
+                                    conjugate_variable_ACE, modified_chemical_potential_ACE)),
         ACE_flux_rev_z = entry("reversible flux of ACE along z, ρw B₁ + ρϑw Δ₁Σ_ϑ + ρqw Δ₁Σ_q", "W m⁻²", z_faces,
             (model, scratch, mass_flux_z, bernoulli_potential_ACE, conjugate_variable_ACE, modified_chemical_potential_ACE) ->
-                potential_flux_rev_z!(out(:ACE_flux_rev_z), model, mass_flux_z, scratch.advection.mw, k, bernoulli_potential_ACE,
-                                      conjugate_variable_ACE, modified_chemical_potential_ACE)),
+                potential_flux_rev!(out(:ACE_flux_rev_z), model, Val(2), mass_flux_z, scratch.advection.mw, k, bernoulli_potential_ACE,
+                                    conjugate_variable_ACE, modified_chemical_potential_ACE)),
         APE_flux_rev_x = entry("reversible flux of APE along x, ρu B₂ + ρϑu Δ₂Σ_ϑ + ρqu Δ₂Σ_q", "W m⁻²", x_faces,
             (model, scratch, mass_flux_x, bernoulli_potential_APE, conjugate_variable_APE, modified_chemical_potential_APE) ->
-                potential_flux_rev_x!(out(:APE_flux_rev_x), model, mass_flux_x, scratch.advection.mu, k, bernoulli_potential_APE,
-                                      conjugate_variable_APE, modified_chemical_potential_APE)),
+                potential_flux_rev!(out(:APE_flux_rev_x), model, Val(1), mass_flux_x, scratch.advection.mu, k, bernoulli_potential_APE,
+                                    conjugate_variable_APE, modified_chemical_potential_APE)),
         APE_flux_rev_z = entry("reversible flux of APE along z, ρw B₂ + ρϑw Δ₂Σ_ϑ + ρqw Δ₂Σ_q", "W m⁻²", z_faces,
             (model, scratch, mass_flux_z, bernoulli_potential_APE, conjugate_variable_APE, modified_chemical_potential_APE) ->
-                potential_flux_rev_z!(out(:APE_flux_rev_z), model, mass_flux_z, scratch.advection.mw, k, bernoulli_potential_APE,
-                                      conjugate_variable_APE, modified_chemical_potential_APE)),
+                potential_flux_rev!(out(:APE_flux_rev_z), model, Val(2), mass_flux_z, scratch.advection.mw, k, bernoulli_potential_APE,
+                                    conjugate_variable_APE, modified_chemical_potential_APE)),
         # irreversible fluxes, J_ACE^irr = Δ₁Σ_ϑ J_ϑ + Δ₁Σ_q J_q, J_APE^irr = Δ₂Σ_ϑ J_ϑ + Δ₂Σ_q J_q
         ACE_flux_irr_x = entry("irreversible flux of ACE along x, Δ₁Σ_ϑ J_ϑ + Δ₁Σ_q J_q", "W m⁻²", x_faces,
             (model, consflux_x, qflux_x, conjugate_variable_ACE, modified_chemical_potential_ACE) ->
-                potential_flux_irr_x!(out(:ACE_flux_irr_x), model, consflux_x, qflux_x, conjugate_variable_ACE, modified_chemical_potential_ACE)),
+                potential_flux_irr!(out(:ACE_flux_irr_x), model, Val(1), consflux_x, qflux_x, conjugate_variable_ACE, modified_chemical_potential_ACE)),
         ACE_flux_irr_z = entry("irreversible flux of ACE along z, Δ₁Σ_ϑ J_ϑ + Δ₁Σ_q J_q", "W m⁻²", z_faces,
             (model, consflux_z, qflux_z, conjugate_variable_ACE, modified_chemical_potential_ACE) ->
-                potential_flux_irr_z!(out(:ACE_flux_irr_z), model, consflux_z, qflux_z, conjugate_variable_ACE, modified_chemical_potential_ACE)),
+                potential_flux_irr!(out(:ACE_flux_irr_z), model, Val(2), consflux_z, qflux_z, conjugate_variable_ACE, modified_chemical_potential_ACE)),
         APE_flux_irr_x = entry("irreversible flux of APE along x, Δ₂Σ_ϑ J_ϑ + Δ₂Σ_q J_q", "W m⁻²", x_faces,
             (model, consflux_x, qflux_x, conjugate_variable_APE, modified_chemical_potential_APE) ->
-                potential_flux_irr_x!(out(:APE_flux_irr_x), model, consflux_x, qflux_x, conjugate_variable_APE, modified_chemical_potential_APE)),
+                potential_flux_irr!(out(:APE_flux_irr_x), model, Val(1), consflux_x, qflux_x, conjugate_variable_APE, modified_chemical_potential_APE)),
         APE_flux_irr_z = entry("irreversible flux of APE along z, Δ₂Σ_ϑ J_ϑ + Δ₂Σ_q J_q", "W m⁻²", z_faces,
             (model, consflux_z, qflux_z, conjugate_variable_APE, modified_chemical_potential_APE) ->
-                potential_flux_irr_z!(out(:APE_flux_irr_z), model, consflux_z, qflux_z, conjugate_variable_APE, modified_chemical_potential_APE)),
+                potential_flux_irr!(out(:APE_flux_irr_z), model, Val(2), consflux_z, qflux_z, conjugate_variable_APE, modified_chemical_potential_APE)),
         # ∇·J_ACE^rev, ∇·J_ACE^irr, ∇·J_APE^rev, ∇·J_APE^irr
         div_ACE_flux_rev = entry("divergence of the reversible flux of ACE", "W m⁻³", cells,
             (model, ACE_flux_rev_x, ACE_flux_rev_z) -> divergence!(out(:div_ACE_flux_rev), model, ACE_flux_rev_x, ACE_flux_rev_z)),
@@ -258,7 +258,7 @@ reference_tendency_entries(model, out) = let (; mgr) = model, cells = (Cell(), C
         p_star_tendency_at_z_star = entry("tendency of the reference pressure ∂ₜP_*(z_*) at the reference height", "Pa s⁻¹", cells,
             (model, reference_state_tendency, z_star) -> reference_pressure_tendency_at!(out(:p_star_tendency_at_z_star), model, reference_state_tendency, z_star)),
         plain_weight_slots = entry("number of slots whose means have plain weights (N² ≤ 0 for one of their parcels)", "1", (),
-            reference_state_tendency -> eltype(reference_state_tendency.mass)(reference_state_tendency.plain_weight_slots)),
+            reference_state_tendency -> eltype(reference_state_tendency.parcels.mass)(reference_state_tendency.plain_weight_slots)),
         # R_Π₁ = ρ (Σ_p(z, p) - Σ_p(z, P_*(z))) ∂ₜP_*(z), R_Π₂ = ρ Σ_p(z, P_*(z)) ∂ₜP_*(z) - ρ Σ_p(z_*, P_*(z_*)) ∂ₜP_*(z_*)
         reference_pressure_term_ACE = entry("term R_Π₁ of ∂ₜP_* in the tendency of ρΠ₁ (zero for AN2D)", "W m⁻³", cells,
             (model, reference_state_tendency) -> compression_reference_term!(out(:reference_pressure_term_ACE), model, reference_state_tendency)),

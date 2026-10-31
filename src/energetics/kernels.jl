@@ -128,114 +128,98 @@ function bernoulli_potential!(Σ_B, model::AN2D, h, (; thermo, φ))
 end
 
 # Fluxes of K and P on the faces. Each is a product of a flux of the tendencies and a cell quantity averaged to the face.
+# A kernel on the faces takes the direction `dir`, Val(1) for the x-faces (u) and Val(2) for the z-faces (w), and is
+# computed at the interior faces of that direction, both walls of a bounded dimension included.
 
 """
-    Jx = advective_flux_x!(Jx, model, flux_x, a)
-    Jz = advective_flux_z!(Jz, model, flux_z, a)
+    (irange, jrange) = face_ranges(domain, dir)
+    dims = along(dir)
+    inv_Δ = inv_spacing(model, dir)
 
-Flux of the cell quantity `a` carried by a flux on the faces, J = flux ℑ(a). With the mass flux ρu: the reversible flux
-of K, ρ K u (`a` = K); with the velocity: J_C = (p - p_R) u (`a` = p - p_R).
+The index ranges of the interior faces of direction `dir` (Val(1): x-faces, `I, j`; Val(2): z-faces, `i, J`), the
+dimensions `(d,)` of the operators `ℑ`, `δ` along it, and the inverse grid spacing 1/Δx or 1/Δz [m⁻¹] along it.
 """
-function advective_flux_x!(Jx, model, flux_x, a)
-    (; mgr, domain, spatial_scheme) = model
-    (; ℑ) = operators(spatial_scheme)
-    @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for I in irange, j in jrange
-            Jx[I, j] = flux_x[I, j] * ℑ(a, (1,), (Face(),), I, j)
-        end
-    end
-    return periodize!(domain, Jx)
-end
-function advective_flux_z!(Jz, model, flux_z, a)
-    (; mgr, domain, spatial_scheme) = model
-    (; ℑ) = operators(spatial_scheme)
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
-        @inbounds @vec for i in irange, J in jrange
-            Jz[i, J] = flux_z[i, J] * ℑ(a, (2,), (Face(),), i, J)
-        end
-    end
-    return periodize!(domain, Jz)
-end
+face_ranges(domain, ::Val{1}) = (interior_faces(domain, 1), interior_cells(domain, 2))
+face_ranges(domain, ::Val{2}) = (interior_cells(domain, 1), interior_faces(domain, 2))
+along(::Val{d}) where d = (d,)
+inv_spacing(model, ::Val{1}) = model.inv_dx
+inv_spacing(model, ::Val{2}) = model.inv_dz
 
 """
-    Jx = stress_work_flux_x!(Jx, model, uτ_x)
-    Jz = stress_work_flux_z!(Jz, model, uτ_z)
+    out = facewise!(out, model, dir, f, a...)
 
-Irreversible flux of K on the faces, -u·τ, from the work of the viscous stress of the tendencies.
+out = f(a...) pointwise on face arrays of direction `dir` at its interior faces, by the manager of `model`, then
+periodized: the halo of the arrays `a` is never read.
 """
-function stress_work_flux_x!(Jx, model, uτ_x)
+function facewise!(out, model, dir, f::Fun, a::Vararg{Any, N}) where {Fun, N}
     (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for I in irange, j in jrange
-            Jx[I, j] = - uτ_x[I, j]
+    @with mgr, let (irange, jrange) = face_ranges(domain, dir)
+        @inbounds @vec for i in irange, j in jrange
+            out[i, j] = f(map(x -> @inbounds(x[i, j]), a)...)
         end
     end
-    return periodize!(domain, Jx)
-end
-function stress_work_flux_z!(Jz, model, uτ_z)
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
-        @inbounds @vec for i in irange, J in jrange
-            Jz[i, J] = - uτ_z[i, J]
-        end
-    end
-    return periodize!(domain, Jz)
+    return periodize!(domain, out)
 end
 
 """
-    Jx = potential_flux_rev_x!(Jx, model, mass_flux_x, mu, k, Σ_B, conjvar, chempot)
-    Jz = potential_flux_rev_z!(Jz, model, mass_flux_z, mw, k, Σ_B, conjvar, chempot)
+    J = advective_flux!(J, model, dir, flux, a)
 
-Reversible flux of P on the faces, ρ Σ u = ρu ℑ(Σ_B) + ρϑu ℑ(Σ_ϑ) + ρqu ℑ(Σ_q), from the mass flux and the tracer fluxes
-`mu[:, :, k]` (ϑ) and `mu[:, :, k + 1]` (q) of the tendencies.
+Flux of the cell quantity `a` carried by a flux on the faces of direction `dir`, J = flux ℑ(a). With the mass flux ρu:
+the reversible flux of K, ρ K u (`a` = K); with the velocity: J_C = (p - p_R) u (`a` = p - p_R).
 """
-function potential_flux_rev_x!(Jx, model, mass_flux_x, mu, k, Σ_B, conjvar, chempot)
+function advective_flux!(J, model, dir, flux, a)
     (; mgr, domain, spatial_scheme) = model
     (; ℑ) = operators(spatial_scheme)
-    @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for I in irange, j in jrange
-            Jx[I, j] = mass_flux_x[I, j] * ℑ(Σ_B, (1,), (Face(),), I, j) + mu[I, j, k] * ℑ(conjvar, (1,), (Face(),), I, j) + mu[I, j, k+1] * ℑ(chempot, (1,), (Face(),), I, j)
+    @with mgr, let (irange, jrange) = face_ranges(domain, dir)
+        @inbounds @vec for i in irange, j in jrange
+            J[i, j] = flux[i, j] * ℑ(a, along(dir), (Face(),), i, j)
         end
     end
-    return periodize!(domain, Jx)
-end
-function potential_flux_rev_z!(Jz, model, mass_flux_z, mw, k, Σ_B, conjvar, chempot)
-    (; mgr, domain, spatial_scheme) = model
-    (; ℑ) = operators(spatial_scheme)
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
-        @inbounds @vec for i in irange, J in jrange
-            Jz[i, J] = mass_flux_z[i, J] * ℑ(Σ_B, (2,), (Face(),), i, J) + mw[i, J, k] * ℑ(conjvar, (2,), (Face(),), i, J) + mw[i, J, k+1] * ℑ(chempot, (2,), (Face(),), i, J)
-        end
-    end
-    return periodize!(domain, Jz)
+    return periodize!(domain, J)
 end
 
 """
-    Jx = potential_flux_irr_x!(Jx, model, consflux_x, qflux_x, conjvar, chempot)
-    Jz = potential_flux_irr_z!(Jz, model, consflux_z, qflux_z, conjvar, chempot)
+    J = stress_work_flux!(J, model, dir, uτ)
 
-Irreversible flux of P on the faces, Σ_ϑ J_ϑ + Σ_q J_q = ℑ(conjvar) consflux + ℑ(chempot) qflux. On a wall face, ℑ is the
-value of the cell (zero-gradient halo), as for the energy the wall delivers in the tendencies.
+Irreversible flux of K on the faces of direction `dir`, -u·τ, from the work `uτ` of the viscous stress of the
+tendencies.
 """
-function potential_flux_irr_x!(Jx, model, consflux_x, qflux_x, conjvar, chempot)
+stress_work_flux!(J, model, dir, uτ) = facewise!(J, model, dir, uτ -> -uτ, uτ)
+
+"""
+    J = potential_flux_rev!(J, model, dir, mass_flux, tracer_flux, k, Σ_B, conjvar, chempot)
+
+Reversible flux of P on the faces of direction `dir`, ρ Σ u = ρu ℑ(Σ_B) + ρϑu ℑ(Σ_ϑ) + ρqu ℑ(Σ_q), from the mass flux
+and the tracer fluxes `tracer_flux[:, :, k]` (ϑ) and `tracer_flux[:, :, k + 1]` (q) of the tendencies (`mu` or `mw`).
+"""
+function potential_flux_rev!(J, model, dir, mass_flux, tracer_flux, k, Σ_B, conjvar, chempot)
     (; mgr, domain, spatial_scheme) = model
     (; ℑ) = operators(spatial_scheme)
-    @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for I in irange, j in jrange
-            Jx[I, j] = consflux_x[I, j] * ℑ(conjvar, (1,), (Face(),), I, j) + qflux_x[I, j] * ℑ(chempot, (1,), (Face(),), I, j)
+    @with mgr, let (irange, jrange) = face_ranges(domain, dir)
+        @inbounds @vec for i in irange, j in jrange
+            J[i, j] = mass_flux[i, j] * ℑ(Σ_B, along(dir), (Face(),), i, j) +
+                      tracer_flux[i, j, k] * ℑ(conjvar, along(dir), (Face(),), i, j) +
+                      tracer_flux[i, j, k+1] * ℑ(chempot, along(dir), (Face(),), i, j)
         end
     end
-    return periodize!(domain, Jx)
+    return periodize!(domain, J)
 end
-function potential_flux_irr_z!(Jz, model, consflux_z, qflux_z, conjvar, chempot)
+
+"""
+    J = potential_flux_irr!(J, model, dir, consflux, qflux, conjvar, chempot)
+
+Irreversible flux of P on the faces of direction `dir`, Σ_ϑ J_ϑ + Σ_q J_q = ℑ(conjvar) consflux + ℑ(chempot) qflux. On a
+wall face, ℑ is the value of the cell (zero-gradient halo), as for the energy the wall delivers in the tendencies.
+"""
+function potential_flux_irr!(J, model, dir, consflux, qflux, conjvar, chempot)
     (; mgr, domain, spatial_scheme) = model
     (; ℑ) = operators(spatial_scheme)
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
-        @inbounds @vec for i in irange, J in jrange
-            Jz[i, J] = consflux_z[i, J] * ℑ(conjvar, (2,), (Face(),), i, J) + qflux_z[i, J] * ℑ(chempot, (2,), (Face(),), i, J)
+    @with mgr, let (irange, jrange) = face_ranges(domain, dir)
+        @inbounds @vec for i in irange, j in jrange
+            J[i, j] = consflux[i, j] * ℑ(conjvar, along(dir), (Face(),), i, j) + qflux[i, j] * ℑ(chempot, along(dir), (Face(),), i, j)
         end
     end
-    return periodize!(domain, Jz)
+    return periodize!(domain, J)
 end
 
 """
@@ -274,26 +258,28 @@ end
 
 """
     C = gradient_product!(C, model, faces, (flux_x, flux_z), Σ)
+    F = face_gradient_product!(F, model, dir, flux, Σ)
 
 -flux·∇Σ [W m⁻³] at the interior cells: the face product F = -flux δΣ / Δ along each direction, for a flux on the faces
-and a potential Σ at the cells, averaged to the cells. It is a conversion C_ϑ, C_q, C_Σ (mass or tracer flux of the
-tendencies, potential Σ_ϑ, Σ_q or Σ_B) or a heating Q_ϑ, Q_q (diffusive flux).
+and a potential Σ at the cells (`face_gradient_product!`, on the faces of direction `dir`), averaged to the cells. It is
+a conversion C_ϑ, C_q, C_Σ (mass or tracer flux of the tendencies, potential Σ_ϑ, Σ_q or Σ_B) or a heating Q_ϑ, Q_q
+(diffusive flux).
 """
 function gradient_product!(C, model, (Fx, Fz), (flux_x, flux_z), Σ)
-    (; mgr, domain, inv_dx, inv_dz, spatial_scheme) = model
-    (; δ) = operators(spatial_scheme)
-    @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for I in irange, j in jrange
-            Fx[I, j] = - flux_x[I, j] * inv_dx * δ(Σ, (1,), (Face(),), I, j)
-        end
-    end
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
-        @inbounds @vec for i in irange, J in jrange
-            Fz[i, J] = - flux_z[i, J] * inv_dz * δ(Σ, (2,), (Face(),), i, J)
-        end
-    end
-    periodize!(domain, (Fx, Fz))
+    face_gradient_product!(Fx, model, Val(1), flux_x, Σ)
+    face_gradient_product!(Fz, model, Val(2), flux_z, Σ)
     return faces_to_cells!(C, model, Fx, Fz)
+end
+function face_gradient_product!(F, model, dir, flux, Σ)
+    (; mgr, domain, spatial_scheme) = model
+    (; δ) = operators(spatial_scheme)
+    inv_Δ = inv_spacing(model, dir)
+    @with mgr, let (irange, jrange) = face_ranges(domain, dir)
+        @inbounds @vec for i in irange, j in jrange
+            F[i, j] = - flux[i, j] * inv_Δ * δ(Σ, along(dir), (Face(),), i, j)
+        end
+    end
+    return periodize!(domain, F)
 end
 
 """
@@ -303,18 +289,8 @@ Work of the vortex force, VF = -ρu·(ω×u) [W m⁻³] at the interior cells: m
 (vortex_x, vortex_z) of the tendencies, on the faces, averaged to the cells.
 """
 function vortex_work!(VF, model, (Fx, Fz), (; vortex_x, vortex_z), mass_flux_x, mass_flux_z)
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for I in irange, j in jrange
-            Fx[I, j] = - mass_flux_x[I, j] * vortex_x[I, j]
-        end
-    end
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
-        @inbounds @vec for i in irange, J in jrange
-            Fz[i, J] = - mass_flux_z[i, J] * vortex_z[i, J]
-        end
-    end
-    periodize!(domain, (Fx, Fz))
+    facewise!(Fx, model, Val(1), (ρu, ω) -> -ρu * ω, mass_flux_x, vortex_x)
+    facewise!(Fz, model, Val(2), (ρw, ω) -> -ρw * ω, mass_flux_z, vortex_z)
     return faces_to_cells!(VF, model, Fx, Fz)
 end
 
@@ -325,18 +301,8 @@ Tendency of K = (ℑx(u²) + ℑz(w²))/2, ℑx(u ∂ₜu) + ℑz(w ∂ₜw) [W 
 halo faces in a periodic dimension, so the products on the faces are periodized rather than read there.
 """
 function kinetic_energy_rate!(dK, model, (Fx, Fz), (u, w), (du, dw))
-    (; mgr, domain) = model
-    @with mgr, let (irange, jrange) = (interior_faces(domain, 1), interior_cells(domain, 2))
-        @inbounds @vec for I in irange, j in jrange
-            Fx[I, j] = u[I, j] * du[I, j]
-        end
-    end
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
-        @inbounds @vec for i in irange, J in jrange
-            Fz[i, J] = w[i, J] * dw[i, J]
-        end
-    end
-    periodize!(domain, (Fx, Fz))
+    facewise!(Fx, model, Val(1), *, u, du)
+    facewise!(Fz, model, Val(2), *, w, dw)
     return faces_to_cells!(dK, model, Fx, Fz)
 end
 
@@ -417,11 +383,11 @@ end
 """
     div = pressure_flux_divergence!(div, model, faces, u, w, pa)
 
-∇·J_C [W m⁻³] at the interior cells, with J_C = (p - p_R) u = pa ℑ(u) on the faces (`advective_flux_x!`).
+∇·J_C [W m⁻³] at the interior cells, with J_C = (p - p_R) u = pa ℑ(u) on the faces (`advective_flux!`).
 """
 function pressure_flux_divergence!(div, model, (Fx, Fz), u, w, pa)
-    advective_flux_x!(Fx, model, u, pa)
-    advective_flux_z!(Fz, model, w, pa)
+    advective_flux!(Fx, model, Val(1), u, pa)
+    advective_flux!(Fz, model, Val(2), w, pa)
     return divergence!(div, model, Fx, Fz)
 end
 
@@ -456,18 +422,13 @@ end
 """
     Cb = buoyancy_conversion!(Cb, model, (Fx, Fz), mass_flux_z, b)
 
-C_b = ρ b w [W m⁻³] at the interior cells: the mass flux times the buoyancy averaged to the w-faces (`Fz`), averaged to
-the cells.
+C_b = ρ b w [W m⁻³] at the interior cells: the mass flux times the buoyancy averaged to the w-faces (`Fz`,
+`advective_flux!`), averaged to the cells.
 """
 function buoyancy_conversion!(Cb, model, (Fx, Fz), mass_flux_z, b)
     (; mgr, domain, spatial_scheme) = model
     (; ℑ) = operators(spatial_scheme)
-    @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_faces(domain, 2))
-        @inbounds @vec for i in irange, J in jrange
-            Fz[i, J] = mass_flux_z[i, J] * ℑ(b, (2,), (Face(),), i, J)
-        end
-    end
-    periodize!(domain, Fz)
+    advective_flux!(Fz, model, Val(2), mass_flux_z, b)
     @with mgr, let (irange, jrange) = (interior_cells(domain, 1), interior_cells(domain, 2))
         @inbounds @vec for i in irange, j in jrange
             Cb[i, j] = ℑ(Fz, (2,), (Cell(),), i, j)

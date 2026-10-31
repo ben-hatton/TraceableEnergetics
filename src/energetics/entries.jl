@@ -36,28 +36,28 @@ energetics_entries(model, out, faces, reference) = let (; mgr) = model, cells = 
             (model, u, w, du, dw) -> kinetic_energy_rate!(out(:kinetic_energy_rate), model, faces, (u, w), (du, dw))),
         # reversible flux of K, J_K^rev = ρ K u
         kinetic_flux_rev_x = entry("reversible flux of K along x, ρ K u", "W m⁻²", x_faces,
-            (model, mass_flux_x, kinetic_energy) -> advective_flux_x!(out(:kinetic_flux_rev_x), model, mass_flux_x, kinetic_energy)),
+            (model, mass_flux_x, kinetic_energy) -> advective_flux!(out(:kinetic_flux_rev_x), model, Val(1), mass_flux_x, kinetic_energy)),
         kinetic_flux_rev_z = entry("reversible flux of K along z, ρ K w", "W m⁻²", z_faces,
-            (model, mass_flux_z, kinetic_energy) -> advective_flux_z!(out(:kinetic_flux_rev_z), model, mass_flux_z, kinetic_energy)),
+            (model, mass_flux_z, kinetic_energy) -> advective_flux!(out(:kinetic_flux_rev_z), model, Val(2), mass_flux_z, kinetic_energy)),
         # irreversible flux of K, J_K^irr = -u·τ
         kinetic_flux_irr_x = entry("irreversible flux of K along x, -(u·τ)_x", "W m⁻²", x_faces,
-            (model, scratch) -> stress_work_flux_x!(out(:kinetic_flux_irr_x), model, scratch.irreversible.uτ_x)),
+            (model, scratch) -> stress_work_flux!(out(:kinetic_flux_irr_x), model, Val(1), scratch.irreversible.uτ_x)),
         kinetic_flux_irr_z = entry("irreversible flux of K along z, -(u·τ)_z", "W m⁻²", z_faces,
-            (model, scratch) -> stress_work_flux_z!(out(:kinetic_flux_irr_z), model, scratch.irreversible.uτ_z)),
+            (model, scratch) -> stress_work_flux!(out(:kinetic_flux_irr_z), model, Val(2), scratch.irreversible.uτ_z)),
         # reversible flux of P, J_P^rev = ρ Σ u = ρu (Σ - ϑ Σ_ϑ - q Σ_q) + ρϑu Σ_ϑ + ρqu Σ_q
         potential_flux_rev_x = entry("reversible flux of P along x, ρ Σ u", "W m⁻²", x_faces,
             (model, scratch, mass_flux_x, bernoulli_potential, conjugate_variable, modified_chemical_potential) ->
-                potential_flux_rev_x!(out(:potential_flux_rev_x), model, mass_flux_x, scratch.advection.mu, k, bernoulli_potential, conjugate_variable, modified_chemical_potential)),
+                potential_flux_rev!(out(:potential_flux_rev_x), model, Val(1), mass_flux_x, scratch.advection.mu, k, bernoulli_potential, conjugate_variable, modified_chemical_potential)),
         potential_flux_rev_z = entry("reversible flux of P along z, ρ Σ w", "W m⁻²", z_faces,
             (model, scratch, mass_flux_z, bernoulli_potential, conjugate_variable, modified_chemical_potential) ->
-                potential_flux_rev_z!(out(:potential_flux_rev_z), model, mass_flux_z, scratch.advection.mw, k, bernoulli_potential, conjugate_variable, modified_chemical_potential)),
+                potential_flux_rev!(out(:potential_flux_rev_z), model, Val(2), mass_flux_z, scratch.advection.mw, k, bernoulli_potential, conjugate_variable, modified_chemical_potential)),
         # irreversible flux of P, J_P^irr = Σ_ϑ J_ϑ + Σ_q J_q
         potential_flux_irr_x = entry("irreversible flux of P along x, Σ_ϑ J_ϑ + Σ_q J_q", "W m⁻²", x_faces,
             (model, consflux_x, qflux_x, conjugate_variable, modified_chemical_potential) ->
-                potential_flux_irr_x!(out(:potential_flux_irr_x), model, consflux_x, qflux_x, conjugate_variable, modified_chemical_potential)),
+                potential_flux_irr!(out(:potential_flux_irr_x), model, Val(1), consflux_x, qflux_x, conjugate_variable, modified_chemical_potential)),
         potential_flux_irr_z = entry("irreversible flux of P along z, Σ_ϑ J_ϑ + Σ_q J_q", "W m⁻²", z_faces,
             (model, consflux_z, qflux_z, conjugate_variable, modified_chemical_potential) ->
-                potential_flux_irr_z!(out(:potential_flux_irr_z), model, consflux_z, qflux_z, conjugate_variable, modified_chemical_potential)),
+                potential_flux_irr!(out(:potential_flux_irr_z), model, Val(2), consflux_z, qflux_z, conjugate_variable, modified_chemical_potential)),
         # divergences ∇·J_K^rev, ∇·J_K^irr, ∇·J_P^rev, ∇·J_P^irr
         div_kinetic_flux_rev = entry("divergence of the reversible flux of K", "W m⁻³", cells,
             (model, kinetic_flux_rev_x, kinetic_flux_rev_z) -> divergence!(out(:div_kinetic_flux_rev), model, kinetic_flux_rev_x, kinetic_flux_rev_z)),
