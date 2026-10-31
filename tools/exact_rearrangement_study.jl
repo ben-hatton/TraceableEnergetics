@@ -10,7 +10,7 @@
 #    in E_P - E_* and in P_*, and the roughness in time of ∫ρΠ and of P_* for both methods (second differences between
 #    successive snapshots, relative to the first differences): an exact placement can change between placements of
 #    nearly equal energy but different slot volumes.
-# 3. The N_*⁻² weights under strong thermobaricity at full size (K = 80, as notes/prototypes/weights.py): two
+# 3. The N_*⁻² weights under strong thermobaricity at full size (K = 80, as notes/reference_state/prototypes/weights.py): two
 #    density-compensated families mixed in every row, with only one heated; the error of the weighted and plain means
 #    against the centred difference of the slot volumes of the exact rearrangement, which includes the reordering.
 # 4. Float32: the amplitude of thermobaricity γ below which Float32 no longer sees the reordering (the reduced costs
@@ -30,7 +30,7 @@
 # 3. The weights: the error of the N_*⁻²-weighted mean against the differences of the exact rearrangement is 0.26, 0.085
 #    and 0.057 at K = 20, 40, 80, that of the plain mean 0.36, 0.35, 0.35 (the prototype, with other parameters: 0.006 and
 #    0.2). Every parcel of this state is misplaced by the sort: the simplex needs 315, 1114 and 7405 pivots in 21, 38 and
-#    104 passes (0.46 s at K = 80, against 0.9 ms for the sort).
+#    104 passes (0.05 s at K = 80 since the tree is updated in place, 2026-10-31, 0.46 s before; 0.9 ms for the sort).
 # 4. Float32 sees no reordering on this state for any γ up to 1e-3 Pa⁻¹, where Float64 moves mass in 95 pivots and the
 #    sort underestimates E_P - E_* by 1.6e-3 J m⁻¹: the reduced costs of the reordering are below the
 #    tolerance of the certificate in Float32, 16 (K + 1) eps g L_z = 1.6e-4 J kg⁻¹ for K = 16. The exact rearrangement
@@ -160,7 +160,7 @@ end
 for (K, per) in ((20, 5), (40, 5), (80, 10))
     r = weights_errors(; K, per)
     @printf("  K = %2d, %4d parcels: error of the weighted mean %.3f, of the plain mean %.3f (exact: %d pivots, %d passes, %d violations)\n",
-            K, 2per * K, r.weighted, r.plain, r.column.pivots, r.passes, r.violations)
+            K, 2per * K, r.weighted, r.plain, r.pivots, r.passes, r.violations)
 end
 
 #####
