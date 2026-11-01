@@ -1,7 +1,8 @@
 # Run from the TraceableEnergetics folder with:  julia -t 4 --project=. test/runtests.jl
 # Runs the setups tests, the canonical setups on both models, the reference state of available energy and the budgets of
 # the available energy, and the diagnostics and outputs on both models (diagnostics.jl). The model
-# suites of CFAnelastics and CFCompressible are run from their own repositories. Cross-model (traceability) tests will
+# suites of CFAnelastics and CFCompressible are run from their own repositories. With TE_EXAMPLES=true, it also runs the
+# experiment scripts listed in EXAMPLES below in their quick variant (test/examples.jl). Cross-model (traceability) tests will
 # live here.
 using Test
 using TraceableEnergetics, CookBooks
@@ -11,9 +12,16 @@ using LoopManagers: VectorizedCPU
 const TESTS = @__DIR__
 
 include(joinpath(TESTS, "..", "tools", "scales.jl"))
+include(joinpath(TESTS, "..", "tools", "experiments.jl"))
+include(joinpath(TESTS, "examples.jl"))
+
+# the experiment scripts converted to the template of notes/experiments/experiment_plan.md, as examples/<script>; run
+# in their quick variant only when TE_EXAMPLES=true
+const EXAMPLES = String[]
 
 @testset "TraceableEnergetics" begin
     include(joinpath(TESTS, "scales.jl"))
+    include(joinpath(TESTS, "experiments.jl"))
     @eval module SetupTests
         using Test, TraceableEnergetics
         using CFBoxes: Periodic, Bounded, Box2D
@@ -55,4 +63,10 @@ include(joinpath(TESTS, "..", "tools", "scales.jl"))
     end
     # the diagnostics and outputs of either model
     include(joinpath(TESTS, "diagnostics.jl"))
+    # the experiment scripts, opt-in: they take minutes even in their quick variant
+    if get(ENV, "TE_EXAMPLES", "false") == "true"
+        @testset "examples (quick)" begin
+            test_examples(EXAMPLES)
+        end
+    end
 end

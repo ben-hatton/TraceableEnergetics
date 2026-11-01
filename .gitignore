@@ -39,5 +39,5 @@ notes/**/*.fls
 notes/**/*.fdb_latexmk
 
 # Experiment output (videos, data)
-examples/*/output/
+examples/**/output/
 TraceableEnergetics.code-workspace

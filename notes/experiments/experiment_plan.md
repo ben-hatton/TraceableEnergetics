@@ -596,13 +596,13 @@ This section turns the plan into work in the TraceableEnergetics repository. AGE
 - New model-independent setups go in src/setups.jl, with tests in test/setups.jl. New diagnostics are `entry(long_name, units, location, recipe)` merged into the book of `diagnostics`. Experiment-specific I/O, analysis and plotting stay in examples/ or tools/.
 - Comments write equations in full and don't cite the notes by file, section or equation number. The Literate prose of a script cites papers by DOI, as in References.
 
-**Script layout.** Each script is examples/\<script>/run.jl in Literate.jl format (` #  ` lines become prose, code stays code), in this order:
+**Script layout.** Each script is examples/\<script>/run.jl in Literate.jl format (`# ` lines become prose, code stays code; section headings are `# ## …`, not the `#####` blocks of the older examples), in this order:
 
 1. A header: what the script tests (experiment IDs), the reference values, the command to run it, and the wall time with quick = true and quick = false.
-2. `include(joinpath(@__DIR__, "…", "tools", "setup.jl"))`, with as many `".."` as the depth (two for examples/\<script>/, three for examples/tutorials/\<script>/).
-3. A parameter block, one named tuple: grid, models, flux law, vortex scheme, duration, `cfl`, output interval, and `quick`, which selects a small, fast variant. The default of `quick` and how tests set it (e.g. an environment variable) are agreed at milestone 0.
+2. `include(joinpath(@__DIR__, "…", "tools", "setup.jl"))` and then `tools/experiments.jl` the same way, with as many `".."` as the depth (two for examples/\<script>/, three for examples/tutorials/\<script>/).
+3. A parameter block, one named tuple: grid, models, flux law, vortex scheme, duration, `cfl`, output interval, and `quick = quick_run()`, which selects a small, fast variant.
 4. The models, built with the T1 recipe once T1 exists.
-5. The runs, writing only to examples/\<script>/output/ (untracked).
+5. The runs, writing only to `dir = output_dir(@__DIR__, quick)`: examples/\<script>/output/, or output/quick/ for the quick variant (both untracked).
 6. The checks: a `@testset` comparing each measured value with its reference value (Overview table and the experiment's section) at a tolerance stated and justified in the script, and a printed table of measured against expected values.
 7. The figures, in figures.jl when the run is long, reading the output files, so that figures can be redrawn without rerunning.
 
@@ -622,7 +622,12 @@ The experiments run in Float64, with the fluid's parameters built as Float64. Co
 
 **Order of work.** Milestones, each ending with a check-in that summarises what is done and verified. Within a milestone, High priority first.
 
-1. Milestone 0, conventions: the script template above, the `quick` mechanism, where the shared helpers live, and an opt-in hook in test/runtests.jl that includes scripts with quick = true. Agree them with the user.
+1. Milestone 0, conventions: done (2026-11-01), as agreed with the user:
+   - the script template above;
+   - `quick`: `quick_run()` (tools/experiments.jl) reads the environment variable `TE_QUICK`, `"true"` or `"false"` (the default, the full experiment); any other value is an error. Run a quick variant with `TE_QUICK=true julia -t 4 --project=. examples/<script>/run.jl`;
+   - shared helpers: analysis code (k̂, fits of growth rates and orders of convergence, the Jacobian, the T1 model recipe) in tools/, included through tools/experiments.jl and tested in test/ as tools/scales.jl is; the T2 diagnostic entries and T4 route (a) in src/. Each is written when its first experiment needs it;
+   - test hook: `TE_EXAMPLES=true julia -t 4 --project=. test/runtests.jl` includes each script of `EXAMPLES` (test/runtests.jl) with `TE_QUICK=true`, each in a module of its own (`test_examples`, test/examples.jl). A script joins `EXAMPLES` once it follows the template;
+   - tools/setup.jl activates the environment only if it is not already active, and loads Revise only in an interactive session.
 2. Milestone 1, foundations: T1, T4, N1, N3 (settles the float types), then T2, T3.
 3. Milestone 2, discrete checks: N2, N4–N7, linear\_modes (W1–W4, E2 (b)).
 4. Milestone 3, sound and flux laws: acoustic\_adjustment (A1, A3, E2 (c)), sound\_speed\_sweep (A2, E3), F1, F2, F4.
