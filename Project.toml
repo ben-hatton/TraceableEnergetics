@@ -27,7 +27,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 [compat]
 CFAnelastics = "0.1.4"
 CFBoxes = "0.0.6"
-CFCompressible = "0.1.5"
+CFCompressible = "0.1.6"
 CFDiffusionSchemes = "0.0.4"
 CFPlanets = "0.1.5"
 CFTimeSchemes = "0.3.9"
