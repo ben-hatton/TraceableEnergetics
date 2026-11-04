@@ -7,7 +7,7 @@ using CFCompressible: CFTimeSchemes
 32 × 16 box with every physical term on: vortex force, thermodynamic diffusion and viscosity, using the
 energy-conserving schemes
 =#
-function fc_model(; mgr = mgr, boundary = (Periodic, Bounded), walls = (; bottom = closed_wall(), top = closed_wall()))
+function fc_model(; mgr = mgr, boundary = (Periodic, Bounded), walls = (; bottom = closed_wall(), top = closed_wall()), fluid = fluid)
     domain = Box2D(; Mx = 32, Mz = 16, boundary)
     boundary_conditions = BoxBoundaryConditions(domain; walls...)
     return FC2D((; mgr, domain, space, fluid, spatial_scheme = Centred2(), vortex_scheme = VortexEnergyCons(),

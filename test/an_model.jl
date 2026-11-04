@@ -10,7 +10,8 @@ an_density(z) = ρ0 * (1 + 0.1 * (Lz - z) / Lz)
 32 × 16 box with every physical term on: buoyancy, vortex force, thermodynamic diffusion and viscosity, using the
 energy-conserving schemes
 =#
-function an_model(; mgr = mgr, gauge_offset = 0.0, boundary = (Periodic, Bounded), walls = (; bottom = closed_wall(), top = closed_wall()))
+function an_model(; mgr = mgr, gauge_offset = 0.0, boundary = (Periodic, Bounded), walls = (; bottom = closed_wall(), top = closed_wall()),
+                  fluid = fluid)
     domain = Box2D(; Mx = 32, Mz = 16, boundary)
     anelastic_reference = AnelasticReference(domain, space, an_density; pref = 1e5)
     boundary_conditions = BoxBoundaryConditions(domain; walls...)

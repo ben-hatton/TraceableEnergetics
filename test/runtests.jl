@@ -1,9 +1,9 @@
 # Run from the TraceableEnergetics folder with:  julia -t 4 --project=. test/runtests.jl
 # Runs the setups tests, the canonical setups on both models, the reference state of available energy and the budgets of
-# the available energy, and the diagnostics and outputs on both models (diagnostics.jl). The model
-# suites of CFAnelastics and CFCompressible are run from their own repositories. With TE_EXAMPLES=true, it also runs the
-# experiment scripts listed in EXAMPLES below in their quick variant (test/examples.jl). Cross-model (traceability) tests will
-# live here.
+# the available energy, the TEOS-10 seawater on both models (teos10.jl), and the diagnostics and outputs on both models
+# (diagnostics.jl). The model suites of CFAnelastics and CFCompressible are run from their own repositories. With
+# TE_EXAMPLES=true, it also runs the experiment scripts listed in EXAMPLES below in their quick variant
+# (test/examples.jl). Cross-model (traceability) tests will live here.
 using Test
 using TraceableEnergetics, CookBooks
 using CFBoxes: Bounded, Periodic
@@ -60,6 +60,14 @@ const EXAMPLES = String[]
         include(joinpath($TESTS, "reference_tendency.jl"))
         include(joinpath($TESTS, "transportation.jl"))
         include(joinpath($TESTS, "exact_rearrangement.jl"))
+    end
+    # the TEOS-10 seawater of ClimFluids in both models, for its three conservative variables
+    @eval module TEOS10Tests
+        include(joinpath($TESTS, "config.jl"))
+        include(joinpath($TESTS, "helpers.jl"))
+        include(joinpath($TESTS, "an_model.jl"))
+        include(joinpath($TESTS, "fc_model.jl"))
+        include(joinpath($TESTS, "teos10.jl"))
     end
     # the diagnostics and outputs of either model
     include(joinpath(TESTS, "diagnostics.jl"))
